@@ -155,9 +155,14 @@ func TestLexerFor3(t *testing.T) {
 	}
 	`)
 
-	expect := []Token{Token{TOKEN_KEYWORD, "for"}, Token{TOKEN_IDENTIFIER, "i"}, Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "5"},
-		Token{TOKEN_SEMICOLON, ";"}, Token{TOKEN_SEMICOLON, ";"}, Token{TOKEN_CURLY_OPEN, "{"}, Token{TOKEN_IDENTIFIER, "a"},
-		Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "0"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
+	expect := []Token{Token{TOKEN_KEYWORD, "for"}, Token{TOKEN_IDENTIFIER, "i"}, Token{TOKEN_SEPARATOR, ","}, Token{TOKEN_IDENTIFIER, "j"},
+		Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "0"}, Token{TOKEN_SEPARATOR, ","}, Token{TOKEN_CONSTANT, "1"},
+		Token{TOKEN_SEMICOLON, ";"}, Token{TOKEN_IDENTIFIER, "i"}, Token{TOKEN_OPERATOR, "<"}, Token{TOKEN_CONSTANT, "10"}, Token{TOKEN_SEMICOLON, ";"},
+		Token{TOKEN_IDENTIFIER, "i"}, Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_IDENTIFIER, "i"}, Token{TOKEN_OPERATOR, "+"}, Token{TOKEN_CONSTANT, "1"},
+		Token{TOKEN_CURLY_OPEN, "{"}, Token{TOKEN_KEYWORD, "if"}, Token{TOKEN_IDENTIFIER, "b"}, Token{TOKEN_OPERATOR, "=="}, Token{TOKEN_IDENTIFIER, "a"},
+		Token{TOKEN_CURLY_OPEN, "{"}, Token{TOKEN_KEYWORD, "for"}, Token{TOKEN_SEMICOLON, ";"}, Token{TOKEN_SEMICOLON, ";"},
+		Token{TOKEN_CURLY_OPEN, "{"}, Token{TOKEN_IDENTIFIER, "c"}, Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "6"},
+		Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
 	}
 
 	test(code, expect, t)
