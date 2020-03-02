@@ -23,7 +23,11 @@ for i = 5;; {
 }
 
 for i = 5; i < 10; i = i+1 {
-	b = a
+	if b == a {
+		for ;; {
+			c = 6
+		}
+	}
 }
 
 test2 = "..."

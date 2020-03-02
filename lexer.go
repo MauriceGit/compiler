@@ -97,10 +97,10 @@ func parseByte(program []byte) (TokenType, bool) {
 func tokenize(program []byte, tokens chan Token) {
 	space := regexp.MustCompile(`^((\s+)|\n)`)
 	keyword := regexp.MustCompile(`^(int|string|float|if|else|for) `)
-	identifier := regexp.MustCompile(`^[A-Za-z]\w*`)
-	operator := regexp.MustCompile(`^(\+|\-|\*|/|==|!=|<=|>=|<|>)`)
+	operator := regexp.MustCompile(`^(\+|\-|\*|/|==|!=|<=|>=|<|>|\|\||&&)`)
 	assignment := regexp.MustCompile(`^=`)
-	constant := regexp.MustCompile(`^((-?\d+(\.\d+)?)|(".*"))`)
+	constant := regexp.MustCompile(`^(((-?\d+(\.\d+)?)|(".*"))|(true|false))`)
+	identifier := regexp.MustCompile(`^[A-Za-z]\w*`)
 
 	for len(program) > 0 {
 
@@ -122,10 +122,6 @@ func tokenize(program []byte, tokens chan Token) {
 			tokenLength = s[1] - 1
 			tokenType = TOKEN_KEYWORD
 		}
-		if s := identifier.FindIndex(program); s != nil && s[1] > tokenLength {
-			tokenLength = s[1]
-			tokenType = TOKEN_IDENTIFIER
-		}
 		if s := operator.FindIndex(program); s != nil && s[1] > tokenLength {
 			tokenLength = s[1]
 			tokenType = TOKEN_OPERATOR
@@ -137,6 +133,11 @@ func tokenize(program []byte, tokens chan Token) {
 		if s := constant.FindIndex(program); s != nil && s[1] > tokenLength {
 			tokenLength = s[1]
 			tokenType = TOKEN_CONSTANT
+		}
+		// Lowest priority for parsing!
+		if s := identifier.FindIndex(program); s != nil && s[1] > tokenLength {
+			tokenLength = s[1]
+			tokenType = TOKEN_IDENTIFIER
 		}
 
 		if tokenLength == 0 {
