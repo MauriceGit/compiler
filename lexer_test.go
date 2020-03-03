@@ -1,4 +1,4 @@
-// lexer_test.go
+// lexer_testTokens.go
 package main
 
 import (
@@ -15,7 +15,7 @@ func testChannelEqualSlice(tokens chan Token, expected []Token) (bool, int, Toke
 	return true, 0, Token{}, Token{}
 }
 
-func test(code []byte, expect []Token, t *testing.T) {
+func testTokens(code []byte, expect []Token, t *testing.T) {
 	tokenChan := make(chan Token, 100)
 	go tokenize(code, tokenChan)
 
@@ -38,7 +38,7 @@ func TestLexerExpression1(t *testing.T) {
 		Token{TOKEN_OPERATOR, "-"}, Token{TOKEN_CONSTANT, "10000.1234"}, Token{TOKEN_PARENTHESIS_CLOSE, ")"}, Token{TOKEN_PARENTHESIS_CLOSE, ")"}, Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 
 }
 
@@ -53,7 +53,7 @@ func TestLexerExpression2(t *testing.T) {
 		Token{TOKEN_CONSTANT, "true"}, Token{TOKEN_PARENTHESIS_CLOSE, ")"}, Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 }
 
 func TestLexerIf(t *testing.T) {
@@ -70,7 +70,7 @@ func TestLexerIf(t *testing.T) {
 		Token{TOKEN_IDENTIFIER, "a"}, Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "1"}, Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 }
 
 func TestLexerIfElse(t *testing.T) {
@@ -89,7 +89,7 @@ func TestLexerIfElse(t *testing.T) {
 		Token{TOKEN_CONSTANT, "2"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 }
 
 func TestLexerAssignment(t *testing.T) {
@@ -108,7 +108,7 @@ func TestLexerAssignment(t *testing.T) {
 		Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 }
 
 func TestLexerFor1(t *testing.T) {
@@ -124,7 +124,7 @@ func TestLexerFor1(t *testing.T) {
 		Token{TOKEN_CONSTANT, "1"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 }
 
 func TestLexerFor2(t *testing.T) {
@@ -140,7 +140,7 @@ func TestLexerFor2(t *testing.T) {
 		Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "0"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 }
 
 func TestLexerFor3(t *testing.T) {
@@ -165,5 +165,5 @@ func TestLexerFor3(t *testing.T) {
 		Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
 	}
 
-	test(code, expect, t)
+	testTokens(code, expect, t)
 }

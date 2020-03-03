@@ -201,7 +201,7 @@ func (b BinaryOp) String() string {
 	return fmt.Sprintf("%v %v %v", b.leftExpr, b.opType, b.rightExpr)
 }
 func (u UnaryOp) String() string {
-	return fmt.Sprintf("%v%v", u.opType, u.expr)
+	return fmt.Sprintf("%v(%v)", u.opType, u.expr)
 }
 
 func (v VarType) String() string {
