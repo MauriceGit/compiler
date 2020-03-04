@@ -1,8 +1,6 @@
-// lexer_testTokens.go
 package main
 
 import (
-	//"fmt"
 	"testing"
 )
 
@@ -77,16 +75,16 @@ func TestLexerIfElse(t *testing.T) {
 
 	var code []byte = []byte(`
 	if a == b {
-		a = 1
+		a = 6
 	} else {
-		a = 2
+		a = 1
 	}
 	`)
 
 	expect := []Token{Token{TOKEN_KEYWORD, "if"}, Token{TOKEN_IDENTIFIER, "a"}, Token{TOKEN_OPERATOR, "=="}, Token{TOKEN_IDENTIFIER, "b"},
-		Token{TOKEN_CURLY_OPEN, "{"}, Token{TOKEN_IDENTIFIER, "a"}, Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "1"}, Token{TOKEN_CURLY_CLOSE, "}"},
+		Token{TOKEN_CURLY_OPEN, "{"}, Token{TOKEN_IDENTIFIER, "a"}, Token{TOKEN_ASSIGNMENT, "="}, Token{TOKEN_CONSTANT, "6"}, Token{TOKEN_CURLY_CLOSE, "}"},
 		Token{TOKEN_KEYWORD, "else"}, Token{TOKEN_CURLY_OPEN, "{"}, Token{TOKEN_IDENTIFIER, "a"}, Token{TOKEN_ASSIGNMENT, "="},
-		Token{TOKEN_CONSTANT, "2"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
+		Token{TOKEN_CONSTANT, "1"}, Token{TOKEN_CURLY_CLOSE, "}"}, Token{TOKEN_EOF, ""},
 	}
 
 	testTokens(code, expect, t)

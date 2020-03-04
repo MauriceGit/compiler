@@ -33,6 +33,7 @@ const (
 	TYPE_INT = iota
 	TYPE_STRING
 	TYPE_FLOAT
+	TYPE_BOOL
 	TYPE_UNKNOWN
 )
 const (
@@ -49,6 +50,9 @@ const (
 	OP_GE
 	OP_LESS
 	OP_GREATER
+
+	OP_AND
+	OP_OR
 
 	OP_UNKNOWN
 )
@@ -181,6 +185,10 @@ func (o Operator) String() string {
 		return "<"
 	case OP_GREATER:
 		return ">"
+	case OP_AND:
+		return "&&"
+	case OP_OR:
+		return "||"
 	case OP_UNKNOWN:
 		return "?"
 	}
@@ -341,6 +349,10 @@ func getOperatorType(o string) Operator {
 		return OP_LESS
 	case o == ">":
 		return OP_GREATER
+	case o == "&&":
+		return OP_AND
+	case o == "||":
+		return OP_OR
 
 	}
 	return OP_UNKNOWN
@@ -394,6 +406,7 @@ func getConstType(c string) VarType {
 	rFloat := regexp.MustCompile(`^(-?\d+\.\d*)`)
 	rInt := regexp.MustCompile(`^(-?\d+)`)
 	rString := regexp.MustCompile(`^(".*")`)
+	rBool := regexp.MustCompile(`^(true|false)`)
 	cByte := []byte(c)
 
 	if s := rFloat.FindIndex(cByte); s != nil {
@@ -404,6 +417,9 @@ func getConstType(c string) VarType {
 	}
 	if s := rString.FindIndex(cByte); s != nil {
 		return TYPE_STRING
+	}
+	if s := rBool.FindIndex(cByte); s != nil {
+		return TYPE_BOOL
 	}
 	return TYPE_UNKNOWN
 }
