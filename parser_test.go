@@ -117,17 +117,17 @@ func testAST(code []byte, expected AST, t *testing.T) {
 
 func TestParserExpression1(t *testing.T) {
 
-	var code []byte = []byte(`a = 6 + 7 * variable / -(5 -- (-8 * - 10000.1234))`)
+	var code []byte = []byte(`shadow a = 6 + 7 * variable / -(5 -- (-8 * - 10000.1234))`)
 
 	expected := AST{
 		[]Statement{
 			Assignment{
-				[]Variable{Variable{TYPE_UNKNOWN, "a", ""}},
+				[]Variable{Variable{TYPE_UNKNOWN, "a", "", true}},
 				[]Expression{
 					BinaryOp{
 						OP_PLUS, Constant{TYPE_INT, "6"}, BinaryOp{
 							OP_MULT, Constant{TYPE_INT, "7"}, BinaryOp{
-								OP_DIV, Variable{TYPE_UNKNOWN, "variable", ""}, UnaryOp{
+								OP_DIV, Variable{TYPE_UNKNOWN, "variable", "", false}, UnaryOp{
 									OP_NEGATIVE, BinaryOp{
 										OP_MINUS, Constant{TYPE_INT, "5"}, UnaryOp{
 											OP_NEGATIVE, BinaryOp{
@@ -156,16 +156,16 @@ func TestParserExpression2(t *testing.T) {
 	expected := AST{
 		[]Statement{
 			Assignment{
-				[]Variable{Variable{TYPE_UNKNOWN, "a", ""}},
+				[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}},
 				[]Expression{
 					BinaryOp{
-						OP_AND, Variable{TYPE_UNKNOWN, "a", ""}, BinaryOp{
-							OP_OR, Variable{TYPE_UNKNOWN, "b", ""}, BinaryOp{
+						OP_AND, Variable{TYPE_UNKNOWN, "a", "", false}, BinaryOp{
+							OP_OR, Variable{TYPE_UNKNOWN, "b", "", false}, BinaryOp{
 								OP_LESS, Constant{TYPE_INT, "5"}, BinaryOp{
 									OP_LE, Constant{TYPE_BOOL, "false"}, BinaryOp{
 										OP_AND, Constant{TYPE_INT, "8"}, BinaryOp{
-											OP_NE, BinaryOp{OP_GREATER, Variable{TYPE_UNKNOWN, "false2", ""},
-												BinaryOp{OP_GE, Variable{TYPE_UNKNOWN, "variable", ""}, Constant{TYPE_FLOAT, "5.0"}}},
+											OP_NE, BinaryOp{OP_GREATER, Variable{TYPE_UNKNOWN, "false2", "", false},
+												BinaryOp{OP_GE, Variable{TYPE_UNKNOWN, "variable", "", false}, Constant{TYPE_FLOAT, "5.0"}}},
 											Constant{TYPE_BOOL, "true"},
 										},
 									},
@@ -193,12 +193,12 @@ func TestParserIf(t *testing.T) {
 	expected := AST{
 		[]Statement{
 			Condition{
-				BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", ""}, Variable{TYPE_UNKNOWN, "b", ""}},
-				[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", ""}}, []Expression{Constant{TYPE_INT, "6"}}}},
+				BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", "", false}, Variable{TYPE_UNKNOWN, "b", "", false}},
+				[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}}, []Expression{Constant{TYPE_INT, "6"}}}},
 				[]Statement{},
 			},
 			Assignment{
-				[]Variable{Variable{TYPE_UNKNOWN, "a", ""}},
+				[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}},
 				[]Expression{Constant{TYPE_INT, "1"}},
 			},
 		},
@@ -220,10 +220,10 @@ func TestParserIfElse(t *testing.T) {
 	expected := AST{
 		[]Statement{
 			Condition{
-				BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", ""}, Variable{TYPE_UNKNOWN, "b", ""}},
-				[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", ""}}, []Expression{Constant{TYPE_INT, "6"}}}},
+				BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", "", false}, Variable{TYPE_UNKNOWN, "b", "", false}},
+				[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}}, []Expression{Constant{TYPE_INT, "6"}}}},
 				[]Statement{Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "a", ""}},
+					[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}},
 					[]Expression{Constant{TYPE_INT, "1"}},
 				}},
 			},
@@ -244,15 +244,15 @@ func TestParserAssignment(t *testing.T) {
 	expected := AST{
 		[]Statement{
 			Assignment{
-				[]Variable{Variable{TYPE_UNKNOWN, "a", ""}},
+				[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}},
 				[]Expression{Constant{TYPE_INT, "1"}},
 			},
 			Assignment{
-				[]Variable{Variable{TYPE_UNKNOWN, "a", ""}, Variable{TYPE_UNKNOWN, "b", ""}},
+				[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}, Variable{TYPE_UNKNOWN, "b", "", false}},
 				[]Expression{Constant{TYPE_INT, "1"}, Constant{TYPE_INT, "2"}},
 			},
 			Assignment{
-				[]Variable{Variable{TYPE_UNKNOWN, "a", ""}, Variable{TYPE_UNKNOWN, "b", ""}, Variable{TYPE_UNKNOWN, "c", ""}},
+				[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}, Variable{TYPE_UNKNOWN, "b", "", false}, Variable{TYPE_UNKNOWN, "c", "", false}},
 				[]Expression{Constant{TYPE_INT, "1"}, Constant{TYPE_INT, "2"}, Constant{TYPE_INT, "3"}},
 			},
 		},
@@ -277,8 +277,8 @@ func TestParserFor1(t *testing.T) {
 				Assignment{[]Variable{}, []Expression{}},
 				[]Statement{
 					Assignment{
-						[]Variable{Variable{TYPE_UNKNOWN, "a", ""}},
-						[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "a", ""}, Constant{TYPE_INT, "1"}}},
+						[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}},
+						[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "a", "", false}, Constant{TYPE_INT, "1"}}},
 					},
 				},
 			},
@@ -299,12 +299,12 @@ func TestParserFor2(t *testing.T) {
 	expected := AST{
 		[]Statement{
 			Loop{
-				Assignment{[]Variable{Variable{TYPE_UNKNOWN, "i", ""}}, []Expression{Constant{TYPE_INT, "5"}}},
+				Assignment{[]Variable{Variable{TYPE_UNKNOWN, "i", "", false}}, []Expression{Constant{TYPE_INT, "5"}}},
 				[]Expression{},
 				Assignment{[]Variable{}, []Expression{}},
 				[]Statement{
 					Assignment{
-						[]Variable{Variable{TYPE_UNKNOWN, "a", ""}},
+						[]Variable{Variable{TYPE_UNKNOWN, "a", "", false}},
 						[]Expression{Constant{TYPE_INT, "0"}},
 					},
 				},
@@ -331,17 +331,17 @@ func TestParserFor3(t *testing.T) {
 		[]Statement{
 			Loop{
 				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "i", ""}, Variable{TYPE_UNKNOWN, "j", ""}},
+					[]Variable{Variable{TYPE_UNKNOWN, "i", "", false}, Variable{TYPE_UNKNOWN, "j", "", false}},
 					[]Expression{Constant{TYPE_INT, "0"}, Constant{TYPE_INT, "1"}},
 				},
-				[]Expression{BinaryOp{OP_LESS, Variable{TYPE_UNKNOWN, "i", ""}, Constant{TYPE_INT, "10"}}},
+				[]Expression{BinaryOp{OP_LESS, Variable{TYPE_UNKNOWN, "i", "", false}, Constant{TYPE_INT, "10"}}},
 				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "i", ""}},
-					[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "i", ""}, Constant{TYPE_INT, "1"}}},
+					[]Variable{Variable{TYPE_UNKNOWN, "i", "", false}},
+					[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "i", "", false}, Constant{TYPE_INT, "1"}}},
 				},
 				[]Statement{
 					Condition{
-						BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "b", ""}, Variable{TYPE_UNKNOWN, "a", ""}},
+						BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "b", "", false}, Variable{TYPE_UNKNOWN, "a", "", false}},
 						[]Statement{
 							Loop{
 								Assignment{[]Variable{}, []Expression{}},
@@ -349,7 +349,7 @@ func TestParserFor3(t *testing.T) {
 								Assignment{[]Variable{}, []Expression{}},
 								[]Statement{
 									Assignment{
-										[]Variable{Variable{TYPE_UNKNOWN, "c", ""}},
+										[]Variable{Variable{TYPE_UNKNOWN, "c", "", false}},
 										[]Expression{Constant{TYPE_INT, "6"}},
 									},
 								},

@@ -96,7 +96,7 @@ func parseByte(program []byte) (TokenType, bool) {
 
 func tokenize(program []byte, tokens chan Token) {
 	space := regexp.MustCompile(`^((\s+)|\n)`)
-	keyword := regexp.MustCompile(`^(int|string|float|if|else|for) `)
+	keyword := regexp.MustCompile(`^(int|string|float|if|else|for|shadow) `)
 	operator := regexp.MustCompile(`^(\+|\-|\*|/|==|!=|<=|>=|<|>|\|\||&&)`)
 	assignment := regexp.MustCompile(`^=`)
 	constant := regexp.MustCompile(`^(((-?\d+(\.\d+)?)|(".*"))|(true|false))`)

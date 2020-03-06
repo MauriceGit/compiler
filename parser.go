@@ -11,16 +11,16 @@ import (
 stat 	::= assign | if | for
 
 if 		::= 'if' exp '{' [stat] '}' [else '{' [stat] '}']
-for		::= 'for' varlist '=' explist ';' exp [',' exp] ';' [assign] '{' [stat] '}'
+for		::= 'for' [assign] ';' explist ';' [assign] '{' [stat] '}'
 
 
 assign 	::= varlist ‘=’ explist
 varlist	::= var {‘,’ var}
 explist	::= exp {‘,’ exp}
 exp 	::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp
-var 	::= Name
-binop	::= '+' | '-' | '*' | '/'
-unop	::= '-'
+var 	::= [shadow] Name
+binop	::= '+' | '-' | '*' | '/' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' | '||'
+unop	::= '-' | '!'
 
 
 */
@@ -34,6 +34,7 @@ const (
 	TYPE_STRING
 	TYPE_FLOAT
 	TYPE_BOOL
+	TYPE_POINTER
 	TYPE_UNKNOWN
 )
 const (
@@ -43,6 +44,7 @@ const (
 	OP_DIV
 
 	OP_NEGATIVE
+	OP_NOT
 
 	OP_EQ
 	OP_NE
@@ -65,7 +67,7 @@ type AST struct {
 	block []Statement
 }
 
-type VarType int
+type Type int
 type Operator int
 
 type Node interface {
@@ -94,13 +96,14 @@ type Expression interface {
 // Expression types
 //
 type Variable struct {
-	varType  VarType
-	varName  string
-	varValue string
+	vType   Type
+	vName   string
+	vValue  string
+	vShadow bool
 }
 type Constant struct {
-	constType  VarType
-	constValue string
+	cType  Type
+	cValue string
 }
 type BinaryOp struct {
 	opType    Operator
@@ -189,6 +192,8 @@ func (o Operator) String() string {
 		return "&&"
 	case OP_OR:
 		return "||"
+	case OP_NOT:
+		return "!"
 	case OP_UNKNOWN:
 		return "?"
 	}
@@ -200,10 +205,14 @@ func (o Operator) String() string {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (v Variable) String() string {
-	return fmt.Sprintf("%v", v.varName)
+	shadowString := ""
+	if v.vShadow {
+		shadowString = "shadow "
+	}
+	return fmt.Sprintf("%v%v(%v)", shadowString, v.vType, v.vName)
 }
 func (c Constant) String() string {
-	return fmt.Sprintf("%v(%v)", c.constType, c.constValue)
+	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
 }
 func (b BinaryOp) String() string {
 	return fmt.Sprintf("%v %v %v", b.leftExpr, b.opType, b.rightExpr)
@@ -212,7 +221,7 @@ func (u UnaryOp) String() string {
 	return fmt.Sprintf("%v(%v)", u.opType, u.expr)
 }
 
-func (v VarType) String() string {
+func (v Type) String() string {
 	switch v {
 	case TYPE_INT:
 		return "int"
@@ -220,6 +229,8 @@ func (v VarType) String() string {
 		return "string"
 	case TYPE_FLOAT:
 		return "float"
+	case TYPE_BOOL:
+		return "bool"
 	}
 	return "?"
 }
@@ -328,31 +339,33 @@ func (tc *TokenChannel) pushBack(t Token) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 func getOperatorType(o string) Operator {
-	switch {
-	case o == "+":
+	switch o {
+	case "+":
 		return OP_PLUS
-	case o == "-":
+	case "-":
 		return OP_MINUS
-	case o == "*":
+	case "*":
 		return OP_MULT
-	case o == "/":
+	case "/":
 		return OP_DIV
-	case o == "==":
+	case "==":
 		return OP_EQ
-	case o == "!=":
+	case "!=":
 		return OP_NE
-	case o == "<=":
+	case "<=":
 		return OP_LE
-	case o == ">=":
+	case ">=":
 		return OP_GE
-	case o == "<":
+	case "<":
 		return OP_LESS
-	case o == ">":
+	case ">":
 		return OP_GREATER
-	case o == "&&":
+	case "&&":
 		return OP_AND
-	case o == "||":
+	case "||":
 		return OP_OR
+	case "!":
+		return OP_NOT
 
 	}
 	return OP_UNKNOWN
@@ -378,8 +391,10 @@ func expect(tokens *TokenChannel, ttype TokenType, value string) bool {
 
 func parseVariable(tokens *TokenChannel) (Variable, bool) {
 
+	shadowing := expect(tokens, TOKEN_KEYWORD, "shadow")
+
 	if v, ok := expectType(tokens, TOKEN_IDENTIFIER); ok {
-		return Variable{TYPE_UNKNOWN, v, ""}, true
+		return Variable{TYPE_UNKNOWN, v, "", shadowing}, true
 	}
 	return Variable{}, false
 }
@@ -402,7 +417,7 @@ func parseVarList(tokens *TokenChannel) (variables []Variable) {
 	return
 }
 
-func getConstType(c string) VarType {
+func getConstType(c string) Type {
 	rFloat := regexp.MustCompile(`^(-?\d+\.\d*)`)
 	rInt := regexp.MustCompile(`^(-?\d+)`)
 	rString := regexp.MustCompile(`^(".*")`)
@@ -617,7 +632,6 @@ func parseCondition(tokens *TokenChannel) (condition Condition, allOK bool) {
 
 }
 
-// for ::= 'for' varlist '=' explist ';' exp [',' exp] '{' [stat] '}'
 func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 
 	if !expect(tokens, TOKEN_KEYWORD, "for") {
