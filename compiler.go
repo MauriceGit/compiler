@@ -12,10 +12,14 @@ value = 100 == 7
 x, test = 50.6, "blubb"
 for i = 0; i < 10; i = i+1 {
 	i = 6+7
-	shadow i = (6 < 8) && true
+
+	if i == 600 {
+		shadow i = "string"
+	}
 }
+x = 6.8
 i = 6.8
-b = test
+b = !true
 
 `)
 

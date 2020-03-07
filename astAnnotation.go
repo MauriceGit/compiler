@@ -15,16 +15,16 @@ func annotateTypeUnaryOp(unaryOp UnaryOp, vars map[string][]Type) (Expression, T
 	switch unaryOp.opType {
 	case OP_NEGATIVE:
 		if t != TYPE_FLOAT && t != TYPE_INT {
-			return unaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unary '-' expression must be float or int, but is: %v", unaryOp))
+			return nil, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unary '-' expression must be float or int, but is: %v", unaryOp))
 		}
 		return unaryOp, t, nil
 	case OP_NOT:
 		if t != TYPE_BOOL {
-			return unaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unary '!' expression must be bool, but is: %v", unaryOp))
+			return nil, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unary '!' expression must be bool, but is: %v", unaryOp))
 		}
 		return unaryOp, t, nil
 	}
-	return unaryOp, t, errors.New(fmt.Sprintf("Unknown unary expression: %v", unaryOp))
+	return nil, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unknown unary expression: %v", unaryOp))
 }
 
 func annotateTypeBinaryOp(binaryOp BinaryOp, vars map[string][]Type) (Expression, Type, error) {
@@ -284,8 +284,4 @@ func annotateTypes(ast AST) (AST, error) {
 	ast.block = block
 
 	return ast, nil
-}
-
-func calcConstExpressions(ast AST) AST {
-	return ast
 }

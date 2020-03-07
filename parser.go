@@ -497,6 +497,18 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, allOK bo
 		allOK = true
 		return
 	}
+	// Check for unary operator before the expression
+	if expect(tokens, TOKEN_OPERATOR, "!") {
+		e, ok := parseExpression(tokens, true)
+		if !ok {
+			fmt.Printf("Invalid Expression.\n")
+			return
+		}
+
+		expression = UnaryOp{OP_NOT, e}
+		allOK = true
+		return
+	}
 	return
 }
 
