@@ -6,6 +6,7 @@ import (
 )
 
 func compareExpression(e1, e2 Expression) (bool, string) {
+
 	switch v1 := e1.(type) {
 	case Constant:
 		if v2, ok := e2.(Constant); ok && v1 == v2 {
@@ -37,7 +38,7 @@ func compareExpression(e1, e2 Expression) (bool, string) {
 
 func compareExpressions(ee1, ee2 []Expression) (bool, string) {
 	if len(ee1) != len(ee2) {
-		return false, fmt.Sprintf("Differeng lengths: %v, %v", ee1, ee2)
+		return false, fmt.Sprintf("Different lengths: %v, %v", ee1, ee2)
 	}
 	for i, v1 := range ee1 {
 		if b, e := compareExpression(v1, ee2[i]); !b {
@@ -50,7 +51,7 @@ func compareExpressions(ee1, ee2 []Expression) (bool, string) {
 // First time really where I have to say - **** generics (in - not having them!)
 func compareVariables(vv1, vv2 []Variable) (bool, string) {
 	if len(vv1) != len(vv2) {
-		return false, fmt.Sprintf("Differeng lengths: %v, %v", vv1, vv2)
+		return false, fmt.Sprintf("Different lengths: %v, %v", vv1, vv2)
 	}
 	for i, v1 := range vv1 {
 		if v1 != vv2[i] {
