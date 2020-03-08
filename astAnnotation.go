@@ -12,7 +12,7 @@ func annotateTypeUnaryOp(unaryOp UnaryOp, vars map[string][]Type) (Expression, T
 	}
 	unaryOp.expr = expression
 
-	switch unaryOp.opType {
+	switch unaryOp.operator {
 	case OP_NEGATIVE:
 		if t != TYPE_FLOAT && t != TYPE_INT {
 			return nil, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unary '-' expression must be float or int, but is: %v", unaryOp))
@@ -46,25 +46,25 @@ func annotateTypeBinaryOp(binaryOp BinaryOp, vars map[string][]Type) (Expression
 
 	// We match all types explicitely to make sure that this still works or creates an error when we introduce new types
 	// that are not considered yet!
-	switch binaryOp.opType {
+	switch binaryOp.operator {
 	case OP_AND, OP_OR:
 		// We know left and right are the same type, so only compare left here.
 		if tLeft != TYPE_BOOL {
-			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs bool, got: %v", binaryOp.opType, tLeft))
+			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs bool, got: %v", binaryOp.operator, tLeft))
 		}
 		return binaryOp, TYPE_BOOL, nil
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT {
-			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs int/float, got: %v", binaryOp.opType, tLeft))
+			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs int/float, got: %v", binaryOp.operator, tLeft))
 		}
 		return binaryOp, tLeft, nil
 	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LESS, OP_GREATER:
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
-			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs int/float/string, got: %v", binaryOp.opType, tLeft))
+			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs int/float/string, got: %v", binaryOp.operator, tLeft))
 		}
 		return binaryOp, TYPE_BOOL, nil
 	default:
-		return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v unknown/not considered yet: %v", binaryOp.opType, tLeft))
+		return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v !/not expected, got: %v", binaryOp.operator, tLeft))
 	}
 	return binaryOp, tLeft, nil
 }
@@ -127,13 +127,13 @@ func annotateTypeCondition(condition Condition, vars map[string][]Type) (Conditi
 	}
 	condition.expression = e
 
-	block, err := annotateTypeStatements(condition.block, vars)
+	block, err := annotateTypeBlock(condition.block, vars)
 	if err != nil {
 		return condition, err
 	}
 	condition.block = block
 
-	elseBlock, err := annotateTypeStatements(condition.elseBlock, vars)
+	elseBlock, err := annotateTypeBlock(condition.elseBlock, vars)
 	if err != nil {
 		return condition, err
 	}
@@ -178,7 +178,7 @@ func annotateTypeLoop(loop Loop, vars map[string][]Type) (Loop, error) {
 	// Ignore errors because we basically have a new block anyway.
 	pushNewVars(&localShadowVars, incrVars)
 
-	statements, err := annotateTypeStatements(loop.block, vars)
+	statements, err := annotateTypeBlock(loop.block, vars)
 	if err != nil {
 		return loop, err
 	}
@@ -250,7 +250,7 @@ func annotateTypeStatement(statement Statement, vars map[string][]Type, shadowVa
 	return statement, errors.New(fmt.Sprintf("Unexpected statement: %v", statement))
 }
 
-func annotateTypeStatements(statements []Statement, vars map[string][]Type) ([]Statement, error) {
+func annotateTypeBlock(block Block, vars map[string][]Type) (Block, error) {
 
 	// Only includes variables that are meant to shadow outer variables!
 	// This is now a different variable (which also means, that it can change its Type!) until the end of the current block!
@@ -261,15 +261,15 @@ func annotateTypeStatements(statements []Statement, vars map[string][]Type) ([]S
 	// Additionally also shadowing ones. Old types from before should be correct again!
 	defer popVars(&vars, shadowVars)
 
-	for i, s := range statements {
+	for i, s := range block.statements {
 		statement, err := annotateTypeStatement(s, vars, shadowVars)
 		if err != nil {
-			return statements, err
+			return block, err
 		}
-		statements[i] = statement
+		block.statements[i] = statement
 	}
 
-	return statements, nil
+	return block, nil
 }
 
 // annotateTypes traverses the tree and annotates variables with their corresponding type recursively from expressions!
@@ -277,7 +277,7 @@ func annotateTypeStatements(statements []Statement, vars map[string][]Type) ([]S
 func annotateTypes(ast AST) (AST, error) {
 	vars := make(map[string][]Type, 0)
 
-	block, err := annotateTypeStatements(ast.block, vars)
+	block, err := annotateTypeBlock(ast.block, vars)
 	if err != nil {
 		return ast, err
 	}

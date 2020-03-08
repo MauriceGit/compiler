@@ -34,7 +34,7 @@ const (
 	TYPE_STRING
 	TYPE_FLOAT
 	TYPE_BOOL
-	TYPE_POINTER
+	// TYPE_FUNCTION ?
 	TYPE_UNKNOWN
 )
 const (
@@ -63,8 +63,17 @@ const (
 // INTERFACES
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+type SymbolEntry struct {
+	sType      Type
+	sShadowing bool
+	// ... more information
+}
+
+type SymbolTable map[string]SymbolEntry
+
 type AST struct {
-	block []Statement
+	block             Block
+	globalSymbolTable SymbolTable
 }
 
 type Type int
@@ -92,13 +101,9 @@ type Expression interface {
 // EXPRESSIONS
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-//
-// Expression types
-//
 type Variable struct {
 	vType   Type
 	vName   string
-	vValue  string
 	vShadow bool
 }
 type Constant struct {
@@ -106,13 +111,15 @@ type Constant struct {
 	cValue string
 }
 type BinaryOp struct {
-	opType    Operator
+	operator  Operator
 	leftExpr  Expression
 	rightExpr Expression
+	opType    Type
 }
 type UnaryOp struct {
-	opType Operator
-	expr   Expression
+	operator Operator
+	expr     Expression
+	opType   Type
 }
 
 func (_ Variable) expression() {}
@@ -124,9 +131,12 @@ func (_ UnaryOp) expression()  {}
 // STATEMENTS
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-//
-// Statement types
-//
+type Block struct {
+	statements        []Statement
+	parentSymbolTable SymbolTable
+	symbolTable       SymbolTable
+}
+
 type Assignment struct {
 	variables   []Variable
 	expressions []Expression
@@ -134,18 +144,18 @@ type Assignment struct {
 
 type Condition struct {
 	expression Expression
-	block      []Statement
-	elseBlock  []Statement
+	block      Block
+	elseBlock  Block
 }
 
-// for ::= 'for' varlist '=' explist ';' exp [',' exp] '{' [stat] '}'
 type Loop struct {
 	assignment     Assignment
 	expressions    []Expression
 	incrAssignment Assignment
-	block          []Statement
+	block          Block
 }
 
+func (a Block) statement()      {}
 func (a Assignment) statement() {}
 func (c Condition) statement()  {}
 func (l Loop) statement()       {}
@@ -155,10 +165,9 @@ func (l Loop) statement()       {}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (ast AST) String() string {
-	s := ""
-	s += fmt.Sprintln("AST:")
+	s := fmt.Sprintln("AST:")
 
-	for _, st := range ast.block {
+	for _, st := range ast.block.statements {
 		s += fmt.Sprintf("%v\n", st)
 	}
 	return s
@@ -215,10 +224,10 @@ func (c Constant) String() string {
 	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
 }
 func (b BinaryOp) String() string {
-	return fmt.Sprintf("%v %v %v", b.leftExpr, b.opType, b.rightExpr)
+	return fmt.Sprintf("%v %v %v", b.leftExpr, b.operator, b.rightExpr)
 }
 func (u UnaryOp) String() string {
-	return fmt.Sprintf("%v(%v)", u.opType, u.expr)
+	return fmt.Sprintf("%v(%v)", u.operator, u.expr)
 }
 
 func (v Type) String() string {
@@ -263,15 +272,15 @@ func (c Condition) String() (s string) {
 
 	s += fmt.Sprintf("if %v {\n", c.expression)
 
-	for _, st := range c.block {
+	for _, st := range c.block.statements {
 		s += fmt.Sprintf("\t%v\n", st)
 	}
 
 	s += "}"
 
-	if c.elseBlock != nil {
+	if c.elseBlock.statements != nil {
 		s += " else {\n"
-		for _, st := range c.elseBlock {
+		for _, st := range c.elseBlock.statements {
 			s += fmt.Sprintf("\t%v\n", st)
 		}
 		s += "}"
@@ -294,7 +303,7 @@ func (l Loop) String() (s string) {
 
 	s += " {\n"
 
-	for _, st := range l.block {
+	for _, st := range l.block.statements {
 		s += fmt.Sprintf("\t%v\n", st)
 	}
 
@@ -394,7 +403,7 @@ func parseVariable(tokens *TokenChannel) (Variable, bool) {
 	shadowing := expect(tokens, TOKEN_KEYWORD, "shadow")
 
 	if v, ok := expectType(tokens, TOKEN_IDENTIFIER); ok {
-		return Variable{TYPE_UNKNOWN, v, "", shadowing}, true
+		return Variable{TYPE_UNKNOWN, v, shadowing}, true
 	}
 	return Variable{}, false
 }
@@ -493,7 +502,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, allOK bo
 			return
 		}
 
-		expression = UnaryOp{OP_NEGATIVE, e}
+		expression = UnaryOp{OP_NEGATIVE, e, TYPE_UNKNOWN}
 		allOK = true
 		return
 	}
@@ -505,7 +514,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, allOK bo
 			return
 		}
 
-		expression = UnaryOp{OP_NOT, e}
+		expression = UnaryOp{OP_NOT, e, TYPE_UNKNOWN}
 		allOK = true
 		return
 	}
@@ -538,7 +547,7 @@ func parseExpression(tokens *TokenChannel, required bool) (expression Expression
 			fmt.Printf("Invalid expression on righthand side of binary operation!\n")
 			return
 		}
-		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr}
+		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, TYPE_UNKNOWN}
 		expression = finalExpression
 	}
 
@@ -691,23 +700,23 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 
 }
 
-func parseStatementList(tokens *TokenChannel) (statements []Statement) {
+func parseStatementList(tokens *TokenChannel) (block Block) {
 	for {
 		ifStatement, ok := parseCondition(tokens)
 		if ok {
-			statements = append(statements, ifStatement)
+			block.statements = append(block.statements, ifStatement)
 			continue
 		}
 
 		loopStatement, ok := parseLoop(tokens)
 		if ok {
-			statements = append(statements, loopStatement)
+			block.statements = append(block.statements, loopStatement)
 			continue
 		}
 
 		assignment, ok := parseAssignment(tokens)
 		if ok {
-			statements = append(statements, assignment)
+			block.statements = append(block.statements, assignment)
 			continue
 		}
 

@@ -32,7 +32,9 @@ b = !true
 
 	ast, err := annotateTypes(ast)
 
-	fmt.Println(err)
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	fmt.Printf("\n%v\n", ast)
 
