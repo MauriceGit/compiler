@@ -11,11 +11,7 @@ func main() {
 value = 100 == 7
 x, test = 50.6, "blubb"
 for i = 0; i < 10; i = i+1 {
-	i = 6+7
-
-	if i == 600 {
-		shadow i = "string"
-	}
+	blubb
 }
 x = 6.8
 i = 6.8

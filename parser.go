@@ -64,6 +64,9 @@ const (
 // INTERFACES
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+var ErrCritical = errors.New("Critical semantic error")
+var ErrNormal = errors.New("Semantic error")
+
 type SymbolEntry struct {
 	sType      Type
 	sShadowing bool
@@ -624,7 +627,11 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 		return
 	}
 
-	statements := parseStatementList(tokens)
+	statements, parseErr := parseStatementList(tokens)
+	if parseErr != nil {
+		err = fmt.Errorf("%w, Error while parsing the condition if block", parseErr)
+		return
+	}
 
 	if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
 		err = errors.New(fmt.Sprintf("Expected '}' after condition block, got something else"))
@@ -641,7 +648,11 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 			return
 		}
 
-		elseStatements := parseStatementList(tokens)
+		elseStatements, parseErr := parseStatementList(tokens)
+		if parseErr != nil {
+			err = fmt.Errorf("%w, Error while parsing the condition else block", parseErr)
+			return
+		}
 
 		if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
 			err = errors.New(fmt.Sprintf("Expected '}' after 'eĺse' block in condition, got something else"))
@@ -688,7 +699,11 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 		return
 	}
 
-	forBlock := parseStatementList(tokens)
+	forBlock, parseErr := parseStatementList(tokens)
+	if parseErr != nil {
+		err = fmt.Errorf("%w, Error while parsing the loop block", parseErr)
+		return
+	}
 
 	if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
 		err = errors.New(fmt.Sprintf("Expected '}' after loop block, got something else"))
@@ -702,24 +717,34 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	return
 }
 
-func parseStatementList(tokens *TokenChannel) (block Block) {
+func parseStatementList(tokens *TokenChannel) (block Block, err error) {
 	for {
-		ifStatement, parseErr := parseCondition(tokens)
-		if parseErr == nil {
+
+		switch ifStatement, parseErr := parseCondition(tokens); {
+		case parseErr == nil:
 			block.statements = append(block.statements, ifStatement)
 			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
 		}
 
-		loopStatement, parseErr := parseLoop(tokens)
-		if parseErr == nil {
+		switch loopStatement, parseErr := parseLoop(tokens); {
+		case parseErr == nil:
 			block.statements = append(block.statements, loopStatement)
 			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
 		}
 
-		assignment, parseErr := parseAssignment(tokens)
-		if parseErr == nil {
+		switch assignment, parseErr := parseAssignment(tokens); {
+		case parseErr == nil:
 			block.statements = append(block.statements, assignment)
 			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
 		}
 
 		// If we don't recognize the current token as part of a known statement, we break
@@ -736,7 +761,12 @@ func parse(tokens chan Token) AST {
 	tokenChan.c = tokens
 
 	var ast AST
-	ast.block = parseStatementList(&tokenChan)
+	block, parseErr := parseStatementList(&tokenChan)
+	if parseErr != nil {
+		//err = fmt.Errorf("%w, Error while parsing the main program block", parseErr)
+		return ast
+	}
+	ast.block = block
 
 	return ast
 }
