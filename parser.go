@@ -472,7 +472,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 
 	// Or a '(', then continue until ')'. Parenthesis are not included in the AST, as they are implicit!
 	if expect(tokens, TOKEN_PARENTHESIS_OPEN, "(") {
-		e, parseErr := parseExpression(tokens, true)
+		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = errors.New(fmt.Sprintf("Invalid expression in ()"))
 			return
@@ -495,7 +495,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err error) {
 	// Check for unary operator before the expression
 	if expect(tokens, TOKEN_OPERATOR, "-") {
-		e, parseErr := parseExpression(tokens, true)
+		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = errors.New(fmt.Sprintf("Invalid expression after unary '-'"))
 			return
@@ -506,7 +506,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 	}
 	// Check for unary operator before the expression
 	if expect(tokens, TOKEN_OPERATOR, "!") {
-		e, parseErr := parseExpression(tokens, true)
+		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = errors.New(fmt.Sprintf("Invalid expression after unary '!'"))
 			return
@@ -520,8 +520,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 	return
 }
 
-// TODO: Remove required flag by just ignoring errors when applicable
-func parseExpression(tokens *TokenChannel, required bool) (expression Expression, err error) {
+func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 
 	unaryExpression, parseErr := parseUnaryExpression(tokens)
 	if parseErr == nil {
@@ -540,7 +539,7 @@ func parseExpression(tokens *TokenChannel, required bool) (expression Expression
 	if t, ok := expectType(tokens, TOKEN_OPERATOR); ok {
 
 		// Create and return binary operation expression!
-		rightHandExpr, parseErr := parseExpression(tokens, true)
+		rightHandExpr, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = errors.New(fmt.Sprintf("Invalid expression on right hand side of binary operation"))
 			return
@@ -553,16 +552,15 @@ func parseExpression(tokens *TokenChannel, required bool) (expression Expression
 	return
 }
 
-func parseExpressionList(tokens *TokenChannel, required bool) (expressions []Expression) {
+func parseExpressionList(tokens *TokenChannel) (expressions []Expression) {
 
 	for {
-		e, parseErr := parseExpression(tokens, required)
+		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
-			if required {
-				// TODO: create error in return!
-				fmt.Println("Expected expression, got something else")
-				//err = errors.New(fmt.Sprintf("Expected expression, got something else"))
-			}
+			// TODO: create error in return!
+			fmt.Println("Expected expression, got something else")
+			//err = errors.New(fmt.Sprintf("Expected expression, got something else"))
+
 			//expressions = nil
 			break
 		}
@@ -594,7 +592,9 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, allOK bool) {
 	}
 
 	// A list of expressions
-	expressions := parseExpressionList(tokens, false)
+	// TODO: Ignore an error here, because we don't care about no expressions!
+	// We will check that later though!
+	expressions := parseExpressionList(tokens)
 
 	assignment = Assignment{variables, expressions}
 	allOK = true
@@ -610,7 +610,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, allOK bool) {
 		return
 	}
 
-	expression, parseErr := parseExpression(tokens, true)
+	expression, parseErr := parseExpression(tokens)
 	if parseErr != nil {
 		fmt.Println("Expected expression after 'if' but got something else")
 		return
@@ -667,7 +667,8 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 		return
 	}
 
-	expressionList := parseExpressionList(tokens, false)
+	// TODO: Ignore an error here, because we don't care about no expressions!
+	expressionList := parseExpressionList(tokens)
 
 	if !expect(tokens, TOKEN_SEMICOLON, ";") {
 		fmt.Println("Expected ';' after 'for' expression, got something else")
