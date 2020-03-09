@@ -606,27 +606,28 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 }
 
 // if ::= 'if' exp '{' [stat] '}' [else '{' [stat] '}']
-func parseCondition(tokens *TokenChannel) (condition Condition, allOK bool) {
+func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 
 	if !expect(tokens, TOKEN_KEYWORD, "if") {
+		err = errors.New(fmt.Sprintf("Expected 'if' keyword for condition, got something else"))
 		return
 	}
 
 	expression, parseErr := parseExpression(tokens)
 	if parseErr != nil {
-		fmt.Println("Expected expression after 'if' but got something else")
+		err = errors.New(fmt.Sprintf("Expected expression after 'if' keyword\n%v", parseErr))
 		return
 	}
 
 	if !expect(tokens, TOKEN_CURLY_OPEN, "{") {
-		fmt.Println("Expected '{' after if but got something else")
+		err = errors.New(fmt.Sprintf("Expected '{' after condition, got something else"))
 		return
 	}
 
 	statements := parseStatementList(tokens)
 
 	if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
-		fmt.Println("Expected '}' after if block, got something else")
+		err = errors.New(fmt.Sprintf("Expected '}' after condition block, got something else"))
 		return
 	}
 
@@ -636,28 +637,27 @@ func parseCondition(tokens *TokenChannel) (condition Condition, allOK bool) {
 	// Just in case we have an else, handle it!
 	if expect(tokens, TOKEN_KEYWORD, "else") {
 		if !expect(tokens, TOKEN_CURLY_OPEN, "{") {
-			fmt.Println("Expected '{' after 'else', got something else")
+			err = errors.New(fmt.Sprintf("Expected '{' after 'else' in condition, got something else"))
 			return
 		}
 
 		elseStatements := parseStatementList(tokens)
 
 		if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
-			fmt.Println("Expected '}' after 'else' block, got something else")
+			err = errors.New(fmt.Sprintf("Expected '}' after 'eĺse' block in condition, got something else"))
 			return
 		}
 
 		condition.elseBlock = elseStatements
 	}
 
-	allOK = true
 	return
-
 }
 
-func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
+func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 
 	if !expect(tokens, TOKEN_KEYWORD, "for") {
+		err = errors.New(fmt.Sprintf("Expected 'for' keyword for loop, got something else"))
 		return
 	}
 
@@ -665,20 +665,18 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	assignment, _ := parseAssignment(tokens)
 
 	if !expect(tokens, TOKEN_SEMICOLON, ";") {
-		fmt.Println("Expected ';' after 'for' assignment, got something else")
+		err = errors.New(fmt.Sprintf("Expected ';' after loop assignment, got something else"))
 		return
 	}
 
-	// TODO: Ignore an error here, because we don't care about no expressions!
 	expressions, parseErr := parseExpressionList(tokens)
 	if parseErr != nil {
-		fmt.Println("Invalid expression list -- ", parseErr)
-		allOK = false
+		err = errors.New(fmt.Sprintf("Invalid expression list in loop expression\n%v", parseErr))
 		return
 	}
 
 	if !expect(tokens, TOKEN_SEMICOLON, ";") {
-		fmt.Println("Expected ';' after 'for' expression, got something else")
+		err = errors.New(fmt.Sprintf("Expected ';' after loop expression, got something else"))
 		return
 	}
 
@@ -686,14 +684,14 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	incrAssignment, _ := parseAssignment(tokens)
 
 	if !expect(tokens, TOKEN_CURLY_OPEN, "{") {
-		fmt.Println("Expected '{' after 'for', got something else")
+		err = errors.New(fmt.Sprintf("Expected '{' after loop header, got something else"))
 		return
 	}
 
 	forBlock := parseStatementList(tokens)
 
 	if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
-		fmt.Println("Expected '}' after 'for' block, got something else")
+		err = errors.New(fmt.Sprintf("Expected '}' after loop block, got something else"))
 		return
 	}
 
@@ -701,21 +699,19 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	loop.expressions = expressions
 	loop.incrAssignment = incrAssignment
 	loop.block = forBlock
-	allOK = true
 	return
-
 }
 
 func parseStatementList(tokens *TokenChannel) (block Block) {
 	for {
-		ifStatement, ok := parseCondition(tokens)
-		if ok {
+		ifStatement, parseErr := parseCondition(tokens)
+		if parseErr == nil {
 			block.statements = append(block.statements, ifStatement)
 			continue
 		}
 
-		loopStatement, ok := parseLoop(tokens)
-		if ok {
+		loopStatement, parseErr := parseLoop(tokens)
+		if parseErr == nil {
 			block.statements = append(block.statements, loopStatement)
 			continue
 		}
