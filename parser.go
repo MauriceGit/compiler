@@ -552,17 +552,21 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 	return
 }
 
-func parseExpressionList(tokens *TokenChannel) (expressions []Expression) {
+func parseExpressionList(tokens *TokenChannel) (expressions []Expression, err error) {
 
+	i := 0
 	for {
 		e, parseErr := parseExpression(tokens)
-		if parseErr != nil {
-			// TODO: create error in return!
-			fmt.Println("Expected expression, got something else")
-			//err = errors.New(fmt.Sprintf("Expected expression, got something else"))
 
-			//expressions = nil
-			break
+		if parseErr != nil {
+			// If we don't find any expression, thats fine. Just don't end in ',', thats an error!
+			if i == 0 {
+				return
+			}
+
+			err = errors.New(fmt.Sprintf("Expected expression in expression list after ',', got something else"))
+			expressions = nil
+			return
 		}
 		expressions = append(expressions, e)
 
@@ -570,6 +574,7 @@ func parseExpressionList(tokens *TokenChannel) (expressions []Expression) {
 		if !expect(tokens, TOKEN_SEPARATOR, ",") {
 			break
 		}
+		i += 1
 	}
 	return
 }
@@ -594,7 +599,12 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, allOK bool) {
 	// A list of expressions
 	// TODO: Ignore an error here, because we don't care about no expressions!
 	// We will check that later though!
-	expressions := parseExpressionList(tokens)
+	expressions, parseErr := parseExpressionList(tokens)
+	if parseErr != nil {
+		fmt.Println("Invalid expression list -- ", parseErr)
+		allOK = false
+		return
+	}
 
 	assignment = Assignment{variables, expressions}
 	allOK = true
@@ -668,7 +678,12 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	}
 
 	// TODO: Ignore an error here, because we don't care about no expressions!
-	expressionList := parseExpressionList(tokens)
+	expressionList, parseErr := parseExpressionList(tokens)
+	if parseErr != nil {
+		fmt.Println("Invalid expression list -- ", parseErr)
+		allOK = false
+		return
+	}
 
 	if !expect(tokens, TOKEN_SEMICOLON, ";") {
 		fmt.Println("Expected ';' after 'for' expression, got something else")
