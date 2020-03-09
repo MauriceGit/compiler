@@ -580,37 +580,29 @@ func parseExpressionList(tokens *TokenChannel) (expressions []Expression, err er
 }
 
 // parseBlock parses a list of statements from the tokens.
-func parseAssignment(tokens *TokenChannel) (assignment Assignment, allOK bool) {
-
-	// We expect:
-	// TODO: Block begin
+func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 
 	// A list of variables!
 	variables := parseVarList(tokens)
 	if len(variables) == 0 {
+		err = errors.New(fmt.Sprintf("Expected variable in assignment, got something else"))
 		return
 	}
 
 	// One TOKEN_ASSIGNMENT
 	if !expect(tokens, TOKEN_ASSIGNMENT, "=") {
+		err = errors.New(fmt.Sprintf("Expected '=' in assignment, got something else"))
 		return
 	}
 
-	// A list of expressions
-	// TODO: Ignore an error here, because we don't care about no expressions!
-	// We will check that later though!
 	expressions, parseErr := parseExpressionList(tokens)
 	if parseErr != nil {
-		fmt.Println("Invalid expression list -- ", parseErr)
-		allOK = false
+		err = errors.New(fmt.Sprintf("Invalid expression list in assignment -- %v", parseErr))
 		return
 	}
 
 	assignment = Assignment{variables, expressions}
-	allOK = true
 	return
-
-	// TODO: Block end
 }
 
 // if ::= 'if' exp '{' [stat] '}' [else '{' [stat] '}']
@@ -670,7 +662,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	}
 
 	// We don't care about a valid assignment. If there is none, we are fine too :)
-	assignment, ok := parseAssignment(tokens)
+	assignment, _ := parseAssignment(tokens)
 
 	if !expect(tokens, TOKEN_SEMICOLON, ";") {
 		fmt.Println("Expected ';' after 'for' assignment, got something else")
@@ -678,7 +670,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	}
 
 	// TODO: Ignore an error here, because we don't care about no expressions!
-	expressionList, parseErr := parseExpressionList(tokens)
+	expressions, parseErr := parseExpressionList(tokens)
 	if parseErr != nil {
 		fmt.Println("Invalid expression list -- ", parseErr)
 		allOK = false
@@ -691,10 +683,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	}
 
 	// We are also fine with no assignment!
-	incrAssignment, ok := parseAssignment(tokens)
-	if ok {
-		loop.incrAssignment = incrAssignment
-	}
+	incrAssignment, _ := parseAssignment(tokens)
 
 	if !expect(tokens, TOKEN_CURLY_OPEN, "{") {
 		fmt.Println("Expected '{' after 'for', got something else")
@@ -709,7 +698,8 @@ func parseLoop(tokens *TokenChannel) (loop Loop, allOK bool) {
 	}
 
 	loop.assignment = assignment
-	loop.expressions = expressionList
+	loop.expressions = expressions
+	loop.incrAssignment = incrAssignment
 	loop.block = forBlock
 	allOK = true
 	return
@@ -730,8 +720,8 @@ func parseStatementList(tokens *TokenChannel) (block Block) {
 			continue
 		}
 
-		assignment, ok := parseAssignment(tokens)
-		if ok {
+		assignment, parseErr := parseAssignment(tokens)
+		if parseErr == nil {
 			block.statements = append(block.statements, assignment)
 			continue
 		}
