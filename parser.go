@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 )
@@ -457,81 +458,78 @@ func parseConstant(tokens *TokenChannel) (Constant, bool) {
 }
 
 // parseSimpleExpression just parses variables, constants and '('...')'
-func parseSimpleExpression(tokens *TokenChannel) (expression Expression, allOK bool) {
+func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err error) {
 	// Expect either a constant/variable and you're done
 	if tmpV, ok := parseVariable(tokens); ok {
 		expression = tmpV
-		allOK = true
 		return
 	}
+
 	if tmpC, ok := parseConstant(tokens); ok {
 		expression = tmpC
-		allOK = true
 		return
 	}
 
 	// Or a '(', then continue until ')'. Parenthesis are not included in the AST, as they are implicit!
 	if expect(tokens, TOKEN_PARENTHESIS_OPEN, "(") {
-		e, ok := parseExpression(tokens, true)
-		if !ok {
-			fmt.Printf("Invalid expression in ()\n")
+		e, parseErr := parseExpression(tokens, true)
+		if parseErr != nil {
+			err = errors.New(fmt.Sprintf("Invalid expression in ()"))
 			return
 		}
 		expression = e
-		allOK = true
 
 		// Expect TOKEN_PARENTHESIS_CLOSE
 		if expect(tokens, TOKEN_PARENTHESIS_CLOSE, ")") {
 			return
 		}
 
-		allOK = false
-		fmt.Printf("Expected ')', got something else!")
+		err = errors.New(fmt.Sprintf("Expected ')', got something else"))
 		return
 	}
 
+	err = errors.New(fmt.Sprintf("Invalid simple expression"))
 	return
 }
 
-func parseUnaryExpression(tokens *TokenChannel) (expression Expression, allOK bool) {
+func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err error) {
 	// Check for unary operator before the expression
 	if expect(tokens, TOKEN_OPERATOR, "-") {
-		e, ok := parseExpression(tokens, true)
-		if !ok {
-			fmt.Printf("Invalid Expression.\n")
+		e, parseErr := parseExpression(tokens, true)
+		if parseErr != nil {
+			err = errors.New(fmt.Sprintf("Invalid expression after unary '-'"))
 			return
 		}
 
 		expression = UnaryOp{OP_NEGATIVE, e, TYPE_UNKNOWN}
-		allOK = true
 		return
 	}
 	// Check for unary operator before the expression
 	if expect(tokens, TOKEN_OPERATOR, "!") {
-		e, ok := parseExpression(tokens, true)
-		if !ok {
-			fmt.Printf("Invalid Expression.\n")
+		e, parseErr := parseExpression(tokens, true)
+		if parseErr != nil {
+			err = errors.New(fmt.Sprintf("Invalid expression after unary '!'"))
 			return
 		}
 
 		expression = UnaryOp{OP_NOT, e, TYPE_UNKNOWN}
-		allOK = true
 		return
 	}
+
+	err = errors.New(fmt.Sprintf("Invalid unary expression"))
 	return
 }
 
-func parseExpression(tokens *TokenChannel, required bool) (expression Expression, allOK bool) {
+// TODO: Remove required flag by just ignoring errors when applicable
+func parseExpression(tokens *TokenChannel, required bool) (expression Expression, err error) {
 
-	unaryExpression, ok := parseUnaryExpression(tokens)
-	if ok {
+	unaryExpression, parseErr := parseUnaryExpression(tokens)
+	if parseErr == nil {
 		expression = unaryExpression
 	} else {
-		simpleExpression, ok := parseSimpleExpression(tokens)
-		if !ok {
-			if required {
-				fmt.Printf("Invalid but expected Simple Expression!\n")
-			}
+		simpleExpression, parseErr := parseSimpleExpression(tokens)
+		if parseErr != nil {
+			err = errors.New(fmt.Sprintf("Simple expression expected, got something else"))
 			return
 		}
 		expression = simpleExpression
@@ -542,9 +540,9 @@ func parseExpression(tokens *TokenChannel, required bool) (expression Expression
 	if t, ok := expectType(tokens, TOKEN_OPERATOR); ok {
 
 		// Create and return binary operation expression!
-		rightHandExpr, ok := parseExpression(tokens, true)
-		if !ok {
-			fmt.Printf("Invalid expression on righthand side of binary operation!\n")
+		rightHandExpr, parseErr := parseExpression(tokens, true)
+		if parseErr != nil {
+			err = errors.New(fmt.Sprintf("Invalid expression on right hand side of binary operation"))
 			return
 		}
 		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, TYPE_UNKNOWN}
@@ -552,18 +550,20 @@ func parseExpression(tokens *TokenChannel, required bool) (expression Expression
 	}
 
 	// We just return the simpleExpression or unaryExpression and are happy
-	allOK = true
 	return
 }
 
 func parseExpressionList(tokens *TokenChannel, required bool) (expressions []Expression) {
+
 	for {
-		e, ok := parseExpression(tokens, required)
-		if !ok {
+		e, parseErr := parseExpression(tokens, required)
+		if parseErr != nil {
 			if required {
-				fmt.Println("Expected expression, got something else!")
+				// TODO: create error in return!
+				fmt.Println("Expected expression, got something else")
+				//err = errors.New(fmt.Sprintf("Expected expression, got something else"))
 			}
-			expressions = nil
+			//expressions = nil
 			break
 		}
 		expressions = append(expressions, e)
@@ -610,8 +610,8 @@ func parseCondition(tokens *TokenChannel) (condition Condition, allOK bool) {
 		return
 	}
 
-	expression, ok := parseExpression(tokens, true)
-	if !ok {
+	expression, parseErr := parseExpression(tokens, true)
+	if parseErr != nil {
 		fmt.Println("Expected expression after 'if' but got something else")
 		return
 	}
