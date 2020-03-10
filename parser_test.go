@@ -110,10 +110,13 @@ func compareASTs(generated AST, expected AST) (bool, string) {
 func testAST(code []byte, expected AST, t *testing.T) {
 	tokenChan := make(chan Token, 1)
 	go tokenize(code, tokenChan)
-	generated := parse(tokenChan)
+	generated, err := parse(tokenChan)
+	if err != nil {
+		t.Errorf("Parsing error: %v", err)
+	}
 
 	if b, e := compareASTs(generated, expected); !b {
-		t.Errorf("Trees don't match: %v\n", e)
+		t.Errorf("Trees don't match: %v", e)
 	}
 }
 

@@ -333,14 +333,14 @@ func (tc *TokenChannel) next() Token {
 	}
 	v, ok := <-tc.c
 	if !ok {
-		fmt.Println("Channel closed unexpectedly.")
+		fmt.Println("Error: Channel closed unexpectedly.")
 	}
 	return v
 }
 
 func (tc *TokenChannel) pushBack(t Token) {
 	if tc.isCached {
-		fmt.Println("Can only cache one item at a time.")
+		fmt.Println("Error: Can only cache one item at a time.")
 		return
 	}
 	tc.token = t
@@ -412,12 +412,19 @@ func parseVariable(tokens *TokenChannel) (Variable, bool) {
 	return Variable{}, false
 }
 
-func parseVarList(tokens *TokenChannel) (variables []Variable) {
+func parseVarList(tokens *TokenChannel) (variables []Variable, err error) {
+	i := 0
 	for {
 		v, ok := parseVariable(tokens)
 		if !ok {
+
+			// If we don't find any variable, thats fine. Just don't end in ',', thats an error!
+			if i == 0 {
+				return
+			}
+			err = fmt.Errorf("%w - Variable list ends with ','", ErrCritical)
 			variables = nil
-			break
+			return
 		}
 		variables = append(variables, v)
 
@@ -425,7 +432,7 @@ func parseVarList(tokens *TokenChannel) (variables []Variable) {
 		if !expect(tokens, TOKEN_SEPARATOR, ",") {
 			break
 		}
-
+		i += 1
 	}
 	return
 }
@@ -477,7 +484,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 	if expect(tokens, TOKEN_PARENTHESIS_OPEN, "(") {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
-			err = errors.New(fmt.Sprintf("Invalid expression in ()"))
+			err = fmt.Errorf("%w - Invalid expression in ()", ErrNormal)
 			return
 		}
 		expression = e
@@ -487,11 +494,11 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 			return
 		}
 
-		err = errors.New(fmt.Sprintf("Expected ')', got something else"))
+		err = fmt.Errorf("%w - Expected ')', got something else", ErrCritical)
 		return
 	}
 
-	err = errors.New(fmt.Sprintf("Invalid simple expression"))
+	err = fmt.Errorf("%w - Invalid simple expression", ErrNormal)
 	return
 }
 
@@ -500,7 +507,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 	if expect(tokens, TOKEN_OPERATOR, "-") {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
-			err = errors.New(fmt.Sprintf("Invalid expression after unary '-'"))
+			err = fmt.Errorf("%w - Invalid expression after unary '-'", ErrCritical)
 			return
 		}
 
@@ -511,7 +518,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 	if expect(tokens, TOKEN_OPERATOR, "!") {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
-			err = errors.New(fmt.Sprintf("Invalid expression after unary '!'"))
+			err = fmt.Errorf("%w - Invalid expression after unary '!'", ErrCritical)
 			return
 		}
 
@@ -519,7 +526,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 		return
 	}
 
-	err = errors.New(fmt.Sprintf("Invalid unary expression"))
+	err = fmt.Errorf("%w - Invalid unary expression", ErrNormal)
 	return
 }
 
@@ -531,7 +538,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 	} else {
 		simpleExpression, parseErr := parseSimpleExpression(tokens)
 		if parseErr != nil {
-			err = errors.New(fmt.Sprintf("Simple expression expected, got something else"))
+			err = fmt.Errorf("%w - Simple expression expected, got something else", ErrNormal)
 			return
 		}
 		expression = simpleExpression
@@ -544,7 +551,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 		// Create and return binary operation expression!
 		rightHandExpr, parseErr := parseExpression(tokens)
 		if parseErr != nil {
-			err = errors.New(fmt.Sprintf("Invalid expression on right hand side of binary operation"))
+			err = fmt.Errorf("%w - Invalid expression on right hand side of binary operation", ErrCritical)
 			return
 		}
 		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, TYPE_UNKNOWN}
@@ -567,7 +574,7 @@ func parseExpressionList(tokens *TokenChannel) (expressions []Expression, err er
 				return
 			}
 
-			err = errors.New(fmt.Sprintf("Expected expression in expression list after ',', got something else"))
+			err = fmt.Errorf("%w - Expression list ends in ','", ErrCritical)
 			expressions = nil
 			return
 		}
@@ -586,21 +593,25 @@ func parseExpressionList(tokens *TokenChannel) (expressions []Expression, err er
 func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 
 	// A list of variables!
-	variables := parseVarList(tokens)
+	variables, parseErr := parseVarList(tokens)
 	if len(variables) == 0 {
-		err = errors.New(fmt.Sprintf("Expected variable in assignment, got something else"))
+		err = fmt.Errorf("%w - Expected variable in assignment, got something else", parseErr)
+		return
+	}
+	if parseErr != nil {
+		err = fmt.Errorf("%w - Parsing the variable list for an assignment resulted in an error", parseErr)
 		return
 	}
 
 	// One TOKEN_ASSIGNMENT
 	if !expect(tokens, TOKEN_ASSIGNMENT, "=") {
-		err = errors.New(fmt.Sprintf("Expected '=' in assignment, got something else"))
+		err = fmt.Errorf("%w - Expected '=' in assignment, got something else", ErrCritical)
 		return
 	}
 
 	expressions, parseErr := parseExpressionList(tokens)
-	if parseErr != nil {
-		err = errors.New(fmt.Sprintf("Invalid expression list in assignment -- %v", parseErr))
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid expression list in assignment", parseErr)
 		return
 	}
 
@@ -612,29 +623,29 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 
 	if !expect(tokens, TOKEN_KEYWORD, "if") {
-		err = errors.New(fmt.Sprintf("Expected 'if' keyword for condition, got something else"))
+		err = fmt.Errorf("%w - Expected 'if' keyword for condition, got something else", ErrNormal)
 		return
 	}
 
 	expression, parseErr := parseExpression(tokens)
 	if parseErr != nil {
-		err = errors.New(fmt.Sprintf("Expected expression after 'if' keyword\n%v", parseErr))
+		err = fmt.Errorf("%w, %w - Expected expression after 'if' keyword", ErrCritical, parseErr)
 		return
 	}
 
 	if !expect(tokens, TOKEN_CURLY_OPEN, "{") {
-		err = errors.New(fmt.Sprintf("Expected '{' after condition, got something else"))
+		err = fmt.Errorf("%w - Expected '{' after condition, got something else", ErrCritical)
 		return
 	}
 
 	statements, parseErr := parseStatementList(tokens)
 	if parseErr != nil {
-		err = fmt.Errorf("%w, Error while parsing the condition if block", parseErr)
+		err = fmt.Errorf("%w - Invalid statement list in condition block", parseErr)
 		return
 	}
 
 	if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
-		err = errors.New(fmt.Sprintf("Expected '}' after condition block, got something else"))
+		err = fmt.Errorf("%w - Expected '}' after condition block, got something else", ErrCritical)
 		return
 	}
 
@@ -644,18 +655,18 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	// Just in case we have an else, handle it!
 	if expect(tokens, TOKEN_KEYWORD, "else") {
 		if !expect(tokens, TOKEN_CURLY_OPEN, "{") {
-			err = errors.New(fmt.Sprintf("Expected '{' after 'else' in condition, got something else"))
+			err = fmt.Errorf("%w - Expected '{' after 'else' in condition, got something else", ErrCritical)
 			return
 		}
 
 		elseStatements, parseErr := parseStatementList(tokens)
 		if parseErr != nil {
-			err = fmt.Errorf("%w, Error while parsing the condition else block", parseErr)
+			err = fmt.Errorf("%w - Invalid statement list in condition else block", parseErr)
 			return
 		}
 
 		if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
-			err = errors.New(fmt.Sprintf("Expected '}' after 'eĺse' block in condition, got something else"))
+			err = fmt.Errorf("%w - Expected '}' after 'else' block in condition, got something else", ErrCritical)
 			return
 		}
 
@@ -668,45 +679,53 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 
 	if !expect(tokens, TOKEN_KEYWORD, "for") {
-		err = errors.New(fmt.Sprintf("Expected 'for' keyword for loop, got something else"))
+		err = fmt.Errorf("%w - Expected 'for' keyword for loop, got something else", ErrNormal)
 		return
 	}
 
 	// We don't care about a valid assignment. If there is none, we are fine too :)
-	assignment, _ := parseAssignment(tokens)
+	assignment, parseErr := parseAssignment(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid assignment in loop", parseErr)
+		return
+	}
 
 	if !expect(tokens, TOKEN_SEMICOLON, ";") {
-		err = errors.New(fmt.Sprintf("Expected ';' after loop assignment, got something else"))
+		err = fmt.Errorf("%w - Expected ';' after loop assignment, got something else", ErrCritical)
 		return
 	}
 
 	expressions, parseErr := parseExpressionList(tokens)
 	if parseErr != nil {
-		err = errors.New(fmt.Sprintf("Invalid expression list in loop expression\n%v", parseErr))
+		err = fmt.Errorf("%w - Invalid expression list in loop expression", parseErr)
 		return
 	}
 
 	if !expect(tokens, TOKEN_SEMICOLON, ";") {
-		err = errors.New(fmt.Sprintf("Expected ';' after loop expression, got something else"))
+		err = fmt.Errorf("%w - Expected ';' after loop expression, got something else", ErrCritical)
 		return
 	}
 
 	// We are also fine with no assignment!
-	incrAssignment, _ := parseAssignment(tokens)
+	incrAssignment, parseErr := parseAssignment(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid increment assignment in loop", parseErr)
+		return
+	}
 
 	if !expect(tokens, TOKEN_CURLY_OPEN, "{") {
-		err = errors.New(fmt.Sprintf("Expected '{' after loop header, got something else"))
+		err = fmt.Errorf("%w - Expected '{' after loop header, got something else", ErrCritical)
 		return
 	}
 
 	forBlock, parseErr := parseStatementList(tokens)
 	if parseErr != nil {
-		err = fmt.Errorf("%w, Error while parsing the loop block", parseErr)
+		err = fmt.Errorf("%w - Error while parsing loop block", parseErr)
 		return
 	}
 
 	if !expect(tokens, TOKEN_CURLY_CLOSE, "}") {
-		err = errors.New(fmt.Sprintf("Expected '}' after loop block, got something else"))
+		err = fmt.Errorf("%w - Expected '}' after loop block, got something else", ErrCritical)
 		return
 	}
 
@@ -755,18 +774,14 @@ func parseStatementList(tokens *TokenChannel) (block Block, err error) {
 	return
 }
 
-func parse(tokens chan Token) AST {
+func parse(tokens chan Token) (ast AST, err error) {
 
 	var tokenChan TokenChannel
 	tokenChan.c = tokens
 
-	var ast AST
 	block, parseErr := parseStatementList(&tokenChan)
-	if parseErr != nil {
-		//err = fmt.Errorf("%w, Error while parsing the main program block", parseErr)
-		return ast
-	}
+	err = parseErr
 	ast.block = block
 
-	return ast
+	return
 }
