@@ -75,20 +75,36 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		if tLeft != TYPE_BOOL {
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs bool, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
-		return binaryOp, TYPE_BOOL, nil
+		//return binaryOp, TYPE_BOOL, nil
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT {
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
-		return binaryOp, tLeft, nil
+		//return binaryOp, tLeft, nil
 	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LESS, OP_GREATER:
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float/string, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
-		return binaryOp, TYPE_BOOL, nil
+		//return binaryOp, TYPE_BOOL, nil
 	default:
 		return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v !/not expected, got: %v", ErrCritical, binaryOp.operator, tLeft)
 	}
+
+	// Re-order expression, if the expression is not fixed and the priority is of the operator is not according to the priority
+	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
+	if tmpE, ok := binaryOp.rightExpr.(BinaryOp); ok {
+		if binaryOp.operator.priority() < tmpE.operator.priority() && !tmpE.fixed {
+			fmt.Println("Wrong operator order.")
+
+			newRoot := tmpE
+			newChild := binaryOp
+			newChild.rightExpr = tmpE.leftExpr
+			newRoot.leftExpr = newChild
+			binaryOp = newRoot
+
+		}
+	}
+
 	return binaryOp, tLeft, nil
 }
 

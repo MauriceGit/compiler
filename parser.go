@@ -24,6 +24,13 @@ binop	::= '+' | '-' | '*' | '/' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' |
 unop	::= '-' | '!'
 
 
+Operator priority (Descending priority!):
+
+1: 	'*', '/'
+2: 	'+', '-'
+3:	'==', '!=', '<=', '>=', '<', '>'
+4:	'&&', '||'
+
 */
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -123,6 +130,9 @@ type BinaryOp struct {
 	leftExpr  Expression
 	rightExpr Expression
 	opType    Type
+	// fixed means, that the whole binary operation is in '(' ')' and should not be combined differently
+	// independent on operator priority!
+	fixed bool
 }
 type UnaryOp struct {
 	operator Operator
@@ -231,7 +241,14 @@ func (c Constant) String() string {
 	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
 }
 func (b BinaryOp) String() string {
-	return fmt.Sprintf("%v %v %v", b.leftExpr, b.operator, b.rightExpr)
+
+	start, end := "", ""
+	if b.fixed {
+		start = "("
+		end = ")"
+	}
+
+	return fmt.Sprintf("%v%v %v %v%v", start, b.leftExpr, b.operator, b.rightExpr, end)
 }
 func (u UnaryOp) String() string {
 	return fmt.Sprintf("%v(%v)", u.operator, u.expr)
@@ -353,6 +370,27 @@ func (tc *TokenChannel) pushBack(t Token) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // PARSER IMPLEMENTATION
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Operator priority (Descending priority!):
+// 1: 	'*', '/'
+// 2: 	'+', '-'
+// 3:	'==', '!=', '<=', '>=', '<', '>'
+// 4:	'&&', '||'
+func (o Operator) priority() int {
+	switch o {
+	case OP_MULT, OP_DIV:
+		return 1
+	case OP_PLUS, OP_MINUS:
+		return 2
+	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LESS, OP_GREATER:
+		return 3
+	case OP_AND, OP_OR:
+		return 4
+	default:
+		fmt.Printf("Unknown operator: %v\n", o)
+	}
+	return 100
+}
 
 func getOperatorType(o string) Operator {
 	switch o {
@@ -490,6 +528,12 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 			err = fmt.Errorf("%w - Invalid expression in ()", ErrNormal)
 			return
 		}
+		if tmpE, ok := e.(BinaryOp); ok {
+			tmpE.fixed = true
+			// We need to reassign the variable for the 'true' to hold instead of editing the local copy
+			e = tmpE
+
+		}
 		expression = e
 
 		// Expect TOKEN_PARENTHESIS_CLOSE
@@ -557,7 +601,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 			err = fmt.Errorf("%w - Invalid expression on right hand side of binary operation", ErrCritical)
 			return
 		}
-		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, TYPE_UNKNOWN}
+		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, TYPE_UNKNOWN, false}
 		expression = finalExpression
 	}
 
