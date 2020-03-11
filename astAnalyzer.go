@@ -96,11 +96,10 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		if binaryOp.operator.priority() < tmpE.operator.priority() && !tmpE.fixed {
 			fmt.Println("Wrong operator order.")
 
-			newRoot := tmpE
 			newChild := binaryOp
 			newChild.rightExpr = tmpE.leftExpr
-			newRoot.leftExpr = newChild
-			binaryOp = newRoot
+			tmpE.leftExpr = newChild
+			binaryOp = tmpE
 
 		}
 	}

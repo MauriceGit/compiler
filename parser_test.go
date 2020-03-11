@@ -139,13 +139,13 @@ func TestParserExpression1(t *testing.T) {
 												OP_NEGATIVE, BinaryOp{
 													OP_MULT, Constant{TYPE_INT, "-8"}, UnaryOp{
 														OP_NEGATIVE, Constant{TYPE_FLOAT, "10000.1234"}, TYPE_UNKNOWN,
-													}, TYPE_UNKNOWN,
+													}, TYPE_UNKNOWN, false,
 												}, TYPE_UNKNOWN,
-											}, TYPE_UNKNOWN,
+											}, TYPE_UNKNOWN, false,
 										}, TYPE_UNKNOWN,
-									}, TYPE_UNKNOWN,
-								}, TYPE_UNKNOWN,
-							}, TYPE_UNKNOWN,
+									}, TYPE_UNKNOWN, false,
+								}, TYPE_UNKNOWN, false,
+							}, TYPE_UNKNOWN, false,
 						},
 					},
 				},
@@ -177,16 +177,16 @@ func TestParserExpression2(t *testing.T) {
 												OP_NE, BinaryOp{
 													OP_GREATER,
 													Variable{TYPE_UNKNOWN, "false2", false},
-													BinaryOp{OP_GE, Variable{TYPE_UNKNOWN, "variable", false}, Constant{TYPE_FLOAT, "5.0"}, TYPE_UNKNOWN},
-													TYPE_UNKNOWN,
+													BinaryOp{OP_GE, Variable{TYPE_UNKNOWN, "variable", false}, Constant{TYPE_FLOAT, "5.0"}, TYPE_UNKNOWN, false},
+													TYPE_UNKNOWN, false,
 												},
 												Constant{TYPE_BOOL, "true"},
-												TYPE_UNKNOWN,
-											}, TYPE_UNKNOWN,
-										}, TYPE_UNKNOWN,
-									}, TYPE_UNKNOWN,
-								}, TYPE_UNKNOWN,
-							}, TYPE_UNKNOWN,
+												TYPE_UNKNOWN, false,
+											}, TYPE_UNKNOWN, false,
+										}, TYPE_UNKNOWN, false,
+									}, TYPE_UNKNOWN, false,
+								}, TYPE_UNKNOWN, false,
+							}, TYPE_UNKNOWN, false,
 						},
 					},
 				},
@@ -212,7 +212,7 @@ func TestParserIf(t *testing.T) {
 		Block{
 			[]Statement{
 				Condition{
-					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN},
+					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN, false},
 					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, SymbolTable{}},
 					Block{[]Statement{}, SymbolTable{}},
 				},
@@ -243,7 +243,7 @@ func TestParserIfElse(t *testing.T) {
 		Block{
 			[]Statement{
 				Condition{
-					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN},
+					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN, false},
 					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, SymbolTable{}},
 					Block{[]Statement{Assignment{
 						[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
@@ -309,7 +309,7 @@ func TestParserFor1(t *testing.T) {
 					Block{[]Statement{
 						Assignment{
 							[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
-							[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "a", false}, Constant{TYPE_INT, "1"}, TYPE_UNKNOWN}},
+							[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "a", false}, Constant{TYPE_INT, "1"}, TYPE_UNKNOWN, false}},
 						},
 					}, SymbolTable{}},
 				},
@@ -373,14 +373,14 @@ func TestParserFor3(t *testing.T) {
 						[]Variable{Variable{TYPE_UNKNOWN, "i", false}, Variable{TYPE_UNKNOWN, "j", false}},
 						[]Expression{Constant{TYPE_INT, "0"}, Constant{TYPE_INT, "1"}},
 					},
-					[]Expression{BinaryOp{OP_LESS, Variable{TYPE_UNKNOWN, "i", false}, Constant{TYPE_INT, "10"}, TYPE_UNKNOWN}},
+					[]Expression{BinaryOp{OP_LESS, Variable{TYPE_UNKNOWN, "i", false}, Constant{TYPE_INT, "10"}, TYPE_UNKNOWN, false}},
 					Assignment{
 						[]Variable{Variable{TYPE_UNKNOWN, "i", false}},
-						[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "i", false}, Constant{TYPE_INT, "1"}, TYPE_UNKNOWN}},
+						[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "i", false}, Constant{TYPE_INT, "1"}, TYPE_UNKNOWN, false}},
 					},
 					Block{[]Statement{
 						Condition{
-							BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "b", false}, Variable{TYPE_UNKNOWN, "a", false}, TYPE_UNKNOWN},
+							BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "b", false}, Variable{TYPE_UNKNOWN, "a", false}, TYPE_UNKNOWN, false},
 							Block{[]Statement{
 								Loop{
 									Assignment{[]Variable{}, []Expression{}},

@@ -247,7 +247,6 @@ func (b BinaryOp) String() string {
 		start = "("
 		end = ")"
 	}
-
 	return fmt.Sprintf("%v%v %v %v%v", start, b.leftExpr, b.operator, b.rightExpr, end)
 }
 func (u UnaryOp) String() string {
