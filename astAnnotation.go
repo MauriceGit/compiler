@@ -117,27 +117,6 @@ func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Exp
 	return expression, TYPE_UNKNOWN, fmt.Errorf("%w - Unknown type for expression %v", ErrCritical, expression)
 }
 
-//func pushNewVars(vars *map[string]Type, newVars map[string]Type) (err error) {
-//	for k, v := range newVars {
-//		if _, ok := (*vars)[k]; ok {
-//			err = fmt.Errorf("%w - You cannot shadow the same variable multiple times within one block: %v", ErrCritical, k)
-//		}
-//		(*vars)[k] = v
-//	}
-//	return
-//}
-
-//func popVars(vars *map[string][]Type, toBeRemovedVars map[string]Type) {
-//	for k, _ := range toBeRemovedVars {
-//		if len((*vars)[k]) > 0 {
-//			(*vars)[k] = (*vars)[k][:len((*vars)[k])-1]
-//			if len((*vars)[k]) == 0 {
-//				delete(*vars, k)
-//			}
-//		}
-//	}
-//}
-
 func analyzeTypeCondition(condition Condition, symbolTable *SymbolTable) (Condition, error) {
 
 	// This expression MUST come out as boolean!
