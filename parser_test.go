@@ -150,9 +150,9 @@ func TestParserExpression1(t *testing.T) {
 					},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)
@@ -191,9 +191,9 @@ func TestParserExpression2(t *testing.T) {
 					},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)
@@ -213,17 +213,17 @@ func TestParserIf(t *testing.T) {
 			[]Statement{
 				Condition{
 					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN},
-					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, nil, nil},
-					Block{[]Statement{}, nil, nil},
+					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, SymbolTable{}},
+					Block{[]Statement{}, SymbolTable{}},
 				},
 				Assignment{
 					[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
 					[]Expression{Constant{TYPE_INT, "1"}},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)
@@ -244,16 +244,16 @@ func TestParserIfElse(t *testing.T) {
 			[]Statement{
 				Condition{
 					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN},
-					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, nil, nil},
+					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, SymbolTable{}},
 					Block{[]Statement{Assignment{
 						[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
 						[]Expression{Constant{TYPE_INT, "1"}},
-					}}, nil, nil},
+					}}, SymbolTable{}},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)
@@ -283,9 +283,9 @@ func TestParserAssignment(t *testing.T) {
 					[]Expression{Constant{TYPE_INT, "1"}, Constant{TYPE_INT, "2"}, Constant{TYPE_INT, "3"}},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)
@@ -311,12 +311,12 @@ func TestParserFor1(t *testing.T) {
 							[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
 							[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "a", false}, Constant{TYPE_INT, "1"}, TYPE_UNKNOWN}},
 						},
-					}, nil, nil},
+					}, SymbolTable{}},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)
@@ -342,12 +342,12 @@ func TestParserFor2(t *testing.T) {
 							[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
 							[]Expression{Constant{TYPE_INT, "0"}},
 						},
-					}, nil, nil},
+					}, SymbolTable{}},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)
@@ -391,17 +391,17 @@ func TestParserFor3(t *testing.T) {
 											[]Variable{Variable{TYPE_UNKNOWN, "c", false}},
 											[]Expression{Constant{TYPE_INT, "6"}},
 										},
-									}, nil, nil},
+									}, SymbolTable{}},
 								},
-							}, nil, nil},
-							Block{[]Statement{}, nil, nil},
+							}, SymbolTable{}},
+							Block{[]Statement{}, SymbolTable{}},
 						},
-					}, nil, nil},
+					}, SymbolTable{}},
 				},
 			},
-			nil, nil,
+			SymbolTable{},
 		},
-		nil,
+		SymbolTable{},
 	}
 
 	testAST(code, expected, t)

@@ -4,8 +4,32 @@ import (
 	"fmt"
 )
 
-func annotateTypeUnaryOp(unaryOp UnaryOp, vars map[string][]Type) (Expression, Type, error) {
-	expression, t, err := annotateTypeExpression(unaryOp.expr, vars)
+// get goes through all symbol tables recursively and looks for an entry for the given variable name v
+func (s *SymbolTable) get(v string) (SymbolEntry, bool) {
+	if s == nil {
+		return SymbolEntry{}, false
+	}
+	if variable, ok := s.table[v]; ok {
+		return variable, true
+	}
+	return s.parent.get(v)
+}
+
+// getLocal only searches the immediate local symbol table
+func (s *SymbolTable) getLocal(v string) (SymbolEntry, bool) {
+	if s == nil {
+		return SymbolEntry{}, false
+	}
+	se, ok := s.table[v]
+	return se, ok
+}
+
+func (s *SymbolTable) set(v string, t Type) {
+	s.table[v] = SymbolEntry{t}
+}
+
+func analyzeTypeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, Type, error) {
+	expression, t, err := analyzeTypeExpression(unaryOp.expr, symbolTable)
 	if err != nil {
 		return unaryOp, t, err
 	}
@@ -26,14 +50,14 @@ func annotateTypeUnaryOp(unaryOp UnaryOp, vars map[string][]Type) (Expression, T
 	return nil, TYPE_UNKNOWN, fmt.Errorf("%w - Unknown unary expression: %v", ErrCritical, unaryOp)
 }
 
-func annotateTypeBinaryOp(binaryOp BinaryOp, vars map[string][]Type) (Expression, Type, error) {
-	leftExpression, tLeft, err := annotateTypeExpression(binaryOp.leftExpr, vars)
+func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, Type, error) {
+	leftExpression, tLeft, err := analyzeTypeExpression(binaryOp.leftExpr, symbolTable)
 	if err != nil {
 		return binaryOp, tLeft, err
 	}
 	binaryOp.leftExpr = leftExpression
 
-	rightExpression, tRight, err := annotateTypeExpression(binaryOp.rightExpr, vars)
+	rightExpression, tRight, err := analyzeTypeExpression(binaryOp.rightExpr, symbolTable)
 	if err != nil {
 		return binaryOp, tRight, err
 	}
@@ -68,56 +92,56 @@ func annotateTypeBinaryOp(binaryOp BinaryOp, vars map[string][]Type) (Expression
 	return binaryOp, tLeft, nil
 }
 
-func annotateTypeExpression(expression Expression, vars map[string][]Type) (Expression, Type, error) {
+func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Expression, Type, error) {
 
 	switch e := expression.(type) {
 	case Constant:
 		return e, e.cType, nil
 	case Variable:
-		t, ok := vars[e.vName]
-		if !ok || len(t) == 0 {
+
+		// Lookup variable type and annotate node.
+		if vTable, ok := symbolTable.get(e.vName); ok {
+			e.vType = vTable.sType
+		} else {
 			return e, TYPE_UNKNOWN, fmt.Errorf("%w - Variable type for %v unknown!", ErrCritical, e)
 		}
-
-		// annotate with type!
-		e.vType = t[len(t)-1]
 
 		// Always access the very last entry for variables!
 		return e, e.vType, nil
 	case UnaryOp:
-		return annotateTypeUnaryOp(e, vars)
+		return analyzeTypeUnaryOp(e, symbolTable)
 	case BinaryOp:
-		return annotateTypeBinaryOp(e, vars)
+		return analyzeTypeBinaryOp(e, symbolTable)
 	}
 
 	return expression, TYPE_UNKNOWN, fmt.Errorf("%w - Unknown type for expression %v", ErrCritical, expression)
 }
 
-func pushNewVars(vars *map[string]Type, newVars map[string]Type) (err error) {
-	for k, v := range newVars {
-		if _, ok := (*vars)[k]; ok {
-			err = fmt.Errorf("%w - You cannot shadow the same variable multiple times within one block: %v", ErrCritical, k)
-		}
-		(*vars)[k] = v
-	}
-	return
-}
+//func pushNewVars(vars *map[string]Type, newVars map[string]Type) (err error) {
+//	for k, v := range newVars {
+//		if _, ok := (*vars)[k]; ok {
+//			err = fmt.Errorf("%w - You cannot shadow the same variable multiple times within one block: %v", ErrCritical, k)
+//		}
+//		(*vars)[k] = v
+//	}
+//	return
+//}
 
-func popVars(vars *map[string][]Type, toBeRemovedVars map[string]Type) {
-	for k, _ := range toBeRemovedVars {
-		if len((*vars)[k]) > 0 {
-			(*vars)[k] = (*vars)[k][:len((*vars)[k])-1]
-			if len((*vars)[k]) == 0 {
-				delete(*vars, k)
-			}
-		}
-	}
-}
+//func popVars(vars *map[string][]Type, toBeRemovedVars map[string]Type) {
+//	for k, _ := range toBeRemovedVars {
+//		if len((*vars)[k]) > 0 {
+//			(*vars)[k] = (*vars)[k][:len((*vars)[k])-1]
+//			if len((*vars)[k]) == 0 {
+//				delete(*vars, k)
+//			}
+//		}
+//	}
+//}
 
-func annotateTypeCondition(condition Condition, vars map[string][]Type) (Condition, error) {
+func analyzeTypeCondition(condition Condition, symbolTable *SymbolTable) (Condition, error) {
 
 	// This expression MUST come out as boolean!
-	e, t, err := annotateTypeExpression(condition.expression, vars)
+	e, t, err := analyzeTypeExpression(condition.expression, symbolTable)
 	if err != nil {
 		return condition, err
 	}
@@ -126,13 +150,13 @@ func annotateTypeCondition(condition Condition, vars map[string][]Type) (Conditi
 	}
 	condition.expression = e
 
-	block, err := annotateTypeBlock(condition.block, vars)
+	block, err := analyzeTypeBlock(condition.block, symbolTable, nil)
 	if err != nil {
 		return condition, err
 	}
 	condition.block = block
 
-	elseBlock, err := annotateTypeBlock(condition.elseBlock, vars)
+	elseBlock, err := analyzeTypeBlock(condition.elseBlock, symbolTable, nil)
 	if err != nil {
 		return condition, err
 	}
@@ -141,23 +165,21 @@ func annotateTypeCondition(condition Condition, vars map[string][]Type) (Conditi
 	return condition, nil
 }
 
-func annotateTypeLoop(loop Loop, vars map[string][]Type) (Loop, error) {
-	// Everything that happens in a loop, stays in a loop ;)
-	localShadowVars := make(map[string]Type, 0)
+func analyzeTypeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 
-	defer popVars(&vars, localShadowVars)
+	nextSymbolTable := SymbolTable{
+		make(map[string]SymbolEntry, 0),
+		symbolTable,
+	}
 
-	assignment, assignmentVars, err := annotateTypeAssignment(loop.assignment, vars)
+	assignment, err := analyzeTypeAssignment(loop.assignment, &nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
 	loop.assignment = assignment
 
-	// Ignore errors because we basically have a new block anyway.
-	pushNewVars(&localShadowVars, assignmentVars)
-
 	for i, e := range loop.expressions {
-		expression, t, err := annotateTypeExpression(e, vars)
+		expression, t, err := analyzeTypeExpression(e, &nextSymbolTable)
 		if err != nil {
 			return loop, err
 		}
@@ -168,16 +190,13 @@ func annotateTypeLoop(loop Loop, vars map[string][]Type) (Loop, error) {
 		loop.expressions[i] = expression
 	}
 
-	assignment, incrVars, err := annotateTypeAssignment(loop.incrAssignment, vars)
+	incrAssignment, err := analyzeTypeAssignment(loop.incrAssignment, &nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
-	loop.incrAssignment = assignment
+	loop.incrAssignment = incrAssignment
 
-	// Ignore errors because we basically have a new block anyway.
-	pushNewVars(&localShadowVars, incrVars)
-
-	statements, err := annotateTypeBlock(loop.block, vars)
+	statements, err := analyzeTypeBlock(loop.block, symbolTable, &nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
@@ -188,80 +207,83 @@ func annotateTypeLoop(loop Loop, vars map[string][]Type) (Loop, error) {
 
 // Returns newly created variables and variables that should shadow others!
 // This is just for housekeeping and removing them later!!!!
-// All new variables (and shadow ones) are also already added into the 'vars' map!!!!!
-func annotateTypeAssignment(assignment Assignment, vars map[string][]Type) (Assignment, map[string]Type, error) {
+// All new variables (and shadow ones) are updated/written to the symbol table
+func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignment, error) {
 
-	shadowVars := make(map[string]Type, 0)
 	// Populate/overwrite the dictionary of variables for futher statements :)
 	if len(assignment.variables) != len(assignment.expressions) {
-		return assignment, nil, fmt.Errorf("%w - Assignment %v - variables and expression count need to match", ErrCritical, assignment)
+		return assignment, fmt.Errorf("%w - Assignment %v - variables and expression count need to match", ErrCritical, assignment)
 	}
 
 	for i, v := range assignment.variables {
 
-		expression, t, err := annotateTypeExpression(assignment.expressions[i], vars)
+		expression, expressionType, err := analyzeTypeExpression(assignment.expressions[i], symbolTable)
 		if err != nil {
-			return assignment, nil, err
+			return assignment, fmt.Errorf("%w - Invalid expression in assignment", err)
 		}
 
-		if vCache, ok := vars[v.vName]; ok {
-			if !v.vShadow && vCache[len(vCache)-1] != t {
-				return assignment, nil, fmt.Errorf("%w - Variable %v, type %v already exists and is assigned a wrong type %v", ErrCritical, v, vCache[len(vCache)-1], t)
+		// Shadowing is only allowed in a different block, not right after the first variable, to avoid confusion and complicated
+		// variable handling
+		if _, ok := symbolTable.getLocal(v.vName); ok && v.vShadow {
+			return assignment, fmt.Errorf("%w - Variable %v is shadowing in the same block. This is not allowed", ErrCritical, v.vName)
+		}
+
+		// Only, if the variable already exists and we're not trying to shadow it!
+		if vTable, ok := symbolTable.get(v.vName); ok {
+			if !v.vShadow {
+				if vTable.sType != expressionType {
+					return assignment, fmt.Errorf(
+						"%w - Assignment type missmatch between variable %v and expression %v != %v", ErrCritical, v, vTable.sType, expressionType,
+					)
+				}
+			} else {
+				symbolTable.set(v.vName, expressionType)
 			}
+		} else {
+			symbolTable.set(v.vName, expressionType)
 		}
 
-		// If we already have a type, it is not shadowing (new!) and the expression is of a different type.
-		if v.vType != TYPE_UNKNOWN && !v.vShadow && v.vType != t {
-			return assignment, nil, fmt.Errorf("%w - Variable type %v is different to assigned expression type %v", ErrCritical, v.vType, t)
-		}
 		assignment.expressions[i] = expression
 
-		// Annotate variable with type
-		assignment.variables[i].vType = t
-
-		// New variable or shadowing one
-		if _, ok := vars[v.vName]; !ok || v.vShadow {
-			vars[v.vName] = append(vars[v.vName], t)
-			shadowVars[v.vName] = t
-		}
+		// analyze variable with type
+		assignment.variables[i].vType = expressionType
 	}
-	return assignment, shadowVars, nil
+	return assignment, nil
 }
 
-func annotateTypeStatement(statement Statement, vars map[string][]Type, shadowVars map[string]Type) (Statement, error) {
+func analyzeTypeStatement(statement Statement, symbolTable *SymbolTable) (Statement, error) {
 	switch st := statement.(type) {
 	case Condition:
-		return annotateTypeCondition(st, vars)
+		return analyzeTypeCondition(st, symbolTable)
 	case Loop:
-		return annotateTypeLoop(st, vars)
+		return analyzeTypeLoop(st, symbolTable)
 	case Assignment:
-		assignment, newShadowVars, err := annotateTypeAssignment(st, vars)
+		assignment, err := analyzeTypeAssignment(st, symbolTable)
 		if err != nil {
 			return assignment, err
 		}
-		err = pushNewVars(&shadowVars, newShadowVars)
-		if err != nil {
-			return assignment, err
-		}
-
 		return assignment, nil
 	}
 	return statement, fmt.Errorf("%w - Unexpected statement: %v", ErrCritical, statement)
 }
 
-func annotateTypeBlock(block Block, vars map[string][]Type) (Block, error) {
+// analyzeTypeBlock gets a reference to the current (now parent) symbol table
+// Additionally, it might get a pre-filled symbol table for the new scope to use!
+// This might be the case for function arguments or in a for-loop, where variables belong to the
+// coming block only but are parsed in the TreeNode before.
+func analyzeTypeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (Block, error) {
 
-	// Only includes variables that are meant to shadow outer variables!
-	// This is now a different variable (which also means, that it can change its Type!) until the end of the current block!
-	// They need to be removed from 'vars' at the end of the block.
-	shadowVars := make(map[string]Type, 0)
-
-	// Remove all variables that were created in this block from the vars dictionary.
-	// Additionally also shadowing ones. Old types from before should be correct again!
-	defer popVars(&vars, shadowVars)
+	if newBlockSymbolTable != nil {
+		block.symbolTable = *newBlockSymbolTable
+	} else {
+		block.symbolTable = SymbolTable{
+			make(map[string]SymbolEntry, 0),
+			symbolTable,
+		}
+	}
 
 	for i, s := range block.statements {
-		statement, err := annotateTypeStatement(s, vars, shadowVars)
+		statement, err := analyzeTypeStatement(s, &block.symbolTable)
 		if err != nil {
 			return block, err
 		}
@@ -271,13 +293,21 @@ func annotateTypeBlock(block Block, vars map[string][]Type) (Block, error) {
 	return block, nil
 }
 
-// annotateTypes traverses the tree and annotates variables with their corresponding type recursively from expressions!
+// analyzeTypes traverses the tree and analyzes variables with their corresponding type recursively from expressions!
 // returns an error if we have a type missmatch anywhere!
-func annotateTypes(ast AST) (AST, error) {
-	vars := make(map[string][]Type, 0)
+func analyzeTypes(ast AST) (AST, error) {
 
-	block, err := annotateTypeBlock(ast.block, vars)
+	ast.globalSymbolTable = SymbolTable{
+		make(map[string]SymbolEntry, 0),
+		nil,
+	}
+
+	// TODO: Possibly fill global symbol table with something?
+	// Right now it will stay empty just because the block we parse will create its own symbol table.
+
+	block, err := analyzeTypeBlock(ast.block, &ast.globalSymbolTable, nil)
 	if err != nil {
+		ast.globalSymbolTable = SymbolTable{}
 		return ast, err
 	}
 	ast.block = block

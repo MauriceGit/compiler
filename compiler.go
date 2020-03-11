@@ -30,7 +30,7 @@ b = !true
 		return
 	}
 
-	ast, err = annotateTypes(ast)
+	ast, err = analyzeTypes(ast)
 	if err != nil {
 		fmt.Println(err)
 		return

@@ -70,12 +70,14 @@ var (
 )
 
 type SymbolEntry struct {
-	sType      Type
-	sShadowing bool
+	sType Type
 	// ... more information
 }
 
-type SymbolTable map[string]SymbolEntry
+type SymbolTable struct {
+	table  map[string]SymbolEntry
+	parent *SymbolTable
+}
 
 type AST struct {
 	block             Block
@@ -138,9 +140,8 @@ func (_ UnaryOp) expression()  {}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 type Block struct {
-	statements        []Statement
-	parentSymbolTable SymbolTable
-	symbolTable       SymbolTable
+	statements  []Statement
+	symbolTable SymbolTable
 }
 
 type Assignment struct {
