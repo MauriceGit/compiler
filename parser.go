@@ -64,8 +64,10 @@ const (
 // INTERFACES
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-var ErrCritical = errors.New("Critical semantic error")
-var ErrNormal = errors.New("Semantic error")
+var (
+	ErrCritical = errors.New("Critical semantic error")
+	ErrNormal   = errors.New("Semantic error")
+)
 
 type SymbolEntry struct {
 	sType      Type

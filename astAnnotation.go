@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -15,16 +14,16 @@ func annotateTypeUnaryOp(unaryOp UnaryOp, vars map[string][]Type) (Expression, T
 	switch unaryOp.operator {
 	case OP_NEGATIVE:
 		if t != TYPE_FLOAT && t != TYPE_INT {
-			return nil, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unary '-' expression must be float or int, but is: %v", unaryOp))
+			return nil, TYPE_UNKNOWN, fmt.Errorf("%w - Unary '-' expression must be float or int, but is: %v", ErrCritical, unaryOp)
 		}
 		return unaryOp, t, nil
 	case OP_NOT:
 		if t != TYPE_BOOL {
-			return nil, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unary '!' expression must be bool, but is: %v", unaryOp))
+			return nil, TYPE_UNKNOWN, fmt.Errorf("%w - Unary '!' expression must be bool, but is: %v", ErrCritical, unaryOp)
 		}
 		return unaryOp, t, nil
 	}
-	return nil, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unknown unary expression: %v", unaryOp))
+	return nil, TYPE_UNKNOWN, fmt.Errorf("%w - Unknown unary expression: %v", ErrCritical, unaryOp)
 }
 
 func annotateTypeBinaryOp(binaryOp BinaryOp, vars map[string][]Type) (Expression, Type, error) {
@@ -41,7 +40,7 @@ func annotateTypeBinaryOp(binaryOp BinaryOp, vars map[string][]Type) (Expression
 	binaryOp.rightExpr = rightExpression
 
 	if tLeft != tRight {
-		return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v expected same type, got: %v != %v", binaryOp, tLeft, tRight))
+		return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v expected same type, got: %v != %v", ErrCritical, binaryOp, tLeft, tRight)
 	}
 
 	// We match all types explicitely to make sure that this still works or creates an error when we introduce new types
@@ -50,21 +49,21 @@ func annotateTypeBinaryOp(binaryOp BinaryOp, vars map[string][]Type) (Expression
 	case OP_AND, OP_OR:
 		// We know left and right are the same type, so only compare left here.
 		if tLeft != TYPE_BOOL {
-			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs bool, got: %v", binaryOp.operator, tLeft))
+			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs bool, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		return binaryOp, TYPE_BOOL, nil
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT {
-			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs int/float, got: %v", binaryOp.operator, tLeft))
+			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		return binaryOp, tLeft, nil
 	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LESS, OP_GREATER:
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
-			return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v needs int/float/string, got: %v", binaryOp.operator, tLeft))
+			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float/string, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		return binaryOp, TYPE_BOOL, nil
 	default:
-		return binaryOp, TYPE_UNKNOWN, errors.New(fmt.Sprintf("BinaryOp %v !/not expected, got: %v", binaryOp.operator, tLeft))
+		return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v !/not expected, got: %v", ErrCritical, binaryOp.operator, tLeft)
 	}
 	return binaryOp, tLeft, nil
 }
@@ -77,7 +76,7 @@ func annotateTypeExpression(expression Expression, vars map[string][]Type) (Expr
 	case Variable:
 		t, ok := vars[e.vName]
 		if !ok || len(t) == 0 {
-			return e, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Variable type for %v unknown!", e))
+			return e, TYPE_UNKNOWN, fmt.Errorf("%w - Variable type for %v unknown!", ErrCritical, e)
 		}
 
 		// annotate with type!
@@ -91,13 +90,13 @@ func annotateTypeExpression(expression Expression, vars map[string][]Type) (Expr
 		return annotateTypeBinaryOp(e, vars)
 	}
 
-	return expression, TYPE_UNKNOWN, errors.New(fmt.Sprintf("Unknown type for expression %v", expression))
+	return expression, TYPE_UNKNOWN, fmt.Errorf("%w - Unknown type for expression %v", ErrCritical, expression)
 }
 
 func pushNewVars(vars *map[string]Type, newVars map[string]Type) (err error) {
 	for k, v := range newVars {
 		if _, ok := (*vars)[k]; ok {
-			err = errors.New(fmt.Sprintf("You cannot shadow the same variable multiple times within one block: %v", k))
+			err = fmt.Errorf("%w - You cannot shadow the same variable multiple times within one block: %v", ErrCritical, k)
 		}
 		(*vars)[k] = v
 	}
@@ -123,7 +122,7 @@ func annotateTypeCondition(condition Condition, vars map[string][]Type) (Conditi
 		return condition, err
 	}
 	if t != TYPE_BOOL {
-		return condition, errors.New(fmt.Sprintf("If expression expected boolean, got: %v (%v)", t, condition))
+		return condition, fmt.Errorf("%w - If expression expected boolean, got: %v (%v)", ErrCritical, t, condition)
 	}
 	condition.expression = e
 
@@ -163,7 +162,7 @@ func annotateTypeLoop(loop Loop, vars map[string][]Type) (Loop, error) {
 			return loop, err
 		}
 		if t != TYPE_BOOL {
-			return loop, errors.New(fmt.Sprintf("For expression expected boolean, got: %v (%v)", t, e))
+			return loop, fmt.Errorf("%w - For expression expected boolean, got: %v (%v)", ErrCritical, t, e)
 		}
 
 		loop.expressions[i] = expression
@@ -195,7 +194,7 @@ func annotateTypeAssignment(assignment Assignment, vars map[string][]Type) (Assi
 	shadowVars := make(map[string]Type, 0)
 	// Populate/overwrite the dictionary of variables for futher statements :)
 	if len(assignment.variables) != len(assignment.expressions) {
-		return assignment, nil, errors.New(fmt.Sprintf("Assignment %v - variables and expression count need to match", assignment))
+		return assignment, nil, fmt.Errorf("%w - Assignment %v - variables and expression count need to match", ErrCritical, assignment)
 	}
 
 	for i, v := range assignment.variables {
@@ -207,13 +206,13 @@ func annotateTypeAssignment(assignment Assignment, vars map[string][]Type) (Assi
 
 		if vCache, ok := vars[v.vName]; ok {
 			if !v.vShadow && vCache[len(vCache)-1] != t {
-				return assignment, nil, errors.New(fmt.Sprintf("Variable %v, type %v already exists and is assigned a wrong type %v", v, vCache[len(vCache)-1], t))
+				return assignment, nil, fmt.Errorf("%w - Variable %v, type %v already exists and is assigned a wrong type %v", ErrCritical, v, vCache[len(vCache)-1], t)
 			}
 		}
 
 		// If we already have a type, it is not shadowing (new!) and the expression is of a different type.
 		if v.vType != TYPE_UNKNOWN && !v.vShadow && v.vType != t {
-			return assignment, nil, errors.New(fmt.Sprintf("Variable type %v is different to assigned expression type %v", v.vType, t))
+			return assignment, nil, fmt.Errorf("%w - Variable type %v is different to assigned expression type %v", ErrCritical, v.vType, t)
 		}
 		assignment.expressions[i] = expression
 
@@ -247,7 +246,7 @@ func annotateTypeStatement(statement Statement, vars map[string][]Type, shadowVa
 
 		return assignment, nil
 	}
-	return statement, errors.New(fmt.Sprintf("Unexpected statement: %v", statement))
+	return statement, fmt.Errorf("%w - Unexpected statement: %v", ErrCritical, statement)
 }
 
 func annotateTypeBlock(block Block, vars map[string][]Type) (Block, error) {
