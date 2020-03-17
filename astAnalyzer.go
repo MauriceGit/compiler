@@ -25,7 +25,22 @@ func (s *SymbolTable) getLocal(v string) (SymbolEntry, bool) {
 }
 
 func (s *SymbolTable) set(v string, t Type) {
-	s.table[v] = SymbolEntry{t}
+	s.table[v] = SymbolEntry{t, ""}
+}
+
+func (s *SymbolTable) setAsmName(v string, asmName string) {
+	if s == nil {
+		fmt.Println("Could not set asm variable name in symbol table!")
+		return
+	}
+	if _, ok := s.table[v]; ok {
+
+		tmp := s.table[v]
+		tmp.varName = asmName
+		s.table[v] = tmp
+		return
+	}
+	s.parent.setAsmName(v, asmName)
 }
 
 func analyzeTypeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, Type, error) {
@@ -71,17 +86,25 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 	// that are not considered yet!
 	switch binaryOp.operator {
 	case OP_AND, OP_OR:
+		binaryOp.opType = TYPE_BOOL
 		// We know left and right are the same type, so only compare left here.
 		if tLeft != TYPE_BOOL {
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs bool, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		//return binaryOp, TYPE_BOOL, nil
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
+
+		if tLeft == TYPE_FLOAT {
+			binaryOp.opType = TYPE_FLOAT
+		} else {
+			binaryOp.opType = TYPE_INT
+		}
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT {
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		//return binaryOp, tLeft, nil
 	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LESS, OP_GREATER:
+		binaryOp.opType = TYPE_BOOL
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float/string, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
@@ -94,7 +117,6 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
 	if tmpE, ok := binaryOp.rightExpr.(BinaryOp); ok {
 		if binaryOp.operator.priority() < tmpE.operator.priority() && !tmpE.fixed {
-			fmt.Println("Wrong operator order.")
 
 			newChild := binaryOp
 			newChild.rightExpr = tmpE.leftExpr

@@ -77,7 +77,8 @@ var (
 )
 
 type SymbolEntry struct {
-	sType Type
+	sType   Type
+	varName string
 	// ... more information
 }
 
@@ -97,18 +98,21 @@ type Operator int
 type Node interface {
 	// Notes the start position in the actual source code!
 	// (lineNr, columnNr)
-	Start() (int, int)
+	//Start() (int, int)
+
 }
 
 //
 // Interface types
 //
 type Statement interface {
-	//Node
+	Node
+	generateCode(asm *ASM, s *SymbolTable)
 	statement()
 }
 type Expression interface {
-	//Node
+	Node
+	generateCode(asm *ASM, s *SymbolTable) string
 	expression()
 }
 
