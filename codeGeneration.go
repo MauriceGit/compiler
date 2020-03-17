@@ -234,7 +234,8 @@ func binaryOperationBool(op Operator, rLeft, rRight string, asm *ASM) {
 		binaryOperationNumber(op, TYPE_INT, rLeft, rRight, asm)
 		return
 	default:
-		fmt.Printf("Code generation error. Unknown operation %v for bool.", op)
+		binaryOperationNumber(op, TYPE_INT, rLeft, rRight, asm)
+		//fmt.Printf("Code generation error. Unknown operation %v for bool.", op)
 		return
 	}
 
@@ -328,7 +329,7 @@ func (ast AST) generateCode() ASM {
 	asm.constants = append(asm.constants, fmt.Sprintf("extern %10v  ; C function we need for debugging", "printf"))
 	asm.constants = append(asm.constants, "section .data")
 
-	asm.constants = append(asm.constants, "fmti          db \"%i\", 10, 0")
+	asm.variables = append(asm.variables, "fmti          db \"%i\", 10, 0")
 
 	asm.program = append(asm.program, "section .text")
 	asm.program = append(asm.program, "global _start")
