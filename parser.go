@@ -112,8 +112,9 @@ type Statement interface {
 }
 type Expression interface {
 	Node
-	generateCode(asm *ASM, s *SymbolTable) string
 	expression()
+	generateCode(asm *ASM, s *SymbolTable)
+	getExpressionType() Type
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -373,6 +374,19 @@ func (tc *TokenChannel) pushBack(t Token) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // PARSER IMPLEMENTATION
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+func (c Constant) getExpressionType() Type {
+	return c.cType
+}
+func (v Variable) getExpressionType() Type {
+	return v.vType
+}
+func (e UnaryOp) getExpressionType() Type {
+	return e.opType
+}
+func (e BinaryOp) getExpressionType() Type {
+	return e.opType
+}
 
 // Operator priority (Descending priority!):
 // 1: 	'*', '/'

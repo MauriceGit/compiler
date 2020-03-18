@@ -82,7 +82,7 @@ func assemble(asm ASM, source, executable string) {
 func main() {
 	var program []byte = []byte(`
 
-value, b = 10 != 10, 5*5
+v = (10 + 5 + 3 + 2) * 1 * 3
 
 `)
 
