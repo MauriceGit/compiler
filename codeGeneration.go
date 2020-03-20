@@ -5,9 +5,10 @@ import (
 )
 
 type ASM struct {
-	constants []string
-	variables []string
-	program   []string
+	header    []string
+	constants [][2]string
+	variables [][3]string
+	program   [][3]string
 
 	// Increasing number to generate unique const variable names
 	constName int
@@ -38,21 +39,21 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 	case TYPE_INT:
 
 		name = asm.nextConstName()
-		asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", name, "equ", c.cValue))
+		//asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", name, "equ", c.cValue))
+		asm.constants = append(asm.constants, [2]string{name, c.cValue})
 
 	case TYPE_FLOAT:
 
 		name = asm.nextConstName()
-		asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", name, "equ", c.cValue))
+		asm.constants = append(asm.constants, [2]string{name, c.cValue})
 
 	case TYPE_STRING:
 
 		name = asm.nextConstName()
-		asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v, 0", name, "equ", fmt.Sprintf("\"%v\"", c.cValue)))
+		//asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v, 0", name, "equ", fmt.Sprintf("\"%v\"", c.cValue)))
+		asm.constants = append(asm.constants, [2]string{name, fmt.Sprintf("\"%v\", 0", c.cValue)})
 
 	case TYPE_BOOL:
-
-		// TODO: Add both these as constants!
 		name = "FALSE"
 		if c.cValue == "true" {
 			name = "TRUE"
@@ -62,14 +63,16 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 		return
 	}
 
-	asm.program = append(asm.program, fmt.Sprintf("  push %10v", name))
+	//asm.program = append(asm.program, fmt.Sprintf("  push %10v", name))
+	asm.program = append(asm.program, [3]string{"  ", "push", name})
 
 }
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 	if symbol, ok := s.get(v.vName); ok {
-		asm.program = append(asm.program, fmt.Sprintf("  push %10v", symbol.varName))
+		//asm.program = append(asm.program, fmt.Sprintf("  push %10v", symbol.varName))
+		asm.program = append(asm.program, [3]string{"  ", "push", symbol.varName})
 	}
 	fmt.Println("Could not generate code for Variable. No symbol known!")
 }
@@ -85,26 +88,31 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		if u.operator == OP_NOT {
 			// 'not' switches between 0 and -1. So False: 0, True: -1
 			register = "rsi"
-			asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
-			asm.program = append(asm.program, fmt.Sprintf("  not  %10v", register))
+			//asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
+			//asm.program = append(asm.program, fmt.Sprintf("  not  %10v", register))
+			asm.program = append(asm.program, [3]string{"  ", "pop", register})
+			asm.program = append(asm.program, [3]string{"  ", "not", register})
 		} else {
 			fmt.Printf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType)
 		}
 	case TYPE_INT:
 		if u.operator == OP_NEGATIVE {
 			register = "rsi"
-			asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
-			asm.program = append(asm.program, fmt.Sprintf("  neg  %10v", register))
+			//asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
+			//asm.program = append(asm.program, fmt.Sprintf("  neg  %10v", register))
+			asm.program = append(asm.program, [3]string{"  ", "pop", register})
+			asm.program = append(asm.program, [3]string{"  ", "neg", register})
 
 		} else {
 			fmt.Printf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType)
 		}
 	case TYPE_FLOAT:
 		if u.operator == OP_NEGATIVE {
-			// TODO: Add negOneF and negOneI to global constants.
 			register = "xmm0"
-			asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
-			asm.program = append(asm.program, fmt.Sprintf("  mulsd%10v, qword [negOneF]", register))
+			//asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
+			//asm.program = append(asm.program, fmt.Sprintf("  mulsd%10v, qword [negOneF]", register))
+			asm.program = append(asm.program, [3]string{"  ", "pop", register})
+			asm.program = append(asm.program, [3]string{"  ", "mulsd", fmt.Sprintf("%v, qword [negOneF]", register)})
 
 		} else {
 			fmt.Printf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType)
@@ -114,7 +122,8 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		return
 	}
 
-	asm.program = append(asm.program, fmt.Sprintf("  push %10v", register))
+	//asm.program = append(asm.program, fmt.Sprintf("  push %10v", register))
+	asm.program = append(asm.program, [3]string{"  ", "push", register})
 }
 
 func getJumpType(op Operator) string {
@@ -166,13 +175,21 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 		labelOK := asm.nextLabelName()
 		jump := getJumpType(op)
 
-		asm.program = append(asm.program, fmt.Sprintf("  cmp  %10v, %v", rLeft, rRight))
-		asm.program = append(asm.program, fmt.Sprintf("  %-4v %10v", jump, labelTrue))
-		asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, 0", rLeft))
-		asm.program = append(asm.program, fmt.Sprintf("  jmp  %10v", labelOK))
-		asm.program = append(asm.program, fmt.Sprintf("%v:", labelTrue))
-		asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, -1", rLeft))
-		asm.program = append(asm.program, fmt.Sprintf("%v:", labelOK))
+		//		asm.program = append(asm.program, fmt.Sprintf("  cmp  %10v, %v", rLeft, rRight))
+		//		asm.program = append(asm.program, fmt.Sprintf("  %-4v %10v", jump, labelTrue))
+		//		asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, 0", rLeft))
+		//		asm.program = append(asm.program, fmt.Sprintf("  jmp  %10v", labelOK))
+		//		asm.program = append(asm.program, fmt.Sprintf("%v:", labelTrue))
+		//		asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, -1", rLeft))
+		//		asm.program = append(asm.program, fmt.Sprintf("%v:", labelOK))
+
+		asm.program = append(asm.program, [3]string{"  ", "cmp", fmt.Sprintf("%v, %v", rLeft, rRight)})
+		asm.program = append(asm.program, [3]string{"  ", jump, labelTrue})
+		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, 0", rLeft)})
+		asm.program = append(asm.program, [3]string{"  ", "jmp", labelOK})
+		asm.program = append(asm.program, [3]string{"", labelTrue + ":", ""})
+		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, -1", rLeft)})
+		asm.program = append(asm.program, [3]string{"", labelOK + ":", ""})
 
 		return
 
@@ -186,7 +203,8 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 		command += "sd"
 	}
 
-	asm.program = append(asm.program, fmt.Sprintf("  %-4v %10v, %v", command, rLeft, rRight))
+	//asm.program = append(asm.program, fmt.Sprintf("  %-4v %10v, %v", command, rLeft, rRight))
+	asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
 }
 
 // binaryOperationFloat executes the operation on the two registers and writes the result into rLeft!
@@ -212,7 +230,8 @@ func binaryOperationBool(op Operator, rLeft, rRight string, asm *ASM) {
 		return
 	}
 
-	asm.program = append(asm.program, fmt.Sprintf("  %-4v %10v, %v", command, rLeft, rRight))
+	//asm.program = append(asm.program, fmt.Sprintf("  %-4v %10v, %v", command, rLeft, rRight))
+	asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
 }
 
 func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
@@ -231,8 +250,10 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		rRight = "xmm1"
 	}
 
-	asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", rRight))
-	asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", rLeft))
+	//asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", rRight))
+	//asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", rLeft))
+	asm.program = append(asm.program, [3]string{"  ", "pop", rRight})
+	asm.program = append(asm.program, [3]string{"  ", "pop", rLeft})
 
 	// do the binary operation thingy.
 	switch b.opType {
@@ -246,15 +267,21 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		fmt.Printf("Code generation error: Unknown operation type %v\n", int(b.opType))
 	}
 
-	asm.program = append(asm.program, fmt.Sprintf("  push %10v", rLeft))
+	//asm.program = append(asm.program, fmt.Sprintf("  push %10v", rLeft))
+	asm.program = append(asm.program, [3]string{"  ", "push", rLeft})
 }
 
 func debugPrint(asm *ASM, vName string) {
 
-	asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, qword [%v]", "rsi", vName))
-	asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, %v", "rdi", "fmti"))
-	asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, %v", "rax", "0"))
-	asm.program = append(asm.program, fmt.Sprintf("  call %13v", "printf"))
+	//	asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, qword [%v]", "rsi", vName))
+	//	asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, %v", "rdi", "fmti"))
+	//	asm.program = append(asm.program, fmt.Sprintf("  mov  %10v, %v", "rax", "0"))
+	//	asm.program = append(asm.program, fmt.Sprintf("  call %13v", "printf"))
+
+	asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("rsi, qword [%v]", vName)})
+	asm.program = append(asm.program, [3]string{"  ", "mov", "rdi, fmti"})
+	asm.program = append(asm.program, [3]string{"  ", "mov", "rax, 0"})
+	asm.program = append(asm.program, [3]string{"  ", "call", "printf"})
 
 }
 
@@ -273,14 +300,17 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		case TYPE_FLOAT:
 			register = "xmm0"
 		}
-		asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
+		//asm.program = append(asm.program, fmt.Sprintf("  pop  %10v", register))
+		asm.program = append(asm.program, [3]string{"  ", "pop", register})
 
 		// Create corresponding variable, if it doesn't exist yet.
 		if entry, ok := s.get(v.vName); !ok || entry.varName == "" {
 
 			vName := asm.nextVariableName()
 			// Variables are initialized with 0. This will be overwritten a few lines later!
-			asm.variables = append(asm.variables, fmt.Sprintf("%-10v    dq           0", vName))
+			// TODO: What about float or string variables? Does this really work? Do we care at all because it will be overwritten anyway?
+			//asm.variables = append(asm.variables, fmt.Sprintf("%-10v    dq           0", vName))
+			asm.variables = append(asm.variables, [3]string{vName, "dq", "0"})
 			s.setAsmName(v.vName, vName)
 		}
 		// This can not/should not fail!
@@ -288,7 +318,8 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		vName := entry.varName
 
 		// Move value from register of expression into variable!
-		asm.program = append(asm.program, fmt.Sprintf("  mov  %12v [%v], %v", "qword", vName, register))
+		//asm.program = append(asm.program, fmt.Sprintf("  mov  %12v [%v], %v", "qword", vName, register))
+		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", vName, register)})
 
 		debugPrint(asm, vName)
 
@@ -314,24 +345,44 @@ func (ast AST) generateCode() ASM {
 
 	asm := ASM{}
 
-	asm.constants = append(asm.constants, fmt.Sprintf("extern %10v  ; C function we need for debugging", "printf"))
-	asm.constants = append(asm.constants, "section .data")
-	asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", "TRUE", "equ", "-1"))
-	asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", "FALSE", "equ", "0"))
+	//	asm.constants = append(asm.constants, fmt.Sprintf("extern %10v  ; C function we need for debugging", "printf"))
+	//	asm.constants = append(asm.constants, "section .data")
+	//	asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", "TRUE", "equ", "-1"))
+	//	asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", "FALSE", "equ", "0"))
 
-	asm.variables = append(asm.variables, "fmti          db \"%i\", 10, 0")
-	asm.variables = append(asm.variables, fmt.Sprintf("negOneF %10v %15v", "dq", "-1.0"))
+	//asm.constants = append(asm.constants, [2]string{"extern printf", "; C function we need for debugging"})
+	//asm.constants = append(asm.constants, [2]string{"section .data", ""})
 
-	asm.program = append(asm.program, "section .text")
-	asm.program = append(asm.program, "global _start")
-	asm.program = append(asm.program, "_start:")
+	asm.header = append(asm.header, "extern printf  ; C function we need for debugging")
+	asm.header = append(asm.header, "section .data")
+
+	asm.constants = append(asm.constants, [2]string{"TRUE", "-1"})
+	asm.constants = append(asm.constants, [2]string{"FALSE", "0"})
+
+	//	asm.variables = append(asm.variables, "fmti          db \"%i\", 10, 0")
+	//	asm.variables = append(asm.variables, fmt.Sprintf("negOneF %10v %15v", "dq", "-1.0"))
+	//	asm.variables = append(asm.variables, fmt.Sprintf("negOneI %10v %15v", "dq", "-1"))
+	asm.variables = append(asm.variables, [3]string{"fmti", "db", "\"%i\", 10, 0"})
+	asm.variables = append(asm.variables, [3]string{"negOneF", "dq", "-1.0"})
+	asm.variables = append(asm.variables, [3]string{"negOneI", "dq", "-1"})
+
+	//asm.program = append(asm.program, "section .text")
+	//asm.program = append(asm.program, "global _start")
+	//asm.program = append(asm.program, "_start:")
+	asm.program = append(asm.program, [3]string{"", "section .text", ""})
+	asm.program = append(asm.program, [3]string{"", "global _start", ""})
+	asm.program = append(asm.program, [3]string{"", "_start:", ""})
 
 	ast.block.generateCode(&asm, &ast.globalSymbolTable)
 
-	asm.program = append(asm.program, "  ; Exit the program nicely")
-	asm.program = append(asm.program, "  mov         rbx, 0  ; normal exit code")
-	asm.program = append(asm.program, "  mov         rax, 1  ; process termination service (?)")
-	asm.program = append(asm.program, "  int         0x80    ; linux kernel service")
+	//	asm.program = append(asm.program, "  ; Exit the program nicely")
+	//	asm.program = append(asm.program, "  mov         rbx, 0  ; normal exit code")
+	//	asm.program = append(asm.program, "  mov         rax, 1  ; process termination service (?)")
+	//	asm.program = append(asm.program, "  int         0x80    ; linux kernel service")
+	asm.program = append(asm.program, [3]string{"  ", "; Exit the program nicely", ""})
+	asm.program = append(asm.program, [3]string{"  ", "mov", "rbx, 0  ; normal exit code"})
+	asm.program = append(asm.program, [3]string{"  ", "mov", "rax, 1  ; process termination service (?)"})
+	asm.program = append(asm.program, [3]string{"  ", "int", "0x80    ; linux kernel service"})
 
 	return asm
 }

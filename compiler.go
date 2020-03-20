@@ -38,14 +38,19 @@ func assemble(asm ASM, source, executable string) {
 	// Write assembly into tmp source file
 	defer os.Remove(objectFile.Name())
 
+	for _, v := range asm.header {
+		fmt.Fprintf(srcFile, "%v\n", v)
+	}
 	for _, v := range asm.constants {
-		fmt.Fprintln(srcFile, v)
+		fmt.Fprintf(srcFile, "%-10v%-10v%-15v\n", v[0], "equ", v[1])
 	}
 	for _, v := range asm.variables {
-		fmt.Fprintln(srcFile, v)
+		//fmt.Fprintln(srcFile, v)
+		fmt.Fprintf(srcFile, "%-10v%-10v%-15v\n", v[0], v[1], v[2])
 	}
 	for _, v := range asm.program {
-		fmt.Fprintln(srcFile, v)
+		//fmt.Fprintln(srcFile, v)
+		fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
 	}
 	srcFile.Close()
 
