@@ -78,10 +78,6 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 	}
 	binaryOp.rightExpr = rightExpression
 
-	if tLeft != tRight {
-		return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v expected same type, got: %v != %v", ErrCritical, binaryOp, tLeft, tRight)
-	}
-
 	// We match all types explicitely to make sure that this still works or creates an error when we introduce new types
 	// that are not considered yet!
 	switch binaryOp.operator {
@@ -103,12 +99,15 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		//return binaryOp, tLeft, nil
-	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LESS, OP_GREATER:
+	case OP_LE, OP_GE, OP_LESS, OP_GREATER:
 		binaryOp.opType = TYPE_BOOL
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
 			return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v needs int/float/string, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		//return binaryOp, TYPE_BOOL, nil
+	case OP_EQ, OP_NE:
+		binaryOp.opType = TYPE_BOOL
+		// We can actually compare all data types. So there will be no missmatch in general!
 	default:
 		return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v !/not expected, got: %v", ErrCritical, binaryOp.operator, tLeft)
 	}
@@ -124,6 +123,11 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 			binaryOp = tmpE
 
 		}
+	}
+
+	// Check types only after we possibly rearranged the expression!
+	if binaryOp.leftExpr.getExpressionType() != binaryOp.rightExpr.getExpressionType() {
+		return binaryOp, TYPE_UNKNOWN, fmt.Errorf("%w - BinaryOp %v expected same type, got: %v != %v", ErrCritical, binaryOp, tLeft, tRight)
 	}
 
 	return binaryOp, tLeft, nil

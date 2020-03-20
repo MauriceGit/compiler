@@ -316,6 +316,8 @@ func (ast AST) generateCode() ASM {
 
 	asm.constants = append(asm.constants, fmt.Sprintf("extern %10v  ; C function we need for debugging", "printf"))
 	asm.constants = append(asm.constants, "section .data")
+	asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", "TRUE", "equ", "-1"))
+	asm.constants = append(asm.constants, fmt.Sprintf("%-10v %6v %10v", "FALSE", "equ", "0"))
 
 	asm.variables = append(asm.variables, "fmti          db \"%i\", 10, 0")
 	asm.variables = append(asm.variables, fmt.Sprintf("negOneF %10v %15v", "dq", "-1.0"))
