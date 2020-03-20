@@ -45,11 +45,9 @@ func assemble(asm ASM, source, executable string) {
 		fmt.Fprintf(srcFile, "%-10v%-10v%-15v\n", v[0], "equ", v[1])
 	}
 	for _, v := range asm.variables {
-		//fmt.Fprintln(srcFile, v)
 		fmt.Fprintf(srcFile, "%-10v%-10v%-15v\n", v[0], v[1], v[2])
 	}
 	for _, v := range asm.program {
-		//fmt.Fprintln(srcFile, v)
 		fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
 	}
 	srcFile.Close()
@@ -91,8 +89,6 @@ v = (10 + 5 + 3 + 2) * -1 * 3
 b = (2 == 2) == true
 
 `)
-
-	//fmt.Println(string(program))
 
 	tokenChan := make(chan Token, 1)
 	go tokenize(program, tokenChan)
