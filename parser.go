@@ -99,7 +99,7 @@ type Node interface {
 	// Notes the start position in the actual source code!
 	// (lineNr, columnNr)
 	//Start() (int, int)
-
+	generateCode(asm *ASM, s *SymbolTable)
 }
 
 //
@@ -107,13 +107,11 @@ type Node interface {
 //
 type Statement interface {
 	Node
-	generateCode(asm *ASM, s *SymbolTable)
 	statement()
 }
 type Expression interface {
 	Node
 	expression()
-	generateCode(asm *ASM, s *SymbolTable)
 	getExpressionType() Type
 }
 

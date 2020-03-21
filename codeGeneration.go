@@ -80,6 +80,7 @@ func getCommandInt(op Operator) string {
 	}
 	return ""
 }
+
 func getCommandBool(op Operator) string {
 	switch op {
 	case OP_AND:
@@ -90,6 +91,18 @@ func getCommandBool(op Operator) string {
 		fmt.Println("Code generation error. Unknown operator for bool")
 	}
 	return ""
+}
+
+func getRegister(t Type) (string, string) {
+	switch t {
+	case TYPE_INT, TYPE_BOOL:
+		return "rsi", "rcx"
+	case TYPE_FLOAT:
+		return "xmm0", "xmm1"
+	case TYPE_STRING:
+		fmt.Println("Code generation error. String register not yet implemented")
+	}
+	return "", ""
 }
 
 func getCommand(t Type, op Operator) string {
@@ -145,13 +158,12 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	u.expr.generateCode(asm, s)
 
-	register := ""
+	register, _ := getRegister(u.getExpressionType())
 
 	switch u.getExpressionType() {
 	case TYPE_BOOL:
 		if u.operator == OP_NOT {
 			// 'not' switches between 0 and -1. So False: 0, True: -1
-			register = "rsi"
 			asm.program = append(asm.program, [3]string{"  ", "pop", register})
 			asm.program = append(asm.program, [3]string{"  ", "not", register})
 		} else {
@@ -159,7 +171,6 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	case TYPE_INT:
 		if u.operator == OP_NEGATIVE {
-			register = "rsi"
 			asm.program = append(asm.program, [3]string{"  ", "pop", register})
 			asm.program = append(asm.program, [3]string{"  ", "neg", register})
 
@@ -168,7 +179,6 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	case TYPE_FLOAT:
 		if u.operator == OP_NEGATIVE {
-			register = "xmm0"
 			asm.program = append(asm.program, [3]string{"  ", "pop", register})
 			asm.program = append(asm.program, [3]string{"  ", "mulsd", fmt.Sprintf("%v, qword [negOneF]", register)})
 
@@ -214,16 +224,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	b.leftExpr.generateCode(asm, s)
 	b.rightExpr.generateCode(asm, s)
 
-	rLeft := ""
-	rRight := ""
-	switch b.leftExpr.getExpressionType() {
-	case TYPE_INT, TYPE_BOOL, TYPE_STRING:
-		rLeft = "rsi"
-		rRight = "rcx"
-	case TYPE_FLOAT:
-		rLeft = "xmm0"
-		rRight = "xmm1"
-	}
+	rLeft, rRight := getRegister(b.leftExpr.getExpressionType())
 
 	asm.program = append(asm.program, [3]string{"  ", "pop", rRight})
 	asm.program = append(asm.program, [3]string{"  ", "pop", rLeft})
@@ -264,13 +265,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		// Calculate expression
 		e.generateCode(asm, s)
 
-		register := ""
-		switch e.getExpressionType() {
-		case TYPE_INT, TYPE_BOOL, TYPE_STRING:
-			register = "rsi"
-		case TYPE_FLOAT:
-			register = "xmm0"
-		}
+		register, _ := getRegister(e.getExpressionType())
 
 		asm.program = append(asm.program, [3]string{"  ", "pop", register})
 
