@@ -95,6 +95,7 @@ func parseByte(program []byte) (TokenType, bool) {
 
 func tokenize(program []byte, tokens chan Token) {
 	space := regexp.MustCompile(`^((\s+)|\n)`)
+	comment := regexp.MustCompile(`^//.*\n`)
 	keyword := regexp.MustCompile(`^(int|string|float|if|else|for|shadow) `)
 	operator := regexp.MustCompile(`^(\+|\-|\*|/|==|!=|<=|>=|<|>|\|\||&&|!)`)
 	assignment := regexp.MustCompile(`^=`)
@@ -105,6 +106,12 @@ func tokenize(program []byte, tokens chan Token) {
 
 		// Whitespace has high priority, so we directly continue!
 		if s := space.FindIndex(program); s != nil {
+			program = program[s[1]:]
+			continue
+		}
+
+		// Comments also have high priority to be ignored :)
+		if s := comment.FindIndex(program); s != nil {
 			program = program[s[1]:]
 			continue
 		}
