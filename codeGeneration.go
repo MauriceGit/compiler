@@ -31,26 +31,95 @@ func (asm *ASM) nextLabelName() string {
 	return fmt.Sprintf("label_%v", asm.labelName-1)
 }
 
+func getJumpType(op Operator) string {
+	switch op {
+	case OP_GE:
+		return "jge"
+	case OP_GREATER:
+		return "jg"
+	case OP_LESS:
+		return "jl"
+	case OP_LE:
+		return "jle"
+	case OP_EQ:
+		return "je"
+	case OP_NE:
+		return "jne"
+	}
+	return ""
+}
+
+func getCommandFloat(op Operator) string {
+	switch op {
+	case OP_PLUS:
+		return "addsd"
+	case OP_MINUS:
+		return "subsd"
+	case OP_MULT:
+		return "mulsd"
+	case OP_DIV:
+		return "divsd"
+	default:
+		fmt.Println("Code generation error. Unknown operator for Float")
+	}
+	return ""
+}
+
+func getCommandInt(op Operator) string {
+	switch op {
+	case OP_PLUS:
+		return "add"
+	case OP_MINUS:
+		return "sub"
+	case OP_MULT:
+		return "imul"
+	case OP_DIV:
+		return "div"
+	default:
+		fmt.Println("Code generation error. Unknown operator for Integer")
+	}
+	return ""
+}
+func getCommandBool(op Operator) string {
+	switch op {
+	case OP_AND:
+		return "and"
+	case OP_OR:
+		return "or"
+	default:
+		fmt.Println("Code generation error. Unknown operator for bool")
+	}
+	return ""
+}
+
+func getCommand(t Type, op Operator) string {
+
+	switch t {
+	case TYPE_BOOL:
+		return getCommandBool(op)
+	case TYPE_FLOAT:
+		return getCommandFloat(op)
+	case TYPE_INT:
+		return getCommandInt(op)
+	case TYPE_STRING:
+		fmt.Println("Code generation error. String commands not yet implemented")
+	}
+	return ""
+}
+
 func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 
 	name := ""
-
 	switch c.cType {
 	case TYPE_INT:
-
 		name = asm.nextConstName()
 		asm.constants = append(asm.constants, [2]string{name, c.cValue})
-
 	case TYPE_FLOAT:
-
 		name = asm.nextConstName()
 		asm.constants = append(asm.constants, [2]string{name, c.cValue})
-
 	case TYPE_STRING:
-
 		name = asm.nextConstName()
 		asm.constants = append(asm.constants, [2]string{name, fmt.Sprintf("\"%v\", 0", c.cValue)})
-
 	case TYPE_BOOL:
 		name = "FALSE"
 		if c.cValue == "true" {
@@ -62,7 +131,6 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	asm.program = append(asm.program, [3]string{"  ", "push", name})
-
 }
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
@@ -79,7 +147,7 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	register := ""
 
-	switch u.opType {
+	switch u.getExpressionType() {
 	case TYPE_BOOL:
 		if u.operator == OP_NOT {
 			// 'not' switches between 0 and -1. So False: 0, True: -1
@@ -115,51 +183,13 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"  ", "push", register})
 }
 
-func getJumpType(op Operator) string {
-	switch op {
-	case OP_GE:
-		return "jge"
-	case OP_GREATER:
-		return "jg"
-	case OP_LESS:
-		return "jl"
-	case OP_LE:
-		return "jle"
-	case OP_EQ:
-		return "je"
-	case OP_NE:
-		return "jne"
-	}
-	return ""
-}
-
 // binaryOperationFloat executes the operation on the two registers and writes the result into rLeft!
 func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) {
 
-	command := ""
-
 	switch op {
-	case OP_PLUS:
-		command = "add"
-	case OP_MINUS:
-		command = "sub"
-	case OP_DIV:
-		command = "div"
-	case OP_MULT:
-		// TODO: imul does not work with sd for float...
-		// Make this into a function that just returns the corresponding string...
-		command = "imul"
 	case OP_GE, OP_GREATER, OP_LESS, OP_LE, OP_EQ, OP_NE:
 
-		// ==:
-		//   cmp rLeft, rRight
-		//   je labelEQ
-		//   mov rLeft, 0
-		//   jmp labelOK
-		// labelEQ:
-		//   mov rleft, -1
-		// labelOK:
-
+		// Works for anything that should be compared.
 		labelTrue := asm.nextLabelName()
 		labelOK := asm.nextLabelName()
 		jump := getJumpType(op)
@@ -172,44 +202,11 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, -1", rLeft)})
 		asm.program = append(asm.program, [3]string{"", labelOK + ":", ""})
 
-		return
-
 	default:
-		fmt.Printf("Code generation error. Unknown operation %v for float.", op)
-		return
+		// Works for Integer and Float.
+		command := getCommand(t, op)
+		asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
 	}
-
-	if t == TYPE_FLOAT {
-		// for double precision! Like: addsd, subsd, divsd, ...
-		command += "sd"
-	}
-
-	asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
-}
-
-// binaryOperationFloat executes the operation on the two registers and writes the result into rLeft!
-func binaryOperationBool(op Operator, rLeft, rRight string, asm *ASM) {
-
-	command := ""
-
-	switch op {
-	case OP_AND:
-		command = "and"
-	case OP_OR:
-		command = "or"
-	case OP_EQ:
-		// Equal and unequal are identical for bool or int, as a bool is an integer type.
-		binaryOperationNumber(op, TYPE_INT, rLeft, rRight, asm)
-		return
-	case OP_NE:
-		binaryOperationNumber(op, TYPE_INT, rLeft, rRight, asm)
-		return
-	default:
-		binaryOperationNumber(op, TYPE_INT, rLeft, rRight, asm)
-		return
-	}
-
-	asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
 }
 
 func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
@@ -231,19 +228,24 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"  ", "pop", rRight})
 	asm.program = append(asm.program, [3]string{"  ", "pop", rLeft})
 
-	// do the binary operation thingy.
-	switch b.opType {
+	switch b.leftExpr.getExpressionType() {
 	case TYPE_INT, TYPE_FLOAT:
 		binaryOperationNumber(b.operator, b.opType, rLeft, rRight, asm)
 	case TYPE_BOOL:
-		binaryOperationBool(b.operator, rLeft, rRight, asm)
+		// Equal and unequal are identical for bool or int, as a bool is an integer type.
+		if b.operator == OP_EQ || b.operator == OP_NE {
+			binaryOperationNumber(b.operator, b.opType, rLeft, rRight, asm)
+		} else {
+			command := getCommand(TYPE_BOOL, b.operator)
+			asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
+		}
+
 	case TYPE_STRING:
 		fmt.Println("Code generation error: Strings not supported yet.")
 	default:
 		fmt.Printf("Code generation error: Unknown operation type %v\n", int(b.opType))
 	}
 
-	//asm.program = append(asm.program, fmt.Sprintf("  push %10v", rLeft))
 	asm.program = append(asm.program, [3]string{"  ", "push", rLeft})
 }
 

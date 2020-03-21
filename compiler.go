@@ -86,7 +86,7 @@ func main() {
 	var program []byte = []byte(`
 
 v = (10 + 5 + 3 + 2) * -1 * 3
-b = (2 == 2) == true
+b = (2 == 2) && !!!false
 
 `)
 
