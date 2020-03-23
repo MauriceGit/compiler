@@ -26,6 +26,8 @@ type TokenType int
 type Token struct {
 	tokenType TokenType
 	value     string
+	line      int
+	column    int
 }
 
 func (t TokenType) String() string {
@@ -62,39 +64,29 @@ func (t Token) String() string {
 	return fmt.Sprintf("(%v %v)", t.value, t.tokenType)
 }
 
-func byteToToken(b byte) TokenType {
-
-	switch b {
-	case ',':
-		return TOKEN_SEPARATOR
-	case ';':
-		return TOKEN_SEMICOLON
-	case '(':
-		return TOKEN_PARENTHESIS_OPEN
-	case ')':
-		return TOKEN_PARENTHESIS_CLOSE
-	case '{':
-		return TOKEN_CURLY_OPEN
-	case '}':
-		return TOKEN_CURLY_CLOSE
-	}
-	return TOKEN_UNKNOWN
-}
-
 func parseByte(program []byte) (TokenType, bool) {
 
-	tokens := []byte{',', ';', '(', ')', '{', '}'}
-	for _, t := range tokens {
-		if program[0] == t {
-			return byteToToken(t), true
-		}
+	switch program[0] {
+	case ',':
+		return TOKEN_SEPARATOR, true
+	case ';':
+		return TOKEN_SEMICOLON, true
+	case '(':
+		return TOKEN_PARENTHESIS_OPEN, true
+	case ')':
+		return TOKEN_PARENTHESIS_CLOSE, true
+	case '{':
+		return TOKEN_CURLY_OPEN, true
+	case '}':
+		return TOKEN_CURLY_CLOSE, true
 	}
 	return TOKEN_UNKNOWN, false
-
 }
 
 func tokenize(program []byte, tokens chan Token) {
-	space := regexp.MustCompile(`^((\s+)|\n)`)
+	// Whitespace is just: \s without the \n, so we can track the line count explicitely.
+	whitespace := regexp.MustCompile(`^[\t\f\r ]`)
+	newline := regexp.MustCompile(`^\n`)
 	comment := regexp.MustCompile(`^//.*\n`)
 	keyword := regexp.MustCompile(`^(int|string|float|if|else|for|shadow) `)
 	operator := regexp.MustCompile(`^(\+|\-|\*|/|==|!=|<=|>=|<|>|\|\||&&|!)`)
@@ -102,17 +94,28 @@ func tokenize(program []byte, tokens chan Token) {
 	constant := regexp.MustCompile(`^(((-?\d+(\.\d+)?)|(".*"))|(true|false))`)
 	identifier := regexp.MustCompile(`^[A-Za-z]\w*`)
 
+	lineCnt := 0
+	colCnt := 0
+
 	for len(program) > 0 {
 
 		// Whitespace has high priority, so we directly continue!
-		if s := space.FindIndex(program); s != nil {
+		if s := whitespace.FindIndex(program); s != nil {
 			program = program[s[1]:]
+			colCnt += s[1]
 			continue
 		}
-
+		if s := newline.FindIndex(program); s != nil {
+			program = program[s[1]:]
+			lineCnt++
+			colCnt = 0
+			continue
+		}
 		// Comments also have high priority to be ignored :)
 		if s := comment.FindIndex(program); s != nil {
 			program = program[s[1]:]
+			lineCnt++
+			colCnt = 0
 			continue
 		}
 
@@ -151,10 +154,10 @@ func tokenize(program []byte, tokens chan Token) {
 			break
 		}
 
-		tokens <- Token{tokenType, string(program[:tokenLength])}
+		tokens <- Token{tokenType, string(program[:tokenLength]), lineCnt, colCnt}
 		program = program[tokenLength:]
+		colCnt += tokenLength
 	}
 
-	tokens <- Token{TOKEN_EOF, ""}
-
+	tokens <- Token{TOKEN_EOF, "", lineCnt, colCnt}
 }

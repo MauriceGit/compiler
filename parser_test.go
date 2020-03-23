@@ -5,16 +5,23 @@ import (
 	"testing"
 )
 
+func (e Constant) eq(e2 Constant) bool {
+	return e.cType == e2.cType && e.cValue == e2.cValue
+}
+func (e Variable) eq(e2 Variable) bool {
+	return e.vName == e2.vName && e.vShadow == e2.vShadow && e.vType == e2.vType
+}
+
 func compareExpression(e1, e2 Expression) (bool, string) {
 
 	switch v1 := e1.(type) {
 	case Constant:
-		if v2, ok := e2.(Constant); ok && v1 == v2 {
+		if v2, ok := e2.(Constant); ok && v1.eq(v2) {
 			return true, ""
 		}
 		return false, fmt.Sprintf("%v != %v (Constant)", e1, e2)
 	case Variable:
-		if v2, ok := e2.(Variable); ok && v1 == v2 {
+		if v2, ok := e2.(Variable); ok && v1.eq(v2) {
 			return true, ""
 		}
 		return false, fmt.Sprintf("%v != %v (Variable)", e1, e2)
@@ -54,7 +61,7 @@ func compareVariables(vv1, vv2 []Variable) (bool, string) {
 		return false, fmt.Sprintf("Different lengths: %v, %v", vv1, vv2)
 	}
 	for i, v1 := range vv1 {
-		if v1 != vv2[i] {
+		if !v1.eq(vv2[i]) {
 			return false, fmt.Sprintf("Variables are different: %v != %v", v1, vv2[i])
 		}
 	}
@@ -120,40 +127,66 @@ func testAST(code []byte, expected AST, t *testing.T) {
 	}
 }
 
+func newVar(t Type, value string, shadow bool) Variable {
+	return Variable{t, value, shadow, 0, 0}
+}
+func newConst(t Type, value string) Constant {
+	return Constant{t, value, 0, 0}
+}
+func newUnary(op Operator, e Expression) UnaryOp {
+	return UnaryOp{op, e, TYPE_UNKNOWN, 0, 0}
+}
+func newBinary(op Operator, eLeft, eRight Expression, t Type, fixed bool) BinaryOp {
+	return BinaryOp{op, eLeft, eRight, t, fixed, 0, 0}
+}
+func newAssignment(variables []Variable, expressions []Expression) Assignment {
+	return Assignment{variables, expressions, 0, 0}
+}
+func newCondition(e Expression, block, elseBlock Block) Condition {
+	return Condition{e, block, elseBlock, 0, 0}
+}
+func newLoop(a Assignment, exprs []Expression, incrA Assignment, b Block) Loop {
+	return Loop{a, exprs, incrA, b, 0, 0}
+}
+func newBlock(statements []Statement) Block {
+	return Block{statements, SymbolTable{}, 0, 0}
+}
+func newAST(b Block) AST {
+	return AST{b, SymbolTable{}}
+}
+
 func TestParserExpression1(t *testing.T) {
 
 	var code []byte = []byte(`shadow a = 6 + 7 * variable / -(5 -- (-8 * - 10000.1234))`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "a", true}},
+				newAssignment(
+					[]Variable{newVar(TYPE_UNKNOWN, "a", true)},
 					[]Expression{
-						BinaryOp{
-							OP_PLUS, Constant{TYPE_INT, "6"}, BinaryOp{
-								OP_MULT, Constant{TYPE_INT, "7"}, BinaryOp{
-									OP_DIV, Variable{TYPE_UNKNOWN, "variable", false}, UnaryOp{
-										OP_NEGATIVE, BinaryOp{
-											OP_MINUS, Constant{TYPE_INT, "5"}, UnaryOp{
-												OP_NEGATIVE, BinaryOp{
-													OP_MULT, Constant{TYPE_INT, "-8"}, UnaryOp{
-														OP_NEGATIVE, Constant{TYPE_FLOAT, "10000.1234"}, TYPE_UNKNOWN,
-													}, TYPE_UNKNOWN, false,
-												}, TYPE_UNKNOWN,
-											}, TYPE_UNKNOWN, false,
-										}, TYPE_UNKNOWN,
-									}, TYPE_UNKNOWN, false,
-								}, TYPE_UNKNOWN, false,
-							}, TYPE_UNKNOWN, false,
-						},
+						newBinary(
+							OP_PLUS, newConst(TYPE_INT, "6"), newBinary(
+								OP_MULT, newConst(TYPE_INT, "7"), newBinary(
+									OP_DIV, newVar(TYPE_UNKNOWN, "variable", false), newUnary(
+										OP_NEGATIVE, newBinary(
+											OP_MINUS, newConst(TYPE_INT, "5"), newUnary(
+												OP_NEGATIVE, newBinary(
+													OP_MULT, newConst(TYPE_INT, "-8"), newUnary(
+														OP_NEGATIVE, newConst(TYPE_FLOAT, "10000.1234"),
+													), TYPE_UNKNOWN, false,
+												),
+											), TYPE_UNKNOWN, false,
+										),
+									), TYPE_UNKNOWN, false,
+								), TYPE_UNKNOWN, false,
+							), TYPE_UNKNOWN, false,
+						),
 					},
-				},
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }
@@ -162,39 +195,37 @@ func TestParserExpression2(t *testing.T) {
 
 	var code []byte = []byte(`a = a && b || (5 < false <= 8 && (false2 > variable >= 5.0) != true)`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
+				newAssignment(
+					[]Variable{newVar(TYPE_UNKNOWN, "a", false)},
 					[]Expression{
-						BinaryOp{
-							OP_AND, Variable{TYPE_UNKNOWN, "a", false}, BinaryOp{
-								OP_OR, Variable{TYPE_UNKNOWN, "b", false}, BinaryOp{
-									OP_LESS, Constant{TYPE_INT, "5"}, BinaryOp{
-										OP_LE, Constant{TYPE_BOOL, "false"}, BinaryOp{
-											OP_AND, Constant{TYPE_INT, "8"}, BinaryOp{
-												OP_NE, BinaryOp{
+						newBinary(
+							OP_AND, newVar(TYPE_UNKNOWN, "a", false), newBinary(
+								OP_OR, newVar(TYPE_UNKNOWN, "b", false), newBinary(
+									OP_LESS, newConst(TYPE_INT, "5"), newBinary(
+										OP_LE, newConst(TYPE_BOOL, "false"), newBinary(
+											OP_AND, newConst(TYPE_INT, "8"), newBinary(
+												OP_NE, newBinary(
 													OP_GREATER,
-													Variable{TYPE_UNKNOWN, "false2", false},
-													BinaryOp{OP_GE, Variable{TYPE_UNKNOWN, "variable", false}, Constant{TYPE_FLOAT, "5.0"}, TYPE_UNKNOWN, false},
+													newVar(TYPE_UNKNOWN, "false2", false),
+													newBinary(OP_GE, newVar(TYPE_UNKNOWN, "variable", false), newConst(TYPE_FLOAT, "5.0"), TYPE_UNKNOWN, false),
 													TYPE_UNKNOWN, false,
-												},
-												Constant{TYPE_BOOL, "true"},
+												),
+												newConst(TYPE_BOOL, "true"),
 												TYPE_UNKNOWN, false,
-											}, TYPE_UNKNOWN, false,
-										}, TYPE_UNKNOWN, false,
-									}, TYPE_UNKNOWN, false,
-								}, TYPE_UNKNOWN, false,
-							}, TYPE_UNKNOWN, false,
-						},
+											), TYPE_UNKNOWN, false,
+										), TYPE_UNKNOWN, false,
+									), TYPE_UNKNOWN, false,
+								), TYPE_UNKNOWN, false,
+							), TYPE_UNKNOWN, false,
+						),
 					},
-				},
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }
@@ -208,23 +239,21 @@ func TestParserIf(t *testing.T) {
 	a = 1
 	`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Condition{
-					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN, false},
-					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, SymbolTable{}},
-					Block{[]Statement{}, SymbolTable{}},
-				},
-				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
-					[]Expression{Constant{TYPE_INT, "1"}},
-				},
+				newCondition(
+					newBinary(OP_EQ, newVar(TYPE_UNKNOWN, "a", false), newVar(TYPE_UNKNOWN, "b", false), TYPE_UNKNOWN, false),
+					newBlock([]Statement{newAssignment([]Variable{newVar(TYPE_UNKNOWN, "a", false)}, []Expression{newConst(TYPE_INT, "6")})}),
+					newBlock([]Statement{}),
+				),
+				newAssignment(
+					[]Variable{newVar(TYPE_UNKNOWN, "a", false)},
+					[]Expression{newConst(TYPE_INT, "1")},
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }
@@ -239,22 +268,20 @@ func TestParserIfElse(t *testing.T) {
 	}
 	`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Condition{
-					BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, TYPE_UNKNOWN, false},
-					Block{[]Statement{Assignment{[]Variable{Variable{TYPE_UNKNOWN, "a", false}}, []Expression{Constant{TYPE_INT, "6"}}}}, SymbolTable{}},
-					Block{[]Statement{Assignment{
-						[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
-						[]Expression{Constant{TYPE_INT, "1"}},
-					}}, SymbolTable{}},
-				},
+				newCondition(
+					newBinary(OP_EQ, newVar(TYPE_UNKNOWN, "a", false), newVar(TYPE_UNKNOWN, "b", false), TYPE_UNKNOWN, false),
+					newBlock([]Statement{newAssignment([]Variable{newVar(TYPE_UNKNOWN, "a", false)}, []Expression{newConst(TYPE_INT, "6")})}),
+					newBlock([]Statement{newAssignment(
+						[]Variable{newVar(TYPE_UNKNOWN, "a", false)},
+						[]Expression{newConst(TYPE_INT, "1")},
+					)}),
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }
@@ -267,26 +294,24 @@ func TestParserAssignment(t *testing.T) {
 	a, b, c = 1, 2, 3
 	`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
-					[]Expression{Constant{TYPE_INT, "1"}},
-				},
-				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}},
-					[]Expression{Constant{TYPE_INT, "1"}, Constant{TYPE_INT, "2"}},
-				},
-				Assignment{
-					[]Variable{Variable{TYPE_UNKNOWN, "a", false}, Variable{TYPE_UNKNOWN, "b", false}, Variable{TYPE_UNKNOWN, "c", false}},
-					[]Expression{Constant{TYPE_INT, "1"}, Constant{TYPE_INT, "2"}, Constant{TYPE_INT, "3"}},
-				},
+				newAssignment(
+					[]Variable{newVar(TYPE_UNKNOWN, "a", false)},
+					[]Expression{newConst(TYPE_INT, "1")},
+				),
+				newAssignment(
+					[]Variable{newVar(TYPE_UNKNOWN, "a", false), newVar(TYPE_UNKNOWN, "b", false)},
+					[]Expression{newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2")},
+				),
+				newAssignment(
+					[]Variable{newVar(TYPE_UNKNOWN, "a", false), newVar(TYPE_UNKNOWN, "b", false), newVar(TYPE_UNKNOWN, "c", false)},
+					[]Expression{newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3")},
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }
@@ -299,25 +324,23 @@ func TestParserFor1(t *testing.T) {
 	}
 	`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Loop{
-					Assignment{[]Variable{}, []Expression{}},
+				newLoop(
+					newAssignment([]Variable{}, []Expression{}),
 					[]Expression{},
-					Assignment{[]Variable{}, []Expression{}},
-					Block{[]Statement{
-						Assignment{
-							[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
-							[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "a", false}, Constant{TYPE_INT, "1"}, TYPE_UNKNOWN, false}},
-						},
-					}, SymbolTable{}},
-				},
+					newAssignment([]Variable{}, []Expression{}),
+					newBlock([]Statement{
+						newAssignment(
+							[]Variable{newVar(TYPE_UNKNOWN, "a", false)},
+							[]Expression{newBinary(OP_PLUS, newVar(TYPE_UNKNOWN, "a", false), newConst(TYPE_INT, "1"), TYPE_UNKNOWN, false)},
+						),
+					}),
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }
@@ -330,25 +353,23 @@ func TestParserFor2(t *testing.T) {
 	}
 	`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Loop{
-					Assignment{[]Variable{Variable{TYPE_UNKNOWN, "i", false}}, []Expression{Constant{TYPE_INT, "5"}}},
+				newLoop(
+					newAssignment([]Variable{newVar(TYPE_UNKNOWN, "i", false)}, []Expression{newConst(TYPE_INT, "5")}),
 					[]Expression{},
-					Assignment{[]Variable{}, []Expression{}},
-					Block{[]Statement{
-						Assignment{
-							[]Variable{Variable{TYPE_UNKNOWN, "a", false}},
-							[]Expression{Constant{TYPE_INT, "0"}},
-						},
-					}, SymbolTable{}},
-				},
+					newAssignment([]Variable{}, []Expression{}),
+					newBlock([]Statement{
+						newAssignment(
+							[]Variable{newVar(TYPE_UNKNOWN, "a", false)},
+							[]Expression{newConst(TYPE_INT, "0")},
+						),
+					}),
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }
@@ -365,44 +386,41 @@ func TestParserFor3(t *testing.T) {
 	}
 	`)
 
-	expected := AST{
-		Block{
+	expected := newAST(
+		newBlock(
 			[]Statement{
-				Loop{
-					Assignment{
-						[]Variable{Variable{TYPE_UNKNOWN, "i", false}, Variable{TYPE_UNKNOWN, "j", false}},
-						[]Expression{Constant{TYPE_INT, "0"}, Constant{TYPE_INT, "1"}},
-					},
-					[]Expression{BinaryOp{OP_LESS, Variable{TYPE_UNKNOWN, "i", false}, Constant{TYPE_INT, "10"}, TYPE_UNKNOWN, false}},
-					Assignment{
-						[]Variable{Variable{TYPE_UNKNOWN, "i", false}},
-						[]Expression{BinaryOp{OP_PLUS, Variable{TYPE_UNKNOWN, "i", false}, Constant{TYPE_INT, "1"}, TYPE_UNKNOWN, false}},
-					},
-					Block{[]Statement{
-						Condition{
-							BinaryOp{OP_EQ, Variable{TYPE_UNKNOWN, "b", false}, Variable{TYPE_UNKNOWN, "a", false}, TYPE_UNKNOWN, false},
-							Block{[]Statement{
-								Loop{
-									Assignment{[]Variable{}, []Expression{}},
+				newLoop(
+					newAssignment(
+						[]Variable{newVar(TYPE_UNKNOWN, "i", false), newVar(TYPE_UNKNOWN, "j", false)},
+						[]Expression{newConst(TYPE_INT, "0"), newConst(TYPE_INT, "1")},
+					),
+					[]Expression{newBinary(OP_LESS, newVar(TYPE_UNKNOWN, "i", false), newConst(TYPE_INT, "10"), TYPE_UNKNOWN, false)},
+					newAssignment(
+						[]Variable{newVar(TYPE_UNKNOWN, "i", false)},
+						[]Expression{newBinary(OP_PLUS, newVar(TYPE_UNKNOWN, "i", false), newConst(TYPE_INT, "1"), TYPE_UNKNOWN, false)},
+					),
+					newBlock([]Statement{
+						newCondition(
+							newBinary(OP_EQ, newVar(TYPE_UNKNOWN, "b", false), newVar(TYPE_UNKNOWN, "a", false), TYPE_UNKNOWN, false),
+							newBlock([]Statement{
+								newLoop(
+									newAssignment([]Variable{}, []Expression{}),
 									[]Expression{},
-									Assignment{[]Variable{}, []Expression{}},
-									Block{[]Statement{
-										Assignment{
-											[]Variable{Variable{TYPE_UNKNOWN, "c", false}},
-											[]Expression{Constant{TYPE_INT, "6"}},
-										},
-									}, SymbolTable{}},
-								},
-							}, SymbolTable{}},
-							Block{[]Statement{}, SymbolTable{}},
-						},
-					}, SymbolTable{}},
-				},
+									newAssignment([]Variable{}, []Expression{}),
+									newBlock([]Statement{
+										newAssignment(
+											[]Variable{newVar(TYPE_UNKNOWN, "c", false)},
+											[]Expression{newConst(TYPE_INT, "6")},
+										),
+									})),
+							}),
+							newBlock([]Statement{}),
+						),
+					}),
+				),
 			},
-			SymbolTable{},
-		},
-		SymbolTable{},
-	}
+		),
+	)
 
 	testAST(code, expected, t)
 }

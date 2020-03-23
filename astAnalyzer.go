@@ -55,18 +55,18 @@ func analyzeTypeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, 
 	switch unaryOp.operator {
 	case OP_NEGATIVE:
 		if t != TYPE_FLOAT && t != TYPE_INT {
-			return nil, fmt.Errorf("%w - Unary '-' expression must be float or int, but is: %v", ErrCritical, unaryOp)
+			return nil, fmt.Errorf("%wUnary '-' expression must be float or int, but is: %v", ErrCritical, unaryOp)
 		}
 		unaryOp.opType = expression.getExpressionType()
 		return unaryOp, nil
 	case OP_NOT:
 		if t != TYPE_BOOL {
-			return nil, fmt.Errorf("%w - Unary '!' expression must be bool, but is: %v", ErrCritical, unaryOp)
+			return nil, fmt.Errorf("%wUnary '!' expression must be bool, but is: %v", ErrCritical, unaryOp)
 		}
 		unaryOp.opType = TYPE_BOOL
 		return unaryOp, nil
 	}
-	return nil, fmt.Errorf("%w - Unknown unary expression: %v", ErrCritical, unaryOp)
+	return nil, fmt.Errorf("%wUnknown unary expression: %v", ErrCritical, unaryOp)
 }
 
 func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, error) {
@@ -101,7 +101,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 
 	// Check types only after we possibly rearranged the expression!
 	if binaryOp.leftExpr.getExpressionType() != binaryOp.rightExpr.getExpressionType() {
-		return binaryOp, fmt.Errorf("%w - BinaryOp %v expected same type, got: %v != %v", ErrCritical, binaryOp, tLeft, tRight)
+		return binaryOp, fmt.Errorf("%wBinaryOp expected same type, got: '%v' %v '%v'", ErrCritical, tLeft, binaryOp.operator, tRight)
 	}
 
 	// We match all types explicitely to make sure that this still works or creates an error when we introduce new types
@@ -111,7 +111,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		binaryOp.opType = TYPE_BOOL
 		// We know left and right are the same type, so only compare left here.
 		if tLeft != TYPE_BOOL {
-			return binaryOp, fmt.Errorf("%w - BinaryOp %v needs bool, got: %v", ErrCritical, binaryOp.operator, tLeft)
+			return binaryOp, fmt.Errorf("%wBinaryOp %v needs bool, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		//return binaryOp, TYPE_BOOL, nil
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
@@ -122,20 +122,20 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 			binaryOp.opType = TYPE_INT
 		}
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT {
-			return binaryOp, fmt.Errorf("%w - BinaryOp %v needs int/float, got: %v", ErrCritical, binaryOp.operator, tLeft)
+			return binaryOp, fmt.Errorf("%wBinaryOp %v needs int/float, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		//return binaryOp, tLeft, nil
 	case OP_LE, OP_GE, OP_LESS, OP_GREATER:
 		binaryOp.opType = TYPE_BOOL
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
-			return binaryOp, fmt.Errorf("%w - BinaryOp %v needs int/float/string, got: %v", ErrCritical, binaryOp.operator, tLeft)
+			return binaryOp, fmt.Errorf("%wBinaryOp %v needs int/float/string, got: %v", ErrCritical, binaryOp.operator, tLeft)
 		}
 		//return binaryOp, TYPE_BOOL, nil
 	case OP_EQ, OP_NE:
 		binaryOp.opType = TYPE_BOOL
 		// We can actually compare all data types. So there will be no missmatch in general!
 	default:
-		return binaryOp, fmt.Errorf("%w - BinaryOp %v !/not expected, got: %v", ErrCritical, binaryOp.operator, tLeft)
+		return binaryOp, fmt.Errorf("%wInvalid binary operator: %v for type %v", ErrCritical, binaryOp.operator, tLeft)
 	}
 	return binaryOp, nil
 }
@@ -151,7 +151,7 @@ func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Exp
 		if vTable, ok := symbolTable.get(e.vName); ok {
 			e.vType = vTable.sType
 		} else {
-			return e, fmt.Errorf("%w - Variable type for %v unknown!", ErrCritical, e)
+			return e, fmt.Errorf("%wVariable type for %v unknown!", ErrCritical, e)
 		}
 
 		// Always access the very last entry for variables!
@@ -162,7 +162,7 @@ func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Exp
 		return analyzeTypeBinaryOp(e, symbolTable)
 	}
 
-	return expression, fmt.Errorf("%w - Unknown type for expression %v", ErrCritical, expression)
+	return expression, fmt.Errorf("%wUnknown type for expression %v", ErrCritical, expression)
 }
 
 func analyzeTypeCondition(condition Condition, symbolTable *SymbolTable) (Condition, error) {
@@ -173,7 +173,7 @@ func analyzeTypeCondition(condition Condition, symbolTable *SymbolTable) (Condit
 		return condition, err
 	}
 	if e.getExpressionType() != TYPE_BOOL {
-		return condition, fmt.Errorf("%w - If expression expected boolean, got: %v (%v)", ErrCritical, e.getExpressionType(), condition)
+		return condition, fmt.Errorf("%wIf expression expected boolean, got: %v (%v)", ErrCritical, e.getExpressionType(), condition)
 	}
 	condition.expression = e
 
@@ -211,7 +211,7 @@ func analyzeTypeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 			return loop, err
 		}
 		if expression.getExpressionType() != TYPE_BOOL {
-			return loop, fmt.Errorf("%w - For expression expected boolean, got: %v (%v)", ErrCritical, expression.getExpressionType(), e)
+			return loop, fmt.Errorf("%wLoop expression expected boolean, got: %v (%v)", ErrCritical, expression.getExpressionType(), e)
 		}
 
 		loop.expressions[i] = expression
@@ -239,21 +239,21 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 
 	// Populate/overwrite the dictionary of variables for futher statements :)
 	if len(assignment.variables) != len(assignment.expressions) {
-		return assignment, fmt.Errorf("%w - Assignment %v - variables and expression count need to match", ErrCritical, assignment)
+		return assignment, fmt.Errorf("%wAssignment %v - variables and expression count need to match", ErrCritical, assignment)
 	}
 
 	for i, v := range assignment.variables {
 
 		expression, err := analyzeTypeExpression(assignment.expressions[i], symbolTable)
 		if err != nil {
-			return assignment, fmt.Errorf("%w - Invalid expression in assignment", err)
+			return assignment, fmt.Errorf("Invalid expression in assignment - %w", err)
 		}
 		expressionType := expression.getExpressionType()
 
 		// Shadowing is only allowed in a different block, not right after the first variable, to avoid confusion and complicated
 		// variable handling
 		if _, ok := symbolTable.getLocal(v.vName); ok && v.vShadow {
-			return assignment, fmt.Errorf("%w - Variable %v is shadowing in the same block. This is not allowed", ErrCritical, v.vName)
+			return assignment, fmt.Errorf("%wVariable %v is shadowing in the same block. This is not allowed", ErrCritical, v.vName)
 		}
 
 		// Only, if the variable already exists and we're not trying to shadow it!
@@ -261,7 +261,7 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 			if !v.vShadow {
 				if vTable.sType != expressionType {
 					return assignment, fmt.Errorf(
-						"%w - Assignment type missmatch between variable %v and expression %v != %v", ErrCritical, v, vTable.sType, expressionType,
+						"%wAssignment type missmatch between variable %v and expression %v != %v", ErrCritical, v, vTable.sType, expressionType,
 					)
 				}
 			} else {
@@ -292,7 +292,7 @@ func analyzeTypeStatement(statement Statement, symbolTable *SymbolTable) (Statem
 		}
 		return assignment, nil
 	}
-	return statement, fmt.Errorf("%w - Unexpected statement: %v", ErrCritical, statement)
+	return statement, fmt.Errorf("%wUnexpected statement: %v", ErrCritical, statement)
 }
 
 // analyzeTypeBlock gets a reference to the current (now parent) symbol table
