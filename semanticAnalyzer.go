@@ -70,8 +70,19 @@ func analyzeTypeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, 
 }
 
 func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, error) {
-	leftExpression, err := analyzeTypeExpression(binaryOp.leftExpr, symbolTable)
 
+	// Re-order expression, if the expression is not fixed and the priority is of the operator is not according to the priority
+	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
+	if tmpE, ok := binaryOp.rightExpr.(BinaryOp); ok {
+		if binaryOp.operator.priority() < tmpE.operator.priority() && !tmpE.fixed {
+			newChild := binaryOp
+			newChild.rightExpr = tmpE.leftExpr
+			tmpE.leftExpr = newChild
+			binaryOp = tmpE
+		}
+	}
+
+	leftExpression, err := analyzeTypeExpression(binaryOp.leftExpr, symbolTable)
 	if err != nil {
 		return binaryOp, err
 	}
@@ -83,24 +94,12 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 	}
 	binaryOp.rightExpr = rightExpression
 
-	// Re-order expression, if the expression is not fixed and the priority is of the operator is not according to the priority
-	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
-	if tmpE, ok := binaryOp.rightExpr.(BinaryOp); ok {
-		if binaryOp.operator.priority() < tmpE.operator.priority() && !tmpE.fixed {
-
-			newChild := binaryOp
-			newChild.rightExpr = tmpE.leftExpr
-			tmpE.leftExpr = newChild
-			binaryOp = tmpE
-
-		}
-	}
-
 	tLeft := binaryOp.leftExpr.getExpressionType()
 	tRight := binaryOp.rightExpr.getExpressionType()
 
 	// Check types only after we possibly rearranged the expression!
 	if binaryOp.leftExpr.getExpressionType() != binaryOp.rightExpr.getExpressionType() {
+		fmt.Println(binaryOp.leftExpr, binaryOp.rightExpr)
 		return binaryOp, fmt.Errorf(
 			"%w[%v:%v] - BinaryOp expected same type, got: '%v' %v '%v'",
 			ErrCritical, binaryOp.line, binaryOp.column, tLeft, binaryOp.operator, tRight,
@@ -152,6 +151,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 			ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
 		)
 	}
+
 	return binaryOp, nil
 }
 
@@ -168,7 +168,6 @@ func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Exp
 		} else {
 			return e, fmt.Errorf("%w[%v:%v] - Variable type for %v unknown!", ErrCritical, e.line, e.column, e)
 		}
-
 		// Always access the very last entry for variables!
 		return e, nil
 	case UnaryOp:
@@ -251,6 +250,7 @@ func analyzeTypeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 		return loop, err
 	}
 	loop.block = statements
+	loop.block.symbolTable = nextSymbolTable
 
 	return loop, nil
 }

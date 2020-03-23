@@ -149,7 +149,8 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 	if symbol, ok := s.get(v.vName); ok {
-		asm.program = append(asm.program, [3]string{"  ", "push", symbol.varName})
+		asm.program = append(asm.program, [3]string{"  ", "push", fmt.Sprintf("qword [%v]", symbol.varName)})
+		return
 	}
 	fmt.Println("Could not generate code for Variable. No symbol known!")
 }
@@ -251,10 +252,10 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 }
 
 func debugPrint(asm *ASM, vName string) {
-	asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("rsi, qword [%v]", vName)})
-	asm.program = append(asm.program, [3]string{"  ", "mov", "rdi, fmti"})
-	asm.program = append(asm.program, [3]string{"  ", "mov", "rax, 0"})
-	asm.program = append(asm.program, [3]string{"  ", "call", "printf"})
+	asm.program = append(asm.program, [3]string{"    ", "mov", fmt.Sprintf("rsi, qword [%v]", vName)})
+	asm.program = append(asm.program, [3]string{"    ", "mov", "rdi, fmti"})
+	asm.program = append(asm.program, [3]string{"    ", "mov", "rax, 0"})
+	asm.program = append(asm.program, [3]string{"    ", "call", "printf"})
 }
 
 func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
@@ -286,15 +287,63 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", vName, register)})
 
 		debugPrint(asm, vName)
-
 	}
 
 }
 
 func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
+
+	c.expression.generateCode(asm, s)
+
+	register, _ := getRegister(TYPE_BOOL)
+	// For now, we assume an else case. Even if it is just empty!
+	elseLabel := asm.nextLabelName()
+	endLabel := asm.nextLabelName()
+
+	asm.program = append(asm.program, [3]string{"  ", "pop", register})
+	asm.program = append(asm.program, [3]string{"  ", "cmp", fmt.Sprintf("%v, 0", register)})
+	asm.program = append(asm.program, [3]string{"  ", "je", elseLabel})
+
+	c.block.generateCode(asm, s)
+
+	asm.program = append(asm.program, [3]string{"  ", "jmp", endLabel})
+	asm.program = append(asm.program, [3]string{"", elseLabel + ":", ""})
+
+	c.elseBlock.generateCode(asm, s)
+
+	asm.program = append(asm.program, [3]string{"", endLabel + ":", ""})
 }
 
 func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
+
+	register, _ := getRegister(TYPE_BOOL)
+	startLabel := asm.nextLabelName()
+	evalLabel := asm.nextLabelName()
+	endLabel := asm.nextLabelName()
+
+	// The initial assignment is logically moved inside the for-block
+	l.assignment.generateCode(asm, &l.block.symbolTable)
+
+	asm.program = append(asm.program, [3]string{"  ", "jmp", evalLabel})
+	asm.program = append(asm.program, [3]string{"", startLabel + ":", ""})
+
+	l.block.generateCode(asm, s)
+
+	// The increment assignment is logically moved inside the for-block
+	l.incrAssignment.generateCode(asm, &l.block.symbolTable)
+
+	asm.program = append(asm.program, [3]string{"", evalLabel + ":", ""})
+
+	// If any of the expressions result in False (0), we jump to the end!
+	for _, e := range l.expressions {
+		e.generateCode(asm, &l.block.symbolTable)
+		asm.program = append(asm.program, [3]string{"  ", "pop", register})
+		asm.program = append(asm.program, [3]string{"  ", "cmp", fmt.Sprintf("%v, 0", register)})
+		asm.program = append(asm.program, [3]string{"  ", "je", endLabel})
+	}
+	// So if we get here, all expressions were true. So jump to start again.
+	asm.program = append(asm.program, [3]string{"  ", "jmp", startLabel})
+	asm.program = append(asm.program, [3]string{"", endLabel + ":", ""})
 }
 
 func (b Block) generateCode(asm *ASM, s *SymbolTable) {

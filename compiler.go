@@ -42,10 +42,10 @@ func assemble(asm ASM, source, executable string) {
 		fmt.Fprintf(srcFile, "%v\n", v)
 	}
 	for _, v := range asm.constants {
-		fmt.Fprintf(srcFile, "%-10v%-10v%-15v\n", v[0], "equ", v[1])
+		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v[0], "equ", v[1])
 	}
 	for _, v := range asm.variables {
-		fmt.Fprintf(srcFile, "%-10v%-10v%-15v\n", v[0], v[1], v[2])
+		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v[0], v[1], v[2])
 	}
 	for _, v := range asm.program {
 		fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
@@ -97,9 +97,12 @@ func main() {
 // I can now write comments :)
 //b = (2 == 2) && !!!false
 
-c = 4 != 5
+//c = 4
+//c = c + 1
 
-if 4 != 5 {}
+for i, j = 0, 2; i < 5, j*2 < 5; i = i+1 {
+	a = i*j
+}
 
 `)
 
