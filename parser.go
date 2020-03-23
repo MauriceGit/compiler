@@ -12,7 +12,7 @@ import (
 stat 	::= assign | if | for
 
 if 		::= 'if' exp '{' [stat] '}' [else '{' [stat] '}']
-for		::= 'for' [assign] ';' explist ';' [assign] '{' [stat] '}'
+for		::= 'for' [assign] ';' [explist] ';' [assign] '{' [stat] '}'
 
 
 assign 	::= varlist ‘=’ explist
@@ -73,7 +73,7 @@ const (
 
 var (
 	ErrCritical = errors.New("")
-	ErrNormal   = errors.New("error")
+	ErrNormal   = errors.New("error - ")
 )
 
 type SymbolEntry struct {
@@ -511,28 +511,30 @@ func parseVariable(tokens *TokenChannel) (Variable, bool) {
 		return Variable{TYPE_UNKNOWN, v, shadowing, row, col}, true
 	}
 	// Only line/column are valid!
-	return Variable{TYPE_UNKNOWN, "", false, tokens.token.line, tokens.token.column}, false
+	return Variable{}, false
 }
 
 func parseVarList(tokens *TokenChannel) (variables []Variable, err error) {
+	lastRow, lastCol := 0, 0
 	i := 0
 	for {
 		v, ok := parseVariable(tokens)
 		if !ok {
 
 			// If we don't find any variable, thats fine. Just don't end in ',', thats an error!
+			// We throw a normal error, so the parser up the chain can handle it how it likes.
 			if i == 0 {
+				err = fmt.Errorf("%wVariable list is empty or invalid", ErrNormal)
 				return
 			}
-			row, col := v.startPos()
-			err = fmt.Errorf("%w[%v:%v] - Variable list ends with ','", ErrCritical, row, col)
+			err = fmt.Errorf("%w[%v:%v] - Variable list ends with ','", ErrCritical, lastRow, lastCol)
 			variables = nil
 			return
 		}
 		variables = append(variables, v)
 
 		// Expect separating ','. Otherwise, all good, we are through!
-		if _, _, ok := expect(tokens, TOKEN_SEPARATOR, ","); !ok {
+		if lastRow, lastCol, ok = expect(tokens, TOKEN_SEPARATOR, ","); !ok {
 			break
 		}
 		i += 1
@@ -583,11 +585,12 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 		return
 	}
 
-	// Or a '(', then continue until ')'. Parenthesis are not included in the AST, as they are implicit!
+	// Or a '(', then continue until ')'.
 	if row, col, ok := expect(tokens, TOKEN_PARENTHESIS_OPEN, "("); ok {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
-			err = fmt.Errorf("%wInvalid expression in ()", ErrNormal)
+			err = fmt.Errorf("%wInvalid expression in () --> %v", ErrCritical, parseErr.Error())
+			fmt.Println(err)
 			return
 		}
 		if tmpE, ok := e.(BinaryOp); ok {
@@ -648,7 +651,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 	} else {
 		simpleExpression, parseErr := parseSimpleExpression(tokens)
 		if parseErr != nil {
-			err = fmt.Errorf("%wSimple expression expected, got something else", ErrNormal)
+			err = fmt.Errorf("%wSimple expression expected, got something else", parseErr)
 			return
 		}
 		expression = simpleExpression
@@ -676,13 +679,15 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 func parseExpressionList(tokens *TokenChannel) (expressions []Expression, err error) {
 
 	i := 0
-	lastRow, lastCol := 0, 0
-	ok := false
+	lastRow, lastCol, ok := 0, 0, false
 	for {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
+
 			// If we don't find any expression, thats fine. Just don't end in ',', thats an error!
 			if i == 0 {
+				// We propagate the error from the parser. This might be normal or critical.
+				err = fmt.Errorf("%w - Expression list is empty or invalid", parseErr)
 				return
 			}
 
@@ -706,22 +711,27 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 
 	// A list of variables!
 	variables, parseErr := parseVarList(tokens)
+	// No variables will return an ErrNormal. So all good, severity is handled up stream.
 	if len(variables) == 0 {
 		err = fmt.Errorf("%wExpected variable in assignment, got something else", parseErr)
 		return
 	}
+	// This is most likely a critical error, like: a, = ...
 	if parseErr != nil {
 		err = fmt.Errorf("%w - Parsing the variable list for an assignment resulted in an error", parseErr)
 		return
 	}
 
 	// One TOKEN_ASSIGNMENT
+	// If we got this far, we have a valid variable list. So from here on out, this _needs_ to be valid!
 	if row, col, ok := expect(tokens, TOKEN_ASSIGNMENT, "="); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected '=' in assignment, got something else", ErrCritical, row, col)
 		return
 	}
 
 	expressions, parseErr := parseExpressionList(tokens)
+	// For now we also accept an empty expression list (ErrNormal). If this is valid or not, is handled in the
+	// semanticAnalyzer.
 	if errors.Is(parseErr, ErrCritical) {
 		err = fmt.Errorf("%w - Invalid expression list in assignment", parseErr)
 		return
@@ -744,7 +754,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 
 	expression, parseErr := parseExpression(tokens)
 	if parseErr != nil {
-		err = fmt.Errorf("%w, %w - Expected expression after 'if' keyword", ErrCritical, parseErr)
+		err = fmt.Errorf("%w%v - Expected expression after 'if' keyword", ErrCritical, parseErr.Error())
 		return
 	}
 
@@ -816,7 +826,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	}
 
 	expressions, parseErr := parseExpressionList(tokens)
-	if parseErr != nil {
+	if errors.Is(parseErr, ErrCritical) {
 		err = fmt.Errorf("%w - Invalid expression list in loop expression", parseErr)
 		return
 	}
@@ -855,6 +865,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	loop.block = forBlock
 	loop.line = startRow
 	loop.column = startCol
+
 	return
 }
 

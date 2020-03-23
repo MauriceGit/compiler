@@ -85,14 +85,23 @@ func assemble(asm ASM, source, executable string) {
 func main() {
 	var program []byte = []byte(`
 
-v = (10 + 5 + 3 + 2) * -1 * 3
+//v = (10 + 5 + 3 + 2) * -1 * 3
 // I can now write comments :)
-b = (2 == 2) && !!!false
+//b = (2 == 2) && !!!false
+
+//c = 4 != 5
+
+if 4 !=>= 5 {}
 
 `)
 
 	tokenChan := make(chan Token, 1)
 	go tokenize(program, tokenChan)
+
+	//	for {
+	//		t := <-tokenChan
+	//		fmt.Println(t)
+	//	}
 
 	ast, err := parse(tokenChan)
 	if err != nil {
