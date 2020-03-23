@@ -498,7 +498,7 @@ func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, boo
 	t := tokens.next()
 	if t.tokenType != ttype || t.value != value {
 		tokens.pushBack(t)
-		return -1, -1, false
+		return t.line, t.column, false
 	}
 	return t.line, t.column, true
 }
