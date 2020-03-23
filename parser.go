@@ -483,7 +483,7 @@ func getOperatorType(o string) Operator {
 
 // expectType checks the next token against a given expected type and returns the token string
 // with corresponding line and column numbers
-func expectType(tokens *TokenChannel, ttype TokenType) (string, int, int, bool) {
+func (tokens *TokenChannel) expectType(ttype TokenType) (string, int, int, bool) {
 	t := tokens.next()
 	if t.tokenType != ttype {
 		tokens.pushBack(t)
@@ -494,7 +494,7 @@ func expectType(tokens *TokenChannel, ttype TokenType) (string, int, int, bool) 
 
 // expect checks the next token against a given expected type and value and returns true, if the
 // check was valid.
-func expect(tokens *TokenChannel, ttype TokenType, value string) (int, int, bool) {
+func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, bool) {
 	t := tokens.next()
 	if t.tokenType != ttype || t.value != value {
 		tokens.pushBack(t)
@@ -505,9 +505,9 @@ func expect(tokens *TokenChannel, ttype TokenType, value string) (int, int, bool
 
 func parseVariable(tokens *TokenChannel) (Variable, bool) {
 
-	_, _, shadowing := expect(tokens, TOKEN_KEYWORD, "shadow")
+	_, _, shadowing := tokens.expect(TOKEN_KEYWORD, "shadow")
 
-	if v, row, col, ok := expectType(tokens, TOKEN_IDENTIFIER); ok {
+	if v, row, col, ok := tokens.expectType(TOKEN_IDENTIFIER); ok {
 		return Variable{TYPE_UNKNOWN, v, shadowing, row, col}, true
 	}
 	// Only line/column are valid!
@@ -534,7 +534,7 @@ func parseVarList(tokens *TokenChannel) (variables []Variable, err error) {
 		variables = append(variables, v)
 
 		// Expect separating ','. Otherwise, all good, we are through!
-		if lastRow, lastCol, ok = expect(tokens, TOKEN_SEPARATOR, ","); !ok {
+		if lastRow, lastCol, ok = tokens.expect(TOKEN_SEPARATOR, ","); !ok {
 			break
 		}
 		i += 1
@@ -566,7 +566,7 @@ func getConstType(c string) Type {
 
 func parseConstant(tokens *TokenChannel) (Constant, bool) {
 
-	if v, row, col, ok := expectType(tokens, TOKEN_CONSTANT); ok {
+	if v, row, col, ok := tokens.expectType(TOKEN_CONSTANT); ok {
 		return Constant{getConstType(v), v, row, col}, true
 	}
 	return Constant{TYPE_UNKNOWN, "", tokens.token.line, tokens.token.column}, false
@@ -586,7 +586,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 	}
 
 	// Or a '(', then continue until ')'.
-	if row, col, ok := expect(tokens, TOKEN_PARENTHESIS_OPEN, "("); ok {
+	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); ok {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = fmt.Errorf("%wInvalid expression in () --> %v", ErrCritical, parseErr.Error())
@@ -602,7 +602,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 		expression = e
 
 		// Expect TOKEN_PARENTHESIS_CLOSE
-		row, col, ok = expect(tokens, TOKEN_PARENTHESIS_CLOSE, ")")
+		row, col, ok = tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")")
 		if ok {
 			return
 		}
@@ -617,7 +617,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 
 func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err error) {
 	// Check for unary operator before the expression
-	if row, col, ok := expect(tokens, TOKEN_OPERATOR, "-"); ok {
+	if row, col, ok := tokens.expect(TOKEN_OPERATOR, "-"); ok {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = fmt.Errorf("%w[%v:%v] - Invalid expression after unary '-'", ErrCritical, row, col)
@@ -628,7 +628,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 		return
 	}
 	// Check for unary operator before the expression
-	if row, col, ok := expect(tokens, TOKEN_OPERATOR, "!"); ok {
+	if row, col, ok := tokens.expect(TOKEN_OPERATOR, "!"); ok {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = fmt.Errorf("%w[%v:%v] - Invalid expression after unary '!'", ErrCritical, row, col)
@@ -659,7 +659,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 
 	// Or an expression followed by a binop. Here we can continue just normally and just check
 	// if token.next() == binop, and just then, throw the parsed expression into a binop one.
-	if t, row, col, ok := expectType(tokens, TOKEN_OPERATOR); ok {
+	if t, row, col, ok := tokens.expectType(TOKEN_OPERATOR); ok {
 
 		// Create and return binary operation expression!
 		rightHandExpr, parseErr := parseExpression(tokens)
@@ -698,7 +698,7 @@ func parseExpressionList(tokens *TokenChannel) (expressions []Expression, err er
 		expressions = append(expressions, e)
 
 		// Expect separating ','. Otherwise, all good, we are through!
-		if lastRow, lastCol, ok = expect(tokens, TOKEN_SEPARATOR, ","); !ok {
+		if lastRow, lastCol, ok = tokens.expect(TOKEN_SEPARATOR, ","); !ok {
 			break
 		}
 		i += 1
@@ -724,7 +724,7 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 
 	// One TOKEN_ASSIGNMENT
 	// If we got this far, we have a valid variable list. So from here on out, this _needs_ to be valid!
-	if row, col, ok := expect(tokens, TOKEN_ASSIGNMENT, "="); !ok {
+	if row, col, ok := tokens.expect(TOKEN_ASSIGNMENT, "="); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected '=' in assignment, got something else", ErrCritical, row, col)
 		return
 	}
@@ -747,7 +747,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 
 	startRow, startCol, ok := 0, 0, false
 
-	if startRow, startCol, ok = expect(tokens, TOKEN_KEYWORD, "if"); !ok {
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "if"); !ok {
 		err = fmt.Errorf("%wExpected 'if' keyword for condition, got something else", ErrNormal)
 		return
 	}
@@ -758,7 +758,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 		return
 	}
 
-	if row, col, ok := expect(tokens, TOKEN_CURLY_OPEN, "{"); !ok {
+	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected '{' after condition, got something else", ErrCritical, row, col)
 		return
 	}
@@ -769,7 +769,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 		return
 	}
 
-	if row, col, ok := expect(tokens, TOKEN_CURLY_CLOSE, "}"); !ok {
+	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected '}' after condition block, got something else", ErrCritical, row, col)
 		return
 	}
@@ -778,8 +778,8 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	condition.block = statements
 
 	// Just in case we have an else, handle it!
-	if _, _, ok := expect(tokens, TOKEN_KEYWORD, "else"); ok {
-		if row, col, ok := expect(tokens, TOKEN_CURLY_OPEN, "{"); !ok {
+	if _, _, ok := tokens.expect(TOKEN_KEYWORD, "else"); ok {
+		if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
 			err = fmt.Errorf("%w[%v:%v] - Expected '{' after 'else' in condition, got something else", ErrCritical, row, col)
 			return
 		}
@@ -790,7 +790,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 			return
 		}
 
-		if row, col, ok := expect(tokens, TOKEN_CURLY_CLOSE, "}"); !ok {
+		if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
 			err = fmt.Errorf("%w[%v:%v] - Expected '}' after 'else' block in condition, got something else", ErrCritical, row, col)
 			return
 		}
@@ -808,7 +808,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 
 	startRow, startCol, ok := 0, 0, false
 
-	if startRow, startCol, ok = expect(tokens, TOKEN_KEYWORD, "for"); !ok {
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "for"); !ok {
 		err = fmt.Errorf("%wExpected 'for' keyword for loop, got something else", ErrNormal)
 		return
 	}
@@ -820,7 +820,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 		return
 	}
 
-	if row, col, ok := expect(tokens, TOKEN_SEMICOLON, ";"); !ok {
+	if row, col, ok := tokens.expect(TOKEN_SEMICOLON, ";"); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected ';' after loop assignment, got something else", ErrCritical, row, col)
 		return
 	}
@@ -831,7 +831,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 		return
 	}
 
-	if row, col, ok := expect(tokens, TOKEN_SEMICOLON, ";"); !ok {
+	if row, col, ok := tokens.expect(TOKEN_SEMICOLON, ";"); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected ';' after loop expression, got something else", ErrCritical, row, col)
 		return
 	}
@@ -843,7 +843,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 		return
 	}
 
-	if row, col, ok := expect(tokens, TOKEN_CURLY_OPEN, "{"); !ok {
+	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected '{' after loop header, got something else", ErrCritical, row, col)
 		return
 	}
@@ -854,7 +854,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 		return
 	}
 
-	if row, col, ok := expect(tokens, TOKEN_CURLY_CLOSE, "}"); !ok {
+	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected '}' after loop block, got something else", ErrCritical, row, col)
 		return
 	}

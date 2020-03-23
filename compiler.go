@@ -89,9 +89,9 @@ func main() {
 // I can now write comments :)
 //b = (2 == 2) && !!!false
 
-//c = 4 != 5
+c = 4 != 5
 
-if 4 !=>= 5 {}
+if 4 != 5 {}
 
 `)
 
