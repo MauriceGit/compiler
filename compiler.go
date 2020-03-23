@@ -54,6 +54,10 @@ func assemble(asm ASM, source, executable string) {
 
 	// Find yasm
 	yasm, err := exec.LookPath("yasm")
+	if err != nil {
+		fmt.Println("yasm not found. Please install.")
+		return
+	}
 	// Assemble
 	yasmCmd := &exec.Cmd{
 		Path:   yasm,
@@ -68,6 +72,10 @@ func assemble(asm ASM, source, executable string) {
 
 	// Find ld
 	ld, err := exec.LookPath("ld")
+	if err != nil {
+		fmt.Println("ld not found. Please install.")
+		return
+	}
 	// Link
 	ldCmd := &exec.Cmd{
 		Path:   ld,
@@ -97,11 +105,6 @@ if 4 != 5 {}
 
 	tokenChan := make(chan Token, 1)
 	go tokenize(program, tokenChan)
-
-	//	for {
-	//		t := <-tokenChan
-	//		fmt.Println(t)
-	//	}
 
 	ast, err := parse(tokenChan)
 	if err != nil {
