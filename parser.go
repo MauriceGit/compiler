@@ -18,7 +18,7 @@ for			::= 'for' [assign] ';' [explist] ';' [assign] '{' [statlist] '}'
 type		::= 'int' | 'float' | 'string' | 'bool'
 typelist	::= type [',' typelist]
 paramlist	::= var type [',' paramlist]
-funDecl		::= 'fun' Name '(' [paramlist] ')' ['(' typelist ')'] '{' [statlist] 'return' explist '}'
+funDecl		::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] ['return' [explist]] '}'
 
 assign 		::= varlist ‘=’ explist
 varlist		::= varDecl [‘,’ varlist]
@@ -506,7 +506,7 @@ func (tokens *TokenChannel) expectType(ttype TokenType) (string, int, int, bool)
 	t := tokens.next()
 	if t.tokenType != ttype {
 		tokens.pushBack(t)
-		return "", -1, -1, false
+		return "", t.line, t.column, false
 	}
 	return t.value, t.line, t.column, true
 }
@@ -978,10 +978,11 @@ func parseTypeList(tokens *TokenChannel) (types []Type, err error) {
 type		::= 'int' | 'float' | 'string' | 'bool'
 typelist	::= type [',' typelist]
 paramlist	::= var type [',' paramlist]
-funDecl		::= 'fun' Name '(' [paramlist] ')' ['(' typelist ')'] '{' [statlist] 'return' exp '}'
+funDecl		::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] 'return' exp '}'
 */
 func parseFunction(tokens *TokenChannel) (fun Function, err error) {
 	startRow, startCol, ok := 0, 0, false
+	var parseErr error = nil
 
 	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "fun"); !ok {
 		err = fmt.Errorf("%wExpected 'fun' keyword for function", ErrNormal)
@@ -1027,16 +1028,18 @@ func parseFunction(tokens *TokenChannel) (fun Function, err error) {
 		return
 	}
 
-	// TODO: Omit return, if the returnTypes list is empty!
-	if row, col, ok := tokens.expect(TOKEN_KEYWORD, "return"); !ok {
+	if row, col, ok := tokens.expect(TOKEN_KEYWORD, "return"); !ok && len(returnTypes) > 0 {
 		err = fmt.Errorf("%w[%v:%v] - Expected 'return' after function block", ErrCritical, row, col)
 		return
 	}
 
-	expressions, parseErr := parseExpressionList(tokens)
-	if errors.Is(parseErr, ErrCritical) {
-		err = fmt.Errorf("%w - Invalid expression list for function return", parseErr)
-		return
+	expressions := []Expression{}
+	if len(returnTypes) > 0 {
+		expressions, parseErr = parseExpressionList(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = fmt.Errorf("%w - Invalid expression list for function return", parseErr)
+			return
+		}
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {

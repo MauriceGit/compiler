@@ -97,9 +97,9 @@ func main() {
 // I can now write comments :)
 //b = (2 == 2) && !!!false
 
-j = true && false
-for i = 0; i < 5; i = i+1 {
-	a = i
+//j = 1
+fun abc(a int, b float) int, float, bool {
+	return 4
 }
 
 `)
