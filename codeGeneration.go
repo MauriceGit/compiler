@@ -60,7 +60,7 @@ func getCommandFloat(op Operator) string {
 	case OP_DIV:
 		return "divsd"
 	default:
-		fmt.Println("Code generation error. Unknown operator for Float")
+		panic("Code generation error. Unknown operator for Float")
 	}
 	return ""
 }
@@ -76,7 +76,7 @@ func getCommandInt(op Operator) string {
 	case OP_DIV:
 		return "div"
 	default:
-		fmt.Println("Code generation error. Unknown operator for Integer")
+		panic("Code generation error. Unknown operator for Integer")
 	}
 	return ""
 }
@@ -88,7 +88,7 @@ func getCommandBool(op Operator) string {
 	case OP_OR:
 		return "or"
 	default:
-		fmt.Println("Code generation error. Unknown operator for bool")
+		panic("Code generation error. Unknown operator for bool")
 	}
 	return ""
 }
@@ -100,7 +100,7 @@ func getRegister(t Type) (string, string) {
 	case TYPE_FLOAT:
 		return "xmm0", "xmm1"
 	case TYPE_STRING:
-		fmt.Println("Code generation error. String register not yet implemented")
+		panic("Code generation error. String register not yet implemented")
 	}
 	return "", ""
 }
@@ -115,7 +115,7 @@ func getCommand(t Type, op Operator) string {
 	case TYPE_INT:
 		return getCommandInt(op)
 	case TYPE_STRING:
-		fmt.Println("Code generation error. String commands not yet implemented")
+		panic("Code generation error. String commands not yet implemented")
 	}
 	return ""
 }
@@ -139,8 +139,7 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 			name = "TRUE"
 		}
 	default:
-		fmt.Println("Could not generate code for Const. Unknown type!")
-		return
+		panic("Could not generate code for Const. Unknown type!")
 	}
 
 	asm.program = append(asm.program, [3]string{"  ", "push", name})
@@ -152,7 +151,7 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 		asm.program = append(asm.program, [3]string{"  ", "push", fmt.Sprintf("qword [%v]", symbol.varName)})
 		return
 	}
-	fmt.Println("Could not generate code for Variable. No symbol known!")
+	panic("Could not generate code for Variable. No symbol known!")
 }
 
 func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
@@ -168,7 +167,7 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 			asm.program = append(asm.program, [3]string{"  ", "pop", register})
 			asm.program = append(asm.program, [3]string{"  ", "not", register})
 		} else {
-			fmt.Printf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType)
+			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType))
 		}
 	case TYPE_INT:
 		if u.operator == OP_NEGATIVE {
@@ -176,7 +175,7 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 			asm.program = append(asm.program, [3]string{"  ", "neg", register})
 
 		} else {
-			fmt.Printf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType)
+			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType))
 		}
 	case TYPE_FLOAT:
 		if u.operator == OP_NEGATIVE {
@@ -184,10 +183,10 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 			asm.program = append(asm.program, [3]string{"  ", "mulsd", fmt.Sprintf("%v, qword [negOneF]", register)})
 
 		} else {
-			fmt.Printf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType)
+			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v", u.operator, u.opType))
 		}
 	case TYPE_STRING:
-		fmt.Printf("Code generation error. No unary expression for Type String\n")
+		panic("Code generation error. No unary expression for Type String")
 		return
 	}
 
@@ -243,9 +242,9 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		}
 
 	case TYPE_STRING:
-		fmt.Println("Code generation error: Strings not supported yet.")
+		panic("Code generation error: Strings not supported yet.")
 	default:
-		fmt.Printf("Code generation error: Unknown operation type %v\n", int(b.opType))
+		panic(fmt.Sprintf("Code generation error: Unknown operation type %v\n", int(b.opType)))
 	}
 
 	asm.program = append(asm.program, [3]string{"  ", "push", rLeft})
