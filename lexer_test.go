@@ -15,7 +15,15 @@ func testChannelEqualSlice(tokens chan Token, expected []Token) (bool, int, Toke
 
 func testTokens(code []byte, expect []Token, t *testing.T) {
 	tokenChan := make(chan Token, 100)
-	go tokenize(code, tokenChan)
+	lexerErr := make(chan error, 1)
+	go tokenize(code, tokenChan, lexerErr)
+
+	select {
+	case e := <-lexerErr:
+		t.Errorf("%v", e.Error())
+		return
+	default:
+	}
 
 	if ok, i, te, tg := testChannelEqualSlice(tokenChan, expect); !ok {
 		t.Errorf("Expected %v, got %v at position %v\n", te, tg, i)

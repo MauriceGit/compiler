@@ -116,8 +116,16 @@ func compareASTs(generated AST, expected AST) (bool, string) {
 
 func testAST(code []byte, expected AST, t *testing.T) {
 	tokenChan := make(chan Token, 1)
-	go tokenize(code, tokenChan)
+	lexerErr := make(chan error, 1)
+	go tokenize(code, tokenChan, lexerErr)
+
 	generated, err := parse(tokenChan)
+	select {
+	case e := <-lexerErr:
+		t.Errorf("%v", e.Error())
+		return
+	default:
+	}
 	if err != nil {
 		t.Errorf("Parsing error: %v", err)
 	}
