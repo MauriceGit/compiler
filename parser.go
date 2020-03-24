@@ -590,7 +590,6 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
 			err = fmt.Errorf("%wInvalid expression in () --> %v", ErrCritical, parseErr.Error())
-			fmt.Println(err)
 			return
 		}
 		if tmpE, ok := e.(BinaryOp); ok {

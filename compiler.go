@@ -8,29 +8,29 @@ import (
 	"os/exec"
 )
 
-func assemble(asm ASM, source, executable string) {
+func assemble(asm ASM, source, executable string) (err error) {
 
 	var srcFile *os.File
-	var err error
+	var e error
 
 	if source == "" {
-		srcFile, err = ioutil.TempFile("", "")
-		if err != nil {
-			fmt.Println("Creating temporary srcFile failed.")
+		srcFile, e = ioutil.TempFile("", "")
+		if e != nil {
+			err = fmt.Errorf("Creating temporary srcFile failed - %w", e)
 			return
 		}
 		defer os.Remove(srcFile.Name())
 	} else {
-		srcFile, err = os.Create(source)
-		if err != nil {
-			fmt.Println("Creating srcFile failed.")
+		srcFile, e = os.Create(source)
+		if e != nil {
+			err = fmt.Errorf("Creating srcFile failed - %w", e)
 			return
 		}
 	}
 
-	objectFile, err := ioutil.TempFile("", "")
-	if err != nil {
-		fmt.Println("Creating temporary objectFile failed.")
+	objectFile, e := ioutil.TempFile("", "")
+	if e != nil {
+		err = fmt.Errorf("Creating temporary objectFile failed - %w", e)
 		return
 	}
 	objectFile.Close()
@@ -53,9 +53,9 @@ func assemble(asm ASM, source, executable string) {
 	srcFile.Close()
 
 	// Find yasm
-	yasm, err := exec.LookPath("yasm")
-	if err != nil {
-		fmt.Println("yasm not found. Please install.")
+	yasm, e := exec.LookPath("yasm")
+	if e != nil {
+		err = fmt.Errorf("'yasm' not found. Please install - %w", e)
 		return
 	}
 	// Assemble
@@ -65,15 +65,15 @@ func assemble(asm ASM, source, executable string) {
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}
-	if err := yasmCmd.Run(); err != nil {
-		fmt.Println("Error while assembling the source code!")
+	if e := yasmCmd.Run(); e != nil {
+		err = fmt.Errorf("Error while assembling the source code - %w", e)
 		return
 	}
 
 	// Find ld
-	ld, err := exec.LookPath("ld")
-	if err != nil {
-		fmt.Println("ld not found. Please install.")
+	ld, e := exec.LookPath("ld")
+	if e != nil {
+		err = fmt.Errorf("'ld' not found. Please install - %w", e)
 		return
 	}
 	// Link
@@ -83,11 +83,11 @@ func assemble(asm ASM, source, executable string) {
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}
-	if err := ldCmd.Run(); err != nil {
-		fmt.Println("Error while linking the object file!")
+	if e := ldCmd.Run(); e != nil {
+		err = fmt.Errorf("Error while linking object file - %w", e)
 		return
 	}
-
+	return
 }
 
 func main() {
@@ -97,32 +97,44 @@ func main() {
 // I can now write comments :)
 //b = (2 == 2) && !!!false
 
-//c = 4
-//c = c + 1
-
-for i, j = 0, 2; i < 5, j*2 < 5; i = i+1 {
-	a = i*j
+j = true && false
+for i = 0; i < 5; i = i+1 {
+	a = i
 }
 
 `)
 
 	tokenChan := make(chan Token, 1)
-	go tokenize(program, tokenChan)
+	lexerErr := make(chan error, 1)
+	go tokenize(program, tokenChan, lexerErr)
 
-	ast, err := parse(tokenChan)
-	if err != nil {
-		fmt.Println(err)
-		return
+	ast, parseErr := parse(tokenChan)
+
+	// check error channel on incoming errors
+	// As we lex and parse simultaneously, there is most likely a parser error as well. But that should be ignored
+	// as long as we have token errors before!
+	select {
+	case e := <-lexerErr:
+		fmt.Println(e)
+		os.Exit(1)
+	default:
 	}
 
-	ast, err = analyzeTypes(ast)
-	if err != nil {
-		fmt.Println(err)
-		return
+	if parseErr != nil {
+		fmt.Println(parseErr)
+		os.Exit(1)
+	}
+
+	ast, semanticErr := semanticAnalysis(ast)
+	if semanticErr != nil {
+		fmt.Println(semanticErr)
+		os.Exit(1)
 	}
 
 	asm := ast.generateCode()
 
-	assemble(asm, "source.asm", "executable")
-
+	if asmErr := assemble(asm, "source.asm", "executable"); asmErr != nil {
+		fmt.Println(asmErr)
+		os.Exit(1)
+	}
 }

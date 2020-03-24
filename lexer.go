@@ -83,7 +83,7 @@ func parseByte(program []byte) (TokenType, bool) {
 	return TOKEN_UNKNOWN, false
 }
 
-func tokenize(program []byte, tokens chan Token) {
+func tokenize(program []byte, tokens chan Token, err chan error) {
 	// Whitespace is just: \s without the \n, so we can track the line count explicitely.
 	whitespace := regexp.MustCompile(`^[\t\f\r ]`)
 	newline := regexp.MustCompile(`^\n`)
@@ -150,8 +150,9 @@ func tokenize(program []byte, tokens chan Token) {
 		}
 
 		if tokenLength == 0 {
-			fmt.Printf("Unknown string: %v\n", string(program))
-			break
+			err <- fmt.Errorf("[%v:%v] - Unknown string", lineCnt, colCnt)
+			tokens <- Token{TOKEN_EOF, "", lineCnt, colCnt}
+			return
 		}
 
 		tokens <- Token{tokenType, string(program[:tokenLength]), lineCnt, colCnt}

@@ -99,10 +99,9 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 
 	// Check types only after we possibly rearranged the expression!
 	if binaryOp.leftExpr.getExpressionType() != binaryOp.rightExpr.getExpressionType() {
-		fmt.Println(binaryOp.leftExpr, binaryOp.rightExpr)
 		return binaryOp, fmt.Errorf(
-			"%w[%v:%v] - BinaryOp expected same type, got: '%v' %v '%v'",
-			ErrCritical, binaryOp.line, binaryOp.column, tLeft, binaryOp.operator, tRight,
+			"%w[%v:%v] - BinaryOp '%v' expected same type, got: '%v', '%v'",
+			ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft, tRight,
 		)
 	}
 
@@ -114,7 +113,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		// We know left and right are the same type, so only compare left here.
 		if tLeft != TYPE_BOOL {
 			return binaryOp, fmt.Errorf(
-				"%w[%v:%v] - BinaryOp %v needs bool, got: %v",
+				"%w[%v:%v] - BinaryOp '%v' needs bool, got: '%v'",
 				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
 			)
 		}
@@ -128,7 +127,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		}
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT {
 			return binaryOp, fmt.Errorf(
-				"%w[%v:%v] - BinaryOp %v needs int/float, got: %v",
+				"%w[%v:%v] - BinaryOp '%v' needs int/float, got: '%v'",
 				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
 			)
 		}
@@ -137,7 +136,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		binaryOp.opType = TYPE_BOOL
 		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
 			return binaryOp, fmt.Errorf(
-				"%w[%v:%v] - BinaryOp %v needs int/float/string, got: %v",
+				"%w[%v:%v] - BinaryOp '%v' needs int/float/string, got: '%v'",
 				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
 			)
 		}
@@ -147,7 +146,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		// We can actually compare all data types. So there will be no missmatch in general!
 	default:
 		return binaryOp, fmt.Errorf(
-			"%w[%v:%v] - Invalid binary operator: %v for type %v",
+			"%w[%v:%v] - Invalid binary operator: '%v' for type '%v'",
 			ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
 		)
 	}
@@ -166,7 +165,7 @@ func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Exp
 		if vTable, ok := symbolTable.get(e.vName); ok {
 			e.vType = vTable.sType
 		} else {
-			return e, fmt.Errorf("%w[%v:%v] - Variable type for %v unknown!", ErrCritical, e.line, e.column, e)
+			return e, fmt.Errorf("%w[%v:%v] - Variable '%v' referenced before declaration", ErrCritical, e.line, e.column, e.vName)
 		}
 		// Always access the very last entry for variables!
 		return e, nil
@@ -278,7 +277,7 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 
 		expression, err := analyzeTypeExpression(assignment.expressions[i], symbolTable)
 		if err != nil {
-			return assignment, fmt.Errorf("Invalid expression in assignment - %w", err)
+			return assignment, err
 		}
 		expressionType := expression.getExpressionType()
 
@@ -309,7 +308,6 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 
 		assignment.expressions[i] = expression
 
-		// analyze variable with type
 		assignment.variables[i].vType = expressionType
 	}
 	return assignment, nil
@@ -360,7 +358,7 @@ func analyzeTypeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable
 
 // analyzeTypes traverses the tree and analyzes variables with their corresponding type recursively from expressions!
 // returns an error if we have a type missmatch anywhere!
-func analyzeTypes(ast AST) (AST, error) {
+func semanticAnalysis(ast AST) (AST, error) {
 
 	ast.globalSymbolTable = SymbolTable{
 		make(map[string]SymbolEntry, 0),
