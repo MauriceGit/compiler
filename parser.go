@@ -9,19 +9,25 @@ import (
 /*
 
 
-stat 	::= assign | if | for
+stat	 	::= assign | if | for | funDecl
+statlist	::= stat [statlist]
 
-if 		::= 'if' exp '{' [stat] '}' [else '{' [stat] '}']
-for		::= 'for' [assign] ';' [explist] ';' [assign] '{' [stat] '}'
+if 			::= 'if' exp '{' [statlist] '}' [else '{' [statlist] '}']
+for			::= 'for' [assign] ';' [explist] ';' [assign] '{' [statlist] '}'
 
+type		::= 'int' | 'float' | 'string' | 'bool'
+typelist	::= type [',' typelist]
+paramlist	::= var type [',' paramlist]
+funDecl		::= 'fun' Name '(' [paramlist] ')' ['(' typelist ')'] '{' [statlist] 'return' explist '}'
 
-assign 	::= varlist ‘=’ explist
-varlist	::= var {‘,’ var}
-explist	::= exp {‘,’ exp}
-exp 	::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp
-var 	::= [shadow] Name
-binop	::= '+' | '-' | '*' | '/' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' | '||'
-unop	::= '-' | '!'
+assign 		::= varlist ‘=’ explist
+varlist		::= varDecl [‘,’ varlist]
+explist		::= exp [‘,’ explist]
+exp 		::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp
+varDecl		::= [shadow] var
+var 		::= Name
+binop		::= '+' | '-' | '*' | '/' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' | '||'
+unop		::= '-' | '!'
 
 
 Operator priority (Descending priority!):
@@ -196,10 +202,20 @@ type Loop struct {
 	line, column   int
 }
 
+type Function struct {
+	fName        string
+	parameters   []Variable
+	returnTypes  []Type
+	block        Block
+	returns      []Expression
+	line, column int
+}
+
 func (a Block) statement()      {}
 func (a Assignment) statement() {}
 func (c Condition) statement()  {}
 func (l Loop) statement()       {}
+func (f Function) statement()   {}
 
 func (s Block) startPos() (int, int) {
 	return s.line, s.column
@@ -211,6 +227,9 @@ func (s Condition) startPos() (int, int) {
 	return s.line, s.column
 }
 func (s Loop) startPos() (int, int) {
+	return s.line, s.column
+}
+func (s Function) startPos() (int, int) {
 	return s.line, s.column
 }
 
@@ -762,7 +781,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 		return
 	}
 
-	statements, parseErr := parseStatementList(tokens)
+	statements, parseErr := parseBlock(tokens)
 	if parseErr != nil {
 		err = fmt.Errorf("%w - Invalid statement list in condition block", parseErr)
 		return
@@ -783,7 +802,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 			return
 		}
 
-		elseStatements, parseErr := parseStatementList(tokens)
+		elseStatements, parseErr := parseBlock(tokens)
 		if parseErr != nil {
 			err = fmt.Errorf("%w - Invalid statement list in condition else block", parseErr)
 			return
@@ -847,7 +866,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 		return
 	}
 
-	forBlock, parseErr := parseStatementList(tokens)
+	forBlock, parseErr := parseBlock(tokens)
 	if parseErr != nil {
 		err = fmt.Errorf("%w - Error while parsing loop block", parseErr)
 		return
@@ -868,7 +887,175 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	return
 }
 
-func parseStatementList(tokens *TokenChannel) (block Block, err error) {
+func parseType(tokens *TokenChannel) (t Type, err error) {
+	funName, row, col, ok := tokens.expectType(TOKEN_KEYWORD)
+	if !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected a type", ErrCritical, row, col)
+		return
+	}
+	switch funName {
+	case "int":
+		t = TYPE_INT
+	case "float":
+		t = TYPE_FLOAT
+	case "bool":
+		t = TYPE_BOOL
+	case "string":
+		t = TYPE_STRING
+	default:
+		err = fmt.Errorf("%w[%v:%v] - Not a valid type. Should be: 'int' | 'float' | 'bool' | 'string'", ErrCritical, row, col)
+		return
+	}
+	return
+}
+func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
+	i := 0
+	lastRow, lastCol := 0, 0
+	for {
+		v, ok := parseVariable(tokens)
+		if !ok {
+			// If we don't find any variable, thats fine. Just don't end in ',', thats an error!
+			if i == 0 {
+				// We propagate the error from the parser. This might be normal or critical.
+				err = fmt.Errorf("%wNot a variable", ErrNormal)
+				return
+			}
+
+			err = fmt.Errorf("%w[%v:%v] - Variable list ends in ','", ErrCritical, lastRow, lastCol)
+			variables = nil
+			return
+		}
+
+		t, parseErr := parseType(tokens)
+		if parseErr != nil {
+			err = parseErr
+			return
+		}
+		v.vType = t
+
+		// Function parameters are always shadowing!
+		v.vShadow = true
+		variables = append(variables, v)
+
+		// Expect separating ','. Otherwise, all good, we are through!
+		if lastRow, lastCol, ok = tokens.expect(TOKEN_SEPARATOR, ","); !ok {
+			break
+		}
+		i += 1
+	}
+	return
+}
+
+func parseTypeList(tokens *TokenChannel) (types []Type, err error) {
+	lastRow, lastCol, ok := 0, 0, false
+	i := 0
+	for {
+		t, parseErr := parseType(tokens)
+		if parseErr != nil {
+
+			// If we don't find any type, thats fine. Just don't end in ',', thats an error!
+			// We throw a normal error, so the parser up the chain can handle it how it likes.
+			if i == 0 {
+				err = fmt.Errorf("%wType list is empty or invalid", ErrNormal)
+				return
+			}
+			err = fmt.Errorf("%w[%v:%v] - Type list ends with ','", ErrCritical, lastRow, lastCol)
+			types = nil
+			return
+		}
+		types = append(types, t)
+
+		// Expect separating ','. Otherwise, all good, we are through!
+		if lastRow, lastCol, ok = tokens.expect(TOKEN_SEPARATOR, ","); !ok {
+			break
+		}
+		i += 1
+	}
+	return
+}
+
+/*
+type		::= 'int' | 'float' | 'string' | 'bool'
+typelist	::= type [',' typelist]
+paramlist	::= var type [',' paramlist]
+funDecl		::= 'fun' Name '(' [paramlist] ')' ['(' typelist ')'] '{' [statlist] 'return' exp '}'
+*/
+func parseFunction(tokens *TokenChannel) (fun Function, err error) {
+	startRow, startCol, ok := 0, 0, false
+
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "fun"); !ok {
+		err = fmt.Errorf("%wExpected 'fun' keyword for function", ErrNormal)
+		return
+	}
+
+	funName, row, col, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected identifier after 'fun'", ErrCritical, row, col)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '(' for function parameters", ErrCritical, row, col)
+		return
+	}
+
+	variables, parseErr := parseArgList(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid argument list in function header", parseErr)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected ')' after function parameters", ErrCritical, row, col)
+		return
+	}
+
+	returnTypes, parseErr := parseTypeList(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid return-type list", parseErr)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '{' after function header", ErrCritical, row, col)
+		return
+	}
+
+	funBlock, parseErr := parseBlock(tokens)
+	if parseErr != nil {
+		err = fmt.Errorf("%w - Error while parsing loop block", parseErr)
+		return
+	}
+
+	// TODO: Omit return, if the returnTypes list is empty!
+	if row, col, ok := tokens.expect(TOKEN_KEYWORD, "return"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected 'return' after function block", ErrCritical, row, col)
+		return
+	}
+
+	expressions, parseErr := parseExpressionList(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid expression list for function return", parseErr)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '}' after function block", ErrCritical, row, col)
+		return
+	}
+
+	fun.fName = funName
+	fun.parameters = variables
+	fun.returnTypes = returnTypes
+	fun.block = funBlock
+	fun.returns = expressions
+	fun.line = startRow
+	fun.column = startCol
+
+	return
+}
+
+func parseBlock(tokens *TokenChannel) (block Block, err error) {
 	for {
 
 		switch ifStatement, parseErr := parseCondition(tokens); {
@@ -892,6 +1079,15 @@ func parseStatementList(tokens *TokenChannel) (block Block, err error) {
 		switch assignment, parseErr := parseAssignment(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, assignment)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
+
+		switch function, parseErr := parseFunction(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, function)
 			continue
 		case errors.Is(parseErr, ErrCritical):
 			err = parseErr
@@ -923,7 +1119,7 @@ func parse(tokens chan Token) (ast AST, err error) {
 	var tokenChan TokenChannel
 	tokenChan.c = tokens
 
-	block, parseErr := parseStatementList(&tokenChan)
+	block, parseErr := parseBlock(&tokenChan)
 	err = parseErr
 	ast.block = block
 

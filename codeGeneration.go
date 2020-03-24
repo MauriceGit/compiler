@@ -353,6 +353,10 @@ func (b Block) generateCode(asm *ASM, s *SymbolTable) {
 
 }
 
+func (f Function) generateCode(asm *ASM, s *SymbolTable) {
+
+}
+
 func (ast AST) generateCode() ASM {
 
 	asm := ASM{}
