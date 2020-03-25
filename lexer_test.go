@@ -231,14 +231,14 @@ func TestLexerFunction2(t *testing.T) {
 	var code []byte = []byte(`
 	fun abc(a int, b float, c bool) {
 		a = 1
-		return a
+		return
 	}
 	`)
 
 	expect := []Token{tokenKeyword("fun"), tokenIdentifier("abc"), tokenParenOpen(), tokenIdentifier("a"), tokenKeyword("int"),
 		tokenSeparator(), tokenIdentifier("b"), tokenKeyword("float"), tokenSeparator(), tokenIdentifier("c"), tokenKeyword("bool"),
 		tokenParenClose(), tokenCurlyOpen(), tokenIdentifier("a"), tokenAssignment(), tokenConstant("1"), tokenKeyword("return"),
-		tokenIdentifier("a"), tokenCurlyClose(), tokenEOF(),
+		tokenCurlyClose(), tokenEOF(),
 	}
 
 	testTokens(code, expect, t)
