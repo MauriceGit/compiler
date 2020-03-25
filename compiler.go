@@ -94,10 +94,7 @@ func main() {
 	var program []byte = []byte(`
 
 //v = (10 + 5 + 3 + 2) * -1 * 3
-// I can now write comments :)
-//b = (2 == 2) && !!!false
 
-//j = 1
 fun abc(a int, b float) int, float, bool {
 	return 4
 }
