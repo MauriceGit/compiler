@@ -82,15 +82,27 @@ var (
 	ErrNormal   = errors.New("error - ")
 )
 
-type SymbolEntry struct {
-	sType   Type
+type SymbolVarEntry struct {
+	sType Type
+	// Refers to the name used in the final assembler
 	varName string
 	// ... more information
 }
 
+// This is needed when code for function calls is generated
+// and we need to know how many and what kind of variables are
+// pushed onto the stack or popped from afterwards.
+type SymbolFunEntry struct {
+	paramTypes  []Type
+	returnTypes []Type
+	jumpLabel   string
+	// ... more information
+}
+
 type SymbolTable struct {
-	table  map[string]SymbolEntry
-	parent *SymbolTable
+	varTable map[string]SymbolVarEntry
+	funTable map[string]SymbolFunEntry
+	parent   *SymbolTable
 }
 
 type AST struct {
@@ -974,12 +986,6 @@ func parseTypeList(tokens *TokenChannel) (types []Type, err error) {
 	return
 }
 
-/*
-type		::= 'int' | 'float' | 'string' | 'bool'
-typelist	::= type [',' typelist]
-paramlist	::= var type [',' paramlist]
-funDecl		::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] 'return' exp '}'
-*/
 func parseFunction(tokens *TokenChannel) (fun Function, err error) {
 	startRow, startCol, ok := 0, 0, false
 	var parseErr error = nil

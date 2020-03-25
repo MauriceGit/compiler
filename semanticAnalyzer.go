@@ -4,47 +4,69 @@ import (
 	"fmt"
 )
 
-// get goes through all symbol tables recursively and looks for an entry for the given variable name v
-func (s *SymbolTable) get(v string) (SymbolEntry, bool) {
+// getVar goes through all symbol varTables recursively and looks for an entry for the given variable name v
+func (s *SymbolTable) getVar(v string) (SymbolVarEntry, bool) {
 	if s == nil {
-		return SymbolEntry{}, false
+		return SymbolVarEntry{}, false
 	}
-	if variable, ok := s.table[v]; ok {
+	if variable, ok := s.varTable[v]; ok {
 		return variable, true
 	}
-	return s.parent.get(v)
+	return s.parent.getVar(v)
 }
 
-// getLocal only searches the immediate local symbol table
-func (s *SymbolTable) getLocal(v string) (SymbolEntry, bool) {
+// isLocalVar only searches the immediate local symbol varTable
+func (s *SymbolTable) isLocalVar(v string) bool {
 	if s == nil {
-		return SymbolEntry{}, false
+		return false
 	}
-	se, ok := s.table[v]
-	return se, ok
+	_, ok := s.varTable[v]
+	return ok
 }
 
-func (s *SymbolTable) set(v string, t Type) {
-	s.table[v] = SymbolEntry{t, ""}
+func (s *SymbolTable) setVar(v string, t Type) {
+	s.varTable[v] = SymbolVarEntry{t, ""}
+}
+
+func (s *SymbolTable) setFun(name string, argTypes, returnTypes []Type) {
+	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, ""}
+}
+
+func (s *SymbolTable) isLocalFun(name string) bool {
+	if s == nil {
+		return false
+	}
+	_, ok := s.funTable[name]
+	return ok
+}
+
+func (s *SymbolTable) getFun(name string) (SymbolFunEntry, bool) {
+	if s == nil {
+		return SymbolFunEntry{}, false
+	}
+	if fun, ok := s.funTable[name]; ok {
+		return fun, true
+	}
+	return s.parent.getFun(name)
 }
 
 func (s *SymbolTable) setAsmName(v string, asmName string) {
 	if s == nil {
-		fmt.Println("Could not set asm variable name in symbol table!")
+		fmt.Println("Could not set asm variable name in symbol varTable!")
 		return
 	}
-	if _, ok := s.table[v]; ok {
+	if _, ok := s.varTable[v]; ok {
 
-		tmp := s.table[v]
+		tmp := s.varTable[v]
 		tmp.varName = asmName
-		s.table[v] = tmp
+		s.varTable[v] = tmp
 		return
 	}
 	s.parent.setAsmName(v, asmName)
 }
 
-func analyzeTypeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, error) {
-	expression, err := analyzeTypeExpression(unaryOp.expr, symbolTable)
+func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, error) {
+	expression, err := analyzeExpression(unaryOp.expr, symbolTable)
 	if err != nil {
 		return unaryOp, err
 	}
@@ -69,7 +91,7 @@ func analyzeTypeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, 
 	return nil, fmt.Errorf("%w[%v:%v] - Unknown unary expression: %v", ErrCritical, unaryOp.line, unaryOp.column, unaryOp)
 }
 
-func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, error) {
+func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, error) {
 
 	// Re-order expression, if the expression is not fixed and the priority is of the operator is not according to the priority
 	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
@@ -82,13 +104,13 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 		}
 	}
 
-	leftExpression, err := analyzeTypeExpression(binaryOp.leftExpr, symbolTable)
+	leftExpression, err := analyzeExpression(binaryOp.leftExpr, symbolTable)
 	if err != nil {
 		return binaryOp, err
 	}
 	binaryOp.leftExpr = leftExpression
 
-	rightExpression, err := analyzeTypeExpression(binaryOp.rightExpr, symbolTable)
+	rightExpression, err := analyzeExpression(binaryOp.rightExpr, symbolTable)
 	if err != nil {
 		return binaryOp, err
 	}
@@ -154,7 +176,7 @@ func analyzeTypeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expressio
 	return binaryOp, nil
 }
 
-func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Expression, error) {
+func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Expression, error) {
 
 	switch e := expression.(type) {
 	case Constant:
@@ -162,7 +184,7 @@ func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Exp
 	case Variable:
 
 		// Lookup variable type and annotate node.
-		if vTable, ok := symbolTable.get(e.vName); ok {
+		if vTable, ok := symbolTable.getVar(e.vName); ok {
 			e.vType = vTable.sType
 		} else {
 			return e, fmt.Errorf("%w[%v:%v] - Variable '%v' referenced before declaration", ErrCritical, e.line, e.column, e.vName)
@@ -170,94 +192,18 @@ func analyzeTypeExpression(expression Expression, symbolTable *SymbolTable) (Exp
 		// Always access the very last entry for variables!
 		return e, nil
 	case UnaryOp:
-		return analyzeTypeUnaryOp(e, symbolTable)
+		return analyzeUnaryOp(e, symbolTable)
 	case BinaryOp:
-		return analyzeTypeBinaryOp(e, symbolTable)
+		return analyzeBinaryOp(e, symbolTable)
 	}
 	row, col := expression.startPos()
 	return expression, fmt.Errorf("%w[%v:%v] - Unknown type for expression %v", ErrCritical, row, col, expression)
 }
 
-func analyzeTypeCondition(condition Condition, symbolTable *SymbolTable) (Condition, error) {
-
-	// This expression MUST come out as boolean!
-	e, err := analyzeTypeExpression(condition.expression, symbolTable)
-	if err != nil {
-		return condition, err
-	}
-	if e.getExpressionType() != TYPE_BOOL {
-		row, col := e.startPos()
-		return condition, fmt.Errorf(
-			"%w[%v:%v] - If expression expected boolean, got: %v --> <<%v>>",
-			ErrCritical, row, col, e.getExpressionType(), condition.expression,
-		)
-	}
-	condition.expression = e
-
-	block, err := analyzeTypeBlock(condition.block, symbolTable, nil)
-	if err != nil {
-		return condition, err
-	}
-	condition.block = block
-
-	elseBlock, err := analyzeTypeBlock(condition.elseBlock, symbolTable, nil)
-	if err != nil {
-		return condition, err
-	}
-	condition.elseBlock = elseBlock
-
-	return condition, nil
-}
-
-func analyzeTypeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
-
-	nextSymbolTable := SymbolTable{
-		make(map[string]SymbolEntry, 0),
-		symbolTable,
-	}
-
-	assignment, err := analyzeTypeAssignment(loop.assignment, &nextSymbolTable)
-	if err != nil {
-		return loop, err
-	}
-	loop.assignment = assignment
-
-	for i, e := range loop.expressions {
-		expression, err := analyzeTypeExpression(e, &nextSymbolTable)
-		if err != nil {
-			return loop, err
-		}
-		if expression.getExpressionType() != TYPE_BOOL {
-			row, col := expression.startPos()
-			return loop, fmt.Errorf(
-				"%w[%v:%v] - Loop expression expected boolean, got: %v (%v)",
-				ErrCritical, row, col, expression.getExpressionType(), e,
-			)
-		}
-
-		loop.expressions[i] = expression
-	}
-
-	incrAssignment, err := analyzeTypeAssignment(loop.incrAssignment, &nextSymbolTable)
-	if err != nil {
-		return loop, err
-	}
-	loop.incrAssignment = incrAssignment
-
-	statements, err := analyzeTypeBlock(loop.block, symbolTable, &nextSymbolTable)
-	if err != nil {
-		return loop, err
-	}
-	loop.block = statements
-	loop.block.symbolTable = nextSymbolTable
-
-	return loop, nil
-}
-
 // Returns newly created variables and variables that should shadow others!
 // This is just for housekeeping and removing them later!!!!
-// All new variables (and shadow ones) are updated/written to the symbol table
-func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignment, error) {
+// All new variables (and shadow ones) are updated/written to the symbol varTable
+func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignment, error) {
 
 	// Populate/overwrite the dictionary of variables for futher statements :)
 	if len(assignment.variables) != len(assignment.expressions) {
@@ -275,7 +221,7 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 
 	for i, v := range assignment.variables {
 
-		expression, err := analyzeTypeExpression(assignment.expressions[i], symbolTable)
+		expression, err := analyzeExpression(assignment.expressions[i], symbolTable)
 		if err != nil {
 			return assignment, err
 		}
@@ -283,7 +229,7 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 
 		// Shadowing is only allowed in a different block, not right after the first variable, to avoid confusion and complicated
 		// variable handling
-		if _, ok := symbolTable.getLocal(v.vName); ok && v.vShadow {
+		if symbolTable.isLocalVar(v.vName) && v.vShadow {
 			return assignment, fmt.Errorf(
 				"%w[%v:%v] - Variable %v is shadowing another variable in the same block. This is not allowed",
 				ErrCritical, v.line, v.column, v.vName,
@@ -291,7 +237,7 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 		}
 
 		// Only, if the variable already exists and we're not trying to shadow it!
-		if vTable, ok := symbolTable.get(v.vName); ok {
+		if vTable, ok := symbolTable.getVar(v.vName); ok {
 			if !v.vShadow {
 				if vTable.sType != expressionType {
 					return assignment, fmt.Errorf(
@@ -300,10 +246,10 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 					)
 				}
 			} else {
-				symbolTable.set(v.vName, expressionType)
+				symbolTable.setVar(v.vName, expressionType)
 			}
 		} else {
-			symbolTable.set(v.vName, expressionType)
+			symbolTable.setVar(v.vName, expressionType)
 		}
 
 		assignment.expressions[i] = expression
@@ -313,40 +259,170 @@ func analyzeTypeAssignment(assignment Assignment, symbolTable *SymbolTable) (Ass
 	return assignment, nil
 }
 
-func analyzeTypeStatement(statement Statement, symbolTable *SymbolTable) (Statement, error) {
+func analyzeCondition(condition Condition, symbolTable *SymbolTable) (Condition, error) {
+
+	// This expression MUST come out as boolean!
+	e, err := analyzeExpression(condition.expression, symbolTable)
+	if err != nil {
+		return condition, err
+	}
+	if e.getExpressionType() != TYPE_BOOL {
+		row, col := e.startPos()
+		return condition, fmt.Errorf(
+			"%w[%v:%v] - If expression expected boolean, got: %v --> <<%v>>",
+			ErrCritical, row, col, e.getExpressionType(), condition.expression,
+		)
+	}
+	condition.expression = e
+
+	block, err := analyzeBlock(condition.block, symbolTable, nil)
+	if err != nil {
+		return condition, err
+	}
+	condition.block = block
+
+	elseBlock, err := analyzeBlock(condition.elseBlock, symbolTable, nil)
+	if err != nil {
+		return condition, err
+	}
+	condition.elseBlock = elseBlock
+
+	return condition, nil
+}
+
+func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
+
+	nextSymbolTable := SymbolTable{
+		make(map[string]SymbolVarEntry, 0),
+		make(map[string]SymbolFunEntry, 0),
+		symbolTable,
+	}
+
+	assignment, err := analyzeAssignment(loop.assignment, &nextSymbolTable)
+	if err != nil {
+		return loop, err
+	}
+	loop.assignment = assignment
+
+	for i, e := range loop.expressions {
+		expression, err := analyzeExpression(e, &nextSymbolTable)
+		if err != nil {
+			return loop, err
+		}
+		if expression.getExpressionType() != TYPE_BOOL {
+			row, col := expression.startPos()
+			return loop, fmt.Errorf(
+				"%w[%v:%v] - Loop expression expected boolean, got: %v (%v)",
+				ErrCritical, row, col, expression.getExpressionType(), e,
+			)
+		}
+
+		loop.expressions[i] = expression
+	}
+
+	incrAssignment, err := analyzeAssignment(loop.incrAssignment, &nextSymbolTable)
+	if err != nil {
+		return loop, err
+	}
+	loop.incrAssignment = incrAssignment
+
+	statements, err := analyzeBlock(loop.block, symbolTable, &nextSymbolTable)
+	if err != nil {
+		return loop, err
+	}
+	loop.block = statements
+	loop.block.symbolTable = nextSymbolTable
+
+	return loop, nil
+}
+
+func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
+
+	functionSymbolTable := SymbolTable{
+		make(map[string]SymbolVarEntry, 0),
+		make(map[string]SymbolFunEntry, 0),
+		symbolTable,
+	}
+
+	for _, v := range fun.parameters {
+		if v.vType == TYPE_UNKNOWN {
+			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v has invalid type", ErrCritical, v.line, v.column, v)
+		}
+		functionSymbolTable.setVar(v.vName, v.vType)
+	}
+
+	if len(fun.returnTypes) != len(fun.returns) {
+		row, col := fun.startPos()
+		if len(fun.returns) > 0 {
+			row, col = fun.returns[0].startPos()
+		}
+		return fun, fmt.Errorf("%w[%v:%v] - Function return count does not match function definition", ErrCritical, row, col)
+	}
+
+	if symbolTable.isLocalFun(fun.fName) {
+		return fun, fmt.Errorf("%w[%v:%v] - Function with the same name already exists in this scope", ErrCritical, fun.line, fun.column)
+	}
+	var paramTypes []Type
+	for _, v := range fun.parameters {
+		paramTypes = append(paramTypes, v.vType)
+	}
+	symbolTable.setFun(fun.fName, paramTypes, fun.returnTypes)
+
+	newBlock, err := analyzeBlock(fun.block, symbolTable, &functionSymbolTable)
+	if err != nil {
+		return fun, err
+	}
+	fun.block = newBlock
+
+	for i, e := range fun.returns {
+
+		newE, err := analyzeExpression(e, &functionSymbolTable)
+		if err != nil {
+			return fun, err
+		}
+		if newE.getExpressionType() != fun.returnTypes[i] {
+			row, col := e.startPos()
+			return fun, fmt.Errorf("%w[%v:%v] - Function return type des not match function definition", ErrCritical, row, col)
+		}
+		fun.returns[i] = newE
+	}
+
+	return fun, nil
+}
+
+func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement, error) {
 	switch st := statement.(type) {
 	case Condition:
-		return analyzeTypeCondition(st, symbolTable)
+		return analyzeCondition(st, symbolTable)
 	case Loop:
-		return analyzeTypeLoop(st, symbolTable)
+		return analyzeLoop(st, symbolTable)
 	case Assignment:
-		assignment, err := analyzeTypeAssignment(st, symbolTable)
-		if err != nil {
-			return assignment, err
-		}
-		return assignment, nil
+		return analyzeAssignment(st, symbolTable)
+	case Function:
+		return analyzeFunction(st, symbolTable)
 	}
 	row, col := statement.startPos()
 	return statement, fmt.Errorf("%w[%v:%v] - Unexpected statement: %v", ErrCritical, row, col, statement)
 }
 
-// analyzeTypeBlock gets a reference to the current (now parent) symbol table
-// Additionally, it might get a pre-filled symbol table for the new scope to use!
+// analyzeBlock gets a reference to the current (now parent) symbol varTable
+// Additionally, it might get a pre-filled symbol varTable for the new scope to use!
 // This might be the case for function arguments or in a for-loop, where variables belong to the
 // coming block only but are parsed in the TreeNode before.
-func analyzeTypeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (Block, error) {
+func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (Block, error) {
 
 	if newBlockSymbolTable != nil {
 		block.symbolTable = *newBlockSymbolTable
 	} else {
 		block.symbolTable = SymbolTable{
-			make(map[string]SymbolEntry, 0),
+			make(map[string]SymbolVarEntry, 0),
+			make(map[string]SymbolFunEntry, 0),
 			symbolTable,
 		}
 	}
 
 	for i, s := range block.statements {
-		statement, err := analyzeTypeStatement(s, &block.symbolTable)
+		statement, err := analyzeStatement(s, &block.symbolTable)
 		if err != nil {
 			return block, err
 		}
@@ -361,14 +437,15 @@ func analyzeTypeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable
 func semanticAnalysis(ast AST) (AST, error) {
 
 	ast.globalSymbolTable = SymbolTable{
-		make(map[string]SymbolEntry, 0),
+		make(map[string]SymbolVarEntry, 0),
+		make(map[string]SymbolFunEntry, 0),
 		nil,
 	}
 
-	// TODO: Possibly fill global symbol table with something?
-	// Right now it will stay empty just because the block we parse will create its own symbol table.
+	// TODO: Possibly fill global symbol varTable with something?
+	// Right now it will stay empty just because the block we parse will create its own symbol varTable.
 
-	block, err := analyzeTypeBlock(ast.block, &ast.globalSymbolTable, nil)
+	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
 	if err != nil {
 		ast.globalSymbolTable = SymbolTable{}
 		return ast, err

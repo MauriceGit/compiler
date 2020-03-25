@@ -47,6 +47,12 @@ func assemble(asm ASM, source, executable string) (err error) {
 	for _, v := range asm.variables {
 		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v[0], v[1], v[2])
 	}
+	for _, v := range asm.sectionText {
+		fmt.Fprintf(srcFile, "%v\n", v)
+	}
+	for _, v := range asm.functions {
+		fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
+	}
 	for _, v := range asm.program {
 		fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
 	}
@@ -94,10 +100,10 @@ func main() {
 	var program []byte = []byte(`
 
 //v = (10 + 5 + 3 + 2) * -1 * 3
+v = 10
 
-fun abc(a int, b float) int, float, bool {
-	return 4
-}
+//fun abc(a int, b float) {
+//}
 
 `)
 

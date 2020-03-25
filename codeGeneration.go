@@ -5,15 +5,18 @@ import (
 )
 
 type ASM struct {
-	header    []string
-	constants [][2]string
-	variables [][3]string
-	program   [][3]string
+	header      []string
+	constants   [][2]string
+	variables   [][3]string
+	sectionText []string
+	functions   [][3]string
+	program     [][3]string
 
 	// Increasing number to generate unique const variable names
 	constName int
 	varName   int
 	labelName int
+	funName   int
 }
 
 func (asm *ASM) nextConstName() string {
@@ -29,6 +32,11 @@ func (asm *ASM) nextVariableName() string {
 func (asm *ASM) nextLabelName() string {
 	asm.labelName += 1
 	return fmt.Sprintf("label_%v", asm.labelName-1)
+}
+
+func (asm *ASM) nextFunctionName() string {
+	asm.funName += 1
+	return fmt.Sprintf("fun_%v", asm.funName-1)
 }
 
 func getJumpType(op Operator) string {
@@ -147,7 +155,7 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
-	if symbol, ok := s.get(v.vName); ok {
+	if symbol, ok := s.getVar(v.vName); ok {
 		asm.program = append(asm.program, [3]string{"  ", "push", fmt.Sprintf("qword [%v]", symbol.varName)})
 		return
 	}
@@ -270,7 +278,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		asm.program = append(asm.program, [3]string{"  ", "pop", register})
 
 		// Create corresponding variable, if it doesn't exist yet.
-		if entry, ok := s.get(v.vName); !ok || entry.varName == "" {
+		if entry, ok := s.getVar(v.vName); !ok || entry.varName == "" {
 
 			vName := asm.nextVariableName()
 			// Variables are initialized with 0. This will be overwritten a few lines later!
@@ -279,7 +287,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 			s.setAsmName(v.vName, vName)
 		}
 		// This can not/should not fail!
-		entry, _ := s.get(v.vName)
+		entry, _ := s.getVar(v.vName)
 		vName := entry.varName
 
 		// Move value from register of expression into variable!
@@ -340,7 +348,7 @@ func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
 		asm.program = append(asm.program, [3]string{"  ", "cmp", fmt.Sprintf("%v, 0", register)})
 		asm.program = append(asm.program, [3]string{"  ", "je", endLabel})
 	}
-	// So if we get here, all expressions were true. So jump to start again.
+	// So if we getVar here, all expressions were true. So jump to start again.
 	asm.program = append(asm.program, [3]string{"  ", "jmp", startLabel})
 	asm.program = append(asm.program, [3]string{"", endLabel + ":", ""})
 }
@@ -355,6 +363,52 @@ func (b Block) generateCode(asm *ASM, s *SymbolTable) {
 
 func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
+	// As function declarations can not be nesting in assembler, we save the current program slice,
+	// provide an empty 'program' to fill into and move that into the function part!
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asmName := asm.nextFunctionName()
+	asm.program = append(asm.program, [3]string{"", "global " + asmName, ""})
+	asm.program = append(asm.program, [3]string{"", asmName + ":", ""})
+	// TODO: Arbitrary register r12. Must be sure, that it never gets used for anything else!!!!
+	// Save the return address to r12.
+	//asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("r12, qword [rbp+%v]", len(f.parameters)*8)})
+	//asm.program = append(asm.program, [3]string{"  ", "mov", "rbp, rsp"})
+	//asm.program = append(asm.program, [3]string{"  ", "push", ""})
+
+	// Create local variables for all function parameters
+	// Pop n parameters from stack and move into local variables
+	// Needs to be in reversed order so we can push in correct order when calling the function
+	for i := len(f.parameters) - 1; i >= 0; i-- {
+		v := f.parameters[i]
+		vName := asm.nextVariableName()
+		asm.variables = append(asm.variables, [3]string{vName, "dq", "0"})
+		f.block.symbolTable.setAsmName(v.vName, vName)
+
+		register, _ := getRegister(v.vType)
+		asm.program = append(asm.program, [3]string{"  ", "pop", register})
+
+		// Move value from register of expression into variable!
+		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", vName, register)})
+		debugPrint(asm, vName)
+	}
+
+	// Generate block code
+	f.block.generateCode(asm, s)
+
+	// Generate code for each return expression, they will all accumulate on the stack automatically!
+	// Careful, the will need to be popped in reversed order when function is called!
+	for _, e := range f.returns {
+		e.generateCode(asm, &f.block.symbolTable)
+	}
+
+	asm.program = append(asm.program, [3]string{"  ", "ret", ""})
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
 }
 
 func (ast AST) generateCode() ASM {
@@ -371,7 +425,8 @@ func (ast AST) generateCode() ASM {
 	asm.variables = append(asm.variables, [3]string{"negOneF", "dq", "-1.0"})
 	asm.variables = append(asm.variables, [3]string{"negOneI", "dq", "-1"})
 
-	asm.program = append(asm.program, [3]string{"", "section .text", ""})
+	asm.sectionText = append(asm.sectionText, "section .text")
+
 	asm.program = append(asm.program, [3]string{"", "global _start", ""})
 	asm.program = append(asm.program, [3]string{"", "_start:", ""})
 

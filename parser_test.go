@@ -190,8 +190,8 @@ func newFunction(name string, params []Variable, returnTypes []Type, b Block, re
 func newBlock(statements []Statement) Block {
 	return Block{statements, SymbolTable{}, 0, 0}
 }
-func newAST(b Block) AST {
-	return AST{b, SymbolTable{}}
+func newAST(statements []Statement) AST {
+	return AST{newBlock(statements), SymbolTable{}}
 }
 
 func TestParserExpression1(t *testing.T) {
@@ -199,32 +199,30 @@ func TestParserExpression1(t *testing.T) {
 	var code []byte = []byte(`shadow a = 6 + 7 * variable / -(5 -- (-8 * - 10000.1234))`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newAssignment(
-					[]Variable{newVar("a", true)},
-					[]Expression{
-						newBinary(
-							OP_PLUS, newConst(TYPE_INT, "6"), newBinary(
-								OP_MULT, newConst(TYPE_INT, "7"), newBinary(
-									OP_DIV, newVar("variable", false), newUnary(
-										OP_NEGATIVE, newBinary(
-											OP_MINUS, newConst(TYPE_INT, "5"), newUnary(
-												OP_NEGATIVE, newBinary(
-													OP_MULT, newConst(TYPE_INT, "-8"), newUnary(
-														OP_NEGATIVE, newConst(TYPE_FLOAT, "10000.1234"),
-													), false,
-												),
-											), false,
-										),
-									), false,
+		[]Statement{
+			newAssignment(
+				[]Variable{newVar("a", true)},
+				[]Expression{
+					newBinary(
+						OP_PLUS, newConst(TYPE_INT, "6"), newBinary(
+							OP_MULT, newConst(TYPE_INT, "7"), newBinary(
+								OP_DIV, newVar("variable", false), newUnary(
+									OP_NEGATIVE, newBinary(
+										OP_MINUS, newConst(TYPE_INT, "5"), newUnary(
+											OP_NEGATIVE, newBinary(
+												OP_MULT, newConst(TYPE_INT, "-8"), newUnary(
+													OP_NEGATIVE, newConst(TYPE_FLOAT, "10000.1234"),
+												), false,
+											),
+										), false,
+									),
 								), false,
 							), false,
-						),
-					},
-				),
-			},
-		),
+						), false,
+					),
+				},
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -235,35 +233,33 @@ func TestParserExpression2(t *testing.T) {
 	var code []byte = []byte(`a = a && b || (5 < false <= 8 && (false2 > variable >= 5.0) != true)`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newAssignment(
-					[]Variable{newVar("a", false)},
-					[]Expression{
-						newBinary(
-							OP_AND, newVar("a", false), newBinary(
-								OP_OR, newVar("b", false), newBinary(
-									OP_LESS, newConst(TYPE_INT, "5"), newBinary(
-										OP_LE, newConst(TYPE_BOOL, "false"), newBinary(
-											OP_AND, newConst(TYPE_INT, "8"), newBinary(
-												OP_NE, newBinary(
-													OP_GREATER,
-													newVar("false2", false),
-													newBinary(OP_GE, newVar("variable", false), newConst(TYPE_FLOAT, "5.0"), false),
-													false,
-												),
-												newConst(TYPE_BOOL, "true"),
+		[]Statement{
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{
+					newBinary(
+						OP_AND, newVar("a", false), newBinary(
+							OP_OR, newVar("b", false), newBinary(
+								OP_LESS, newConst(TYPE_INT, "5"), newBinary(
+									OP_LE, newConst(TYPE_BOOL, "false"), newBinary(
+										OP_AND, newConst(TYPE_INT, "8"), newBinary(
+											OP_NE, newBinary(
+												OP_GREATER,
+												newVar("false2", false),
+												newBinary(OP_GE, newVar("variable", false), newConst(TYPE_FLOAT, "5.0"), false),
 												false,
-											), false,
+											),
+											newConst(TYPE_BOOL, "true"),
+											false,
 										), false,
 									), false,
 								), false,
 							), false,
-						),
-					},
-				),
-			},
-		),
+						), false,
+					),
+				},
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -279,19 +275,17 @@ func TestParserIf(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newCondition(
-					newBinary(OP_EQ, newVar("a", false), newVar("b", false), false),
-					newBlock([]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "6")})}),
-					newBlock([]Statement{}),
-				),
-				newAssignment(
-					[]Variable{newVar("a", false)},
-					[]Expression{newConst(TYPE_INT, "1")},
-				),
-			},
-		),
+		[]Statement{
+			newCondition(
+				newBinary(OP_EQ, newVar("a", false), newVar("b", false), false),
+				newBlock([]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "6")})}),
+				newBlock([]Statement{}),
+			),
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newConst(TYPE_INT, "1")},
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -308,18 +302,16 @@ func TestParserIfElse(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newCondition(
-					newBinary(OP_EQ, newVar("a", false), newVar("b", false), false),
-					newBlock([]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "6")})}),
-					newBlock([]Statement{newAssignment(
-						[]Variable{newVar("a", false)},
-						[]Expression{newConst(TYPE_INT, "1")},
-					)}),
-				),
-			},
-		),
+		[]Statement{
+			newCondition(
+				newBinary(OP_EQ, newVar("a", false), newVar("b", false), false),
+				newBlock([]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "6")})}),
+				newBlock([]Statement{newAssignment(
+					[]Variable{newVar("a", false)},
+					[]Expression{newConst(TYPE_INT, "1")},
+				)}),
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -334,22 +326,20 @@ func TestParserAssignment(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newAssignment(
-					[]Variable{newVar("a", false)},
-					[]Expression{newConst(TYPE_INT, "1")},
-				),
-				newAssignment(
-					[]Variable{newVar("a", false), newVar("b", false)},
-					[]Expression{newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2")},
-				),
-				newAssignment(
-					[]Variable{newVar("a", false), newVar("b", false), newVar("c", false)},
-					[]Expression{newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3")},
-				),
-			},
-		),
+		[]Statement{
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newConst(TYPE_INT, "1")},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false), newVar("b", false)},
+				[]Expression{newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2")},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false), newVar("b", false), newVar("c", false)},
+				[]Expression{newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3")},
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -364,21 +354,19 @@ func TestParserFor1(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newLoop(
-					newAssignment([]Variable{}, []Expression{}),
-					[]Expression{},
-					newAssignment([]Variable{}, []Expression{}),
-					newBlock([]Statement{
-						newAssignment(
-							[]Variable{newVar("a", false)},
-							[]Expression{newBinary(OP_PLUS, newVar("a", false), newConst(TYPE_INT, "1"), false)},
-						),
-					}),
-				),
-			},
-		),
+		[]Statement{
+			newLoop(
+				newAssignment([]Variable{}, []Expression{}),
+				[]Expression{},
+				newAssignment([]Variable{}, []Expression{}),
+				newBlock([]Statement{
+					newAssignment(
+						[]Variable{newVar("a", false)},
+						[]Expression{newBinary(OP_PLUS, newVar("a", false), newConst(TYPE_INT, "1"), false)},
+					),
+				}),
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -393,21 +381,19 @@ func TestParserFor2(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newLoop(
-					newAssignment([]Variable{newVar("i", false)}, []Expression{newConst(TYPE_INT, "5")}),
-					[]Expression{},
-					newAssignment([]Variable{}, []Expression{}),
-					newBlock([]Statement{
-						newAssignment(
-							[]Variable{newVar("a", false)},
-							[]Expression{newConst(TYPE_INT, "0")},
-						),
-					}),
-				),
-			},
-		),
+		[]Statement{
+			newLoop(
+				newAssignment([]Variable{newVar("i", false)}, []Expression{newConst(TYPE_INT, "5")}),
+				[]Expression{},
+				newAssignment([]Variable{}, []Expression{}),
+				newBlock([]Statement{
+					newAssignment(
+						[]Variable{newVar("a", false)},
+						[]Expression{newConst(TYPE_INT, "0")},
+					),
+				}),
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -426,39 +412,37 @@ func TestParserFor3(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newLoop(
-					newAssignment(
-						[]Variable{newVar("i", false), newVar("j", false)},
-						[]Expression{newConst(TYPE_INT, "0"), newConst(TYPE_INT, "1")},
-					),
-					[]Expression{newBinary(OP_LESS, newVar("i", false), newConst(TYPE_INT, "10"), false)},
-					newAssignment(
-						[]Variable{newVar("i", false)},
-						[]Expression{newBinary(OP_PLUS, newVar("i", false), newConst(TYPE_INT, "1"), false)},
-					),
-					newBlock([]Statement{
-						newCondition(
-							newBinary(OP_EQ, newVar("b", false), newVar("a", false), false),
-							newBlock([]Statement{
-								newLoop(
-									newAssignment([]Variable{}, []Expression{}),
-									[]Expression{},
-									newAssignment([]Variable{}, []Expression{}),
-									newBlock([]Statement{
-										newAssignment(
-											[]Variable{newVar("c", false)},
-											[]Expression{newConst(TYPE_INT, "6")},
-										),
-									})),
-							}),
-							newBlock([]Statement{}),
-						),
-					}),
+		[]Statement{
+			newLoop(
+				newAssignment(
+					[]Variable{newVar("i", false), newVar("j", false)},
+					[]Expression{newConst(TYPE_INT, "0"), newConst(TYPE_INT, "1")},
 				),
-			},
-		),
+				[]Expression{newBinary(OP_LESS, newVar("i", false), newConst(TYPE_INT, "10"), false)},
+				newAssignment(
+					[]Variable{newVar("i", false)},
+					[]Expression{newBinary(OP_PLUS, newVar("i", false), newConst(TYPE_INT, "1"), false)},
+				),
+				newBlock([]Statement{
+					newCondition(
+						newBinary(OP_EQ, newVar("b", false), newVar("a", false), false),
+						newBlock([]Statement{
+							newLoop(
+								newAssignment([]Variable{}, []Expression{}),
+								[]Expression{},
+								newAssignment([]Variable{}, []Expression{}),
+								newBlock([]Statement{
+									newAssignment(
+										[]Variable{newVar("c", false)},
+										[]Expression{newConst(TYPE_INT, "6")},
+									),
+								})),
+						}),
+						newBlock([]Statement{}),
+					),
+				}),
+			),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -473,13 +457,11 @@ func TestParserFunction1(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newFunction("abc", []Variable{}, []Type{}, newBlock(
-					[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
-				), []Expression{}),
-			},
-		),
+		[]Statement{
+			newFunction("abc", []Variable{}, []Type{}, newBlock(
+				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
+			), []Expression{}),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -495,13 +477,11 @@ func TestParserFunction2(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newFunction("abc", []Variable{newParam(TYPE_INT, "a"), newParam(TYPE_FLOAT, "b"), newParam(TYPE_BOOL, "c")}, []Type{}, newBlock(
-					[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
-				), []Expression{}),
-			},
-		),
+		[]Statement{
+			newFunction("abc", []Variable{newParam(TYPE_INT, "a"), newParam(TYPE_FLOAT, "b"), newParam(TYPE_BOOL, "c")}, []Type{}, newBlock(
+				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
+			), []Expression{}),
+		},
 	)
 
 	testAST(code, expected, t)
@@ -517,13 +497,11 @@ func TestParserFunction3(t *testing.T) {
 	`)
 
 	expected := newAST(
-		newBlock(
-			[]Statement{
-				newFunction("abc", []Variable{}, []Type{TYPE_INT, TYPE_FLOAT, TYPE_BOOL}, newBlock(
-					[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
-				), []Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true")}),
-			},
-		),
+		[]Statement{
+			newFunction("abc", []Variable{}, []Type{TYPE_INT, TYPE_FLOAT, TYPE_BOOL}, newBlock(
+				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
+			), []Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true")}),
+		},
 	)
 
 	testAST(code, expected, t)
