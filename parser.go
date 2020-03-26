@@ -23,7 +23,8 @@ funDecl		::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] ['return' 
 assign 		::= varlist ‘=’ explist
 varlist		::= varDecl [‘,’ varlist]
 explist		::= exp [‘,’ explist]
-exp 		::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp
+exp 		::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp | funCall
+funCall		::= Name '(' [explist] ')'
 varDecl		::= [shadow] var
 var 		::= Name
 binop		::= '+' | '-' | '*' | '/' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' | '||'
@@ -130,7 +131,8 @@ type Statement interface {
 type Expression interface {
 	Node
 	expression()
-	getExpressionType() Type
+	getExpressionTypes() []Type
+	getResultCount() int
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -164,11 +166,18 @@ type UnaryOp struct {
 	opType       Type
 	line, column int
 }
+type FunCall struct {
+	funName      string
+	args         []Expression
+	retTypes     []Type
+	line, column int
+}
 
 func (_ Variable) expression() {}
 func (_ Constant) expression() {}
 func (_ BinaryOp) expression() {}
 func (_ UnaryOp) expression()  {}
+func (_ FunCall) expression()  {}
 
 func (e Variable) startPos() (int, int) {
 	return e.line, e.column
@@ -181,6 +190,42 @@ func (e BinaryOp) startPos() (int, int) {
 }
 func (e UnaryOp) startPos() (int, int) {
 	return e.line, e.column
+}
+func (e FunCall) startPos() (int, int) {
+	return e.line, e.column
+}
+
+func (e Constant) getExpressionTypes() []Type {
+	return []Type{e.cType}
+}
+func (e Variable) getExpressionTypes() []Type {
+	return []Type{e.vType}
+}
+func (e UnaryOp) getExpressionTypes() []Type {
+	return []Type{e.opType}
+}
+func (e BinaryOp) getExpressionTypes() []Type {
+	return []Type{e.opType}
+}
+func (e FunCall) getExpressionTypes() []Type {
+	// TODO: Change return to []Type for all methods!
+	return e.retTypes
+}
+
+func (e Constant) getResultCount() int {
+	return 1
+}
+func (e Variable) getResultCount() int {
+	return 1
+}
+func (e UnaryOp) getResultCount() int {
+	return 1
+}
+func (e BinaryOp) getResultCount() int {
+	return 1
+}
+func (e FunCall) getResultCount() int {
+	return len(e.retTypes)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -444,19 +489,6 @@ func (tc *TokenChannel) pushBack(t Token) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // PARSER IMPLEMENTATION
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-func (c Constant) getExpressionType() Type {
-	return c.cType
-}
-func (v Variable) getExpressionType() Type {
-	return v.vType
-}
-func (e UnaryOp) getExpressionType() Type {
-	return e.opType
-}
-func (e BinaryOp) getExpressionType() Type {
-	return e.opType
-}
 
 // Operator priority (Descending priority!):
 // 1: 	'*', '/'

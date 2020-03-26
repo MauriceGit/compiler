@@ -190,7 +190,12 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	//register, _ := getRegister(u.getExpressionType())
 
-	switch u.getExpressionType() {
+	if u.getResultCount() != 1 {
+		panic("Code generation error: Unary expression can only handle one result")
+	}
+	t := u.getExpressionTypes()[0]
+
+	switch t {
 	case TYPE_BOOL:
 		if u.operator == OP_NOT {
 			// 'not' switches between 0 and -1. So False: 0, True: -1
@@ -275,7 +280,12 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"  ", "pop", rRight})
 	asm.program = append(asm.program, [3]string{"  ", "pop", rLeft})
 
-	switch b.leftExpr.getExpressionType() {
+	if b.leftExpr.getResultCount() != 1 {
+		panic("Code generation error: Binary expression can only handle one result")
+	}
+	t := b.leftExpr.getExpressionTypes()[0]
+
+	switch t {
 	case TYPE_INT, TYPE_FLOAT:
 		binaryOperationNumber(b.operator, b.opType, rLeft, rRight, asm)
 	case TYPE_BOOL:

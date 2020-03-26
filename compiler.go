@@ -100,8 +100,20 @@ func main() {
 	var program []byte = []byte(`
 
 v = 2.0
-fun abc(a int, b float) {
+v = -v
+
+if v <= 0.0 {
+	b = 5
+} else {
+	b = 9
 }
+
+for i = 0; i < 5; i = i+1 {
+
+}
+
+//fun abc(a int, b float) {
+//}
 
 `)
 

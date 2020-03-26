@@ -72,14 +72,17 @@ func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, erro
 	}
 	unaryOp.expr = expression
 
-	t := expression.getExpressionType()
+	if expression.getResultCount() != 1 {
+		return nil, fmt.Errorf("%w[%v:%v] - Unary expression can only handle one result", ErrCritical, unaryOp.line, unaryOp.column)
+	}
+	t := expression.getExpressionTypes()[0]
 
 	switch unaryOp.operator {
 	case OP_NEGATIVE:
 		if t != TYPE_FLOAT && t != TYPE_INT {
 			return nil, fmt.Errorf("%w[%v:%v] - Unary '-' expression must be float or int, but is: %v", ErrCritical, unaryOp.line, unaryOp.column, unaryOp)
 		}
-		unaryOp.opType = expression.getExpressionType()
+		unaryOp.opType = t
 		return unaryOp, nil
 	case OP_NOT:
 		if t != TYPE_BOOL {
@@ -116,11 +119,18 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	}
 	binaryOp.rightExpr = rightExpression
 
-	tLeft := binaryOp.leftExpr.getExpressionType()
-	tRight := binaryOp.rightExpr.getExpressionType()
+	if binaryOp.leftExpr.getResultCount() != binaryOp.rightExpr.getResultCount() || binaryOp.leftExpr.getResultCount() != 1 {
+		return nil, fmt.Errorf("%w[%v:%v] - BinaryOp %v expected two values, got %v and %v",
+			ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator,
+			binaryOp.leftExpr.getResultCount(), binaryOp.rightExpr.getResultCount(),
+		)
+	}
+
+	tLeft := binaryOp.leftExpr.getExpressionTypes()[0]
+	tRight := binaryOp.rightExpr.getExpressionTypes()[0]
 
 	// Check types only after we possibly rearranged the expression!
-	if binaryOp.leftExpr.getExpressionType() != binaryOp.rightExpr.getExpressionType() {
+	if binaryOp.leftExpr.getExpressionTypes()[0] != binaryOp.rightExpr.getExpressionTypes()[0] {
 		return binaryOp, fmt.Errorf(
 			"%w[%v:%v] - BinaryOp '%v' expected same type, got: '%v', '%v'",
 			ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft, tRight,
@@ -205,8 +215,18 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 // All new variables (and shadow ones) are updated/written to the symbol varTable
 func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignment, error) {
 
+	expressionTypes := make([]Type, 0)
+	for i, e := range assignment.expressions {
+		expression, err := analyzeExpression(e, symbolTable)
+		if err != nil {
+			return assignment, err
+		}
+		expressionTypes = append(expressionTypes, expression.getExpressionTypes()...)
+		assignment.expressions[i] = expression
+	}
+
 	// Populate/overwrite the dictionary of variables for futher statements :)
-	if len(assignment.variables) != len(assignment.expressions) {
+	if len(assignment.variables) != len(expressionTypes) {
 
 		row, col := assignment.startPos()
 		if len(assignment.variables) > 0 {
@@ -221,11 +241,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 
 	for i, v := range assignment.variables {
 
-		expression, err := analyzeExpression(assignment.expressions[i], symbolTable)
-		if err != nil {
-			return assignment, err
-		}
-		expressionType := expression.getExpressionType()
+		expressionType := expressionTypes[i]
 
 		// Shadowing is only allowed in a different block, not right after the first variable, to avoid confusion and complicated
 		// variable handling
@@ -252,7 +268,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 			symbolTable.setVar(v.vName, expressionType)
 		}
 
-		assignment.expressions[i] = expression
+		//assignment.expressions[i] = expression
 
 		assignment.variables[i].vType = expressionType
 	}
@@ -266,11 +282,19 @@ func analyzeCondition(condition Condition, symbolTable *SymbolTable) (Condition,
 	if err != nil {
 		return condition, err
 	}
-	if e.getExpressionType() != TYPE_BOOL {
+
+	if e.getResultCount() != 1 {
+		row, col := e.startPos()
+		return condition, fmt.Errorf("%w[%v:%v] - Condition accepts only one expression, got %v",
+			ErrCritical, row, col, e.getResultCount(),
+		)
+	}
+	t := e.getExpressionTypes()[0]
+	if t != TYPE_BOOL {
 		row, col := e.startPos()
 		return condition, fmt.Errorf(
 			"%w[%v:%v] - If expression expected boolean, got: %v --> <<%v>>",
-			ErrCritical, row, col, e.getExpressionType(), condition.expression,
+			ErrCritical, row, col, t, condition.expression,
 		)
 	}
 	condition.expression = e
@@ -309,12 +333,15 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 		if err != nil {
 			return loop, err
 		}
-		if expression.getExpressionType() != TYPE_BOOL {
-			row, col := expression.startPos()
-			return loop, fmt.Errorf(
-				"%w[%v:%v] - Loop expression expected boolean, got: %v (%v)",
-				ErrCritical, row, col, expression.getExpressionType(), e,
-			)
+
+		for _, t := range expression.getExpressionTypes() {
+			if t != TYPE_BOOL {
+				row, col := expression.startPos()
+				return loop, fmt.Errorf(
+					"%w[%v:%v] - Loop expression expected boolean, got: %v (%v)",
+					ErrCritical, row, col, t, expression,
+				)
+			}
 		}
 
 		loop.expressions[i] = expression
@@ -374,16 +401,22 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	}
 	fun.block = newBlock
 
+	typeI := 0
 	for i, e := range fun.returns {
 
 		newE, err := analyzeExpression(e, &functionSymbolTable)
 		if err != nil {
 			return fun, err
 		}
-		if newE.getExpressionType() != fun.returnTypes[i] {
-			row, col := e.startPos()
-			return fun, fmt.Errorf("%w[%v:%v] - Function return type des not match function definition", ErrCritical, row, col)
+
+		for _, t := range newE.getExpressionTypes() {
+			if t != fun.returnTypes[typeI] {
+				row, col := e.startPos()
+				return fun, fmt.Errorf("%w[%v:%v] - Function return type des not match function definition", ErrCritical, row, col)
+			}
+			typeI++
 		}
+
 		fun.returns[i] = newE
 	}
 
