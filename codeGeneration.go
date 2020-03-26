@@ -104,13 +104,27 @@ func getCommandBool(op Operator) string {
 func getRegister(t Type) (string, string) {
 	switch t {
 	case TYPE_INT, TYPE_BOOL:
-		return "rsi", "rcx"
+		return "r10", "r11"
 	case TYPE_FLOAT:
 		return "xmm0", "xmm1"
 	case TYPE_STRING:
 		panic("Code generation error. String register not yet implemented")
 	}
 	return "", ""
+}
+
+// Right now we limit ourself to a maximum of 6 integer parameters and/or 8 floating parameters!
+// https://wiki.cdot.senecacollege.ca/wiki/X86_64_Register_and_Instruction_Quick_Start
+func getFunctionRegisters(t Type) []string {
+	switch t {
+	case TYPE_INT, TYPE_BOOL:
+		return []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
+	case TYPE_FLOAT:
+		return []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+	case TYPE_STRING:
+		panic("Code generation error. String register not yet implemented")
+	}
+	return []string{}
 }
 
 func getCommand(t Type, op Operator) string {
@@ -150,13 +164,18 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 		panic("Could not generate code for Const. Unknown type!")
 	}
 
-	asm.program = append(asm.program, [3]string{"  ", "push", name})
+	register, _ := getRegister(TYPE_INT)
+	asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, %v", register, name)})
+	asm.program = append(asm.program, [3]string{"  ", "push", register})
 }
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 	if symbol, ok := s.getVar(v.vName); ok {
-		asm.program = append(asm.program, [3]string{"  ", "push", fmt.Sprintf("qword [%v]", symbol.varName)})
+		// We just push it on the stack. So here we can't use floating point registers for example!
+		register, _ := getRegister(TYPE_INT)
+		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, qword [%v]", register, symbol.varName)})
+		asm.program = append(asm.program, [3]string{"  ", "push", register})
 		return
 	}
 	panic("Could not generate code for Variable. No symbol known!")
@@ -166,29 +185,36 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	u.expr.generateCode(asm, s)
 
-	register, _ := getRegister(u.getExpressionType())
+	stackReg, _ := getRegister(TYPE_INT)
+	asm.program = append(asm.program, [3]string{"  ", "pop", stackReg})
+
+	//register, _ := getRegister(u.getExpressionType())
 
 	switch u.getExpressionType() {
 	case TYPE_BOOL:
 		if u.operator == OP_NOT {
 			// 'not' switches between 0 and -1. So False: 0, True: -1
-			asm.program = append(asm.program, [3]string{"  ", "pop", register})
-			asm.program = append(asm.program, [3]string{"  ", "not", register})
+			//asm.program = append(asm.program, [3]string{"  ", "pop", register})
+			asm.program = append(asm.program, [3]string{"  ", "not", stackReg})
 		} else {
 			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType))
 		}
 	case TYPE_INT:
 		if u.operator == OP_NEGATIVE {
-			asm.program = append(asm.program, [3]string{"  ", "pop", register})
-			asm.program = append(asm.program, [3]string{"  ", "neg", register})
+			//asm.program = append(asm.program, [3]string{"  ", "pop", register})
+			asm.program = append(asm.program, [3]string{"  ", "neg", stackReg})
 
 		} else {
 			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType))
 		}
 	case TYPE_FLOAT:
 		if u.operator == OP_NEGATIVE {
-			asm.program = append(asm.program, [3]string{"  ", "pop", register})
-			asm.program = append(asm.program, [3]string{"  ", "mulsd", fmt.Sprintf("%v, qword [negOneF]", register)})
+			//asm.program = append(asm.program, [3]string{"  ", "pop", register})
+
+			fReg, _ := getRegister(TYPE_FLOAT)
+			asm.program = append(asm.program, [3]string{"  ", "movq", fmt.Sprintf("%v, %v", fReg, stackReg)})
+			asm.program = append(asm.program, [3]string{"  ", "mulsd", fmt.Sprintf("%v, qword [negOneF]", fReg)})
+			asm.program = append(asm.program, [3]string{"  ", "movq", fmt.Sprintf("%v, %v", stackReg, fReg)})
 
 		} else {
 			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v", u.operator, u.opType))
@@ -198,7 +224,7 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		return
 	}
 
-	asm.program = append(asm.program, [3]string{"  ", "push", register})
+	asm.program = append(asm.program, [3]string{"  ", "push", stackReg})
 }
 
 // binaryOperationFloat executes the operation on the two registers and writes the result into rLeft!
@@ -212,6 +238,7 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 		labelOK := asm.nextLabelName()
 		jump := getJumpType(op)
 
+		// TODO: Verify that this works with float as well!
 		asm.program = append(asm.program, [3]string{"  ", "cmp", fmt.Sprintf("%v, %v", rLeft, rRight)})
 		asm.program = append(asm.program, [3]string{"  ", jump, labelTrue})
 		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, 0", rLeft)})
@@ -221,9 +248,20 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 		asm.program = append(asm.program, [3]string{"", labelOK + ":", ""})
 
 	default:
-		// Works for Integer and Float.
 		command := getCommand(t, op)
-		asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
+		switch t {
+		case TYPE_INT:
+			asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", rLeft, rRight)})
+		case TYPE_FLOAT:
+			fLeft, fRight := getRegister(TYPE_FLOAT)
+			// We need to move the values from stack/int registers to the corresponding xmm* ones and back afterwards
+			// So the stack push works!
+			asm.program = append(asm.program, [3]string{"  ", "movq", fmt.Sprintf("%v, %v", fLeft, rLeft)})
+			asm.program = append(asm.program, [3]string{"  ", "movq", fmt.Sprintf("%v, %v", fRight, rRight)})
+			asm.program = append(asm.program, [3]string{"  ", command, fmt.Sprintf("%v, %v", fLeft, fRight)})
+			asm.program = append(asm.program, [3]string{"  ", "movq", fmt.Sprintf("%v, %v", rLeft, fLeft)})
+			asm.program = append(asm.program, [3]string{"  ", "movq", fmt.Sprintf("%v, %v", rRight, fRight)})
+		}
 	}
 }
 
@@ -232,7 +270,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	b.leftExpr.generateCode(asm, s)
 	b.rightExpr.generateCode(asm, s)
 
-	rLeft, rRight := getRegister(b.leftExpr.getExpressionType())
+	rLeft, rRight := getRegister(TYPE_INT)
 
 	asm.program = append(asm.program, [3]string{"  ", "pop", rRight})
 	asm.program = append(asm.program, [3]string{"  ", "pop", rLeft})
@@ -258,10 +296,21 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"  ", "push", rLeft})
 }
 
-func debugPrint(asm *ASM, vName string) {
-	asm.program = append(asm.program, [3]string{"    ", "mov", fmt.Sprintf("rsi, qword [%v]", vName)})
-	asm.program = append(asm.program, [3]string{"    ", "mov", "rdi, fmti"})
-	asm.program = append(asm.program, [3]string{"    ", "mov", "rax, 0"})
+func debugPrint(asm *ASM, vName string, t Type) {
+
+	format := "fmti"
+	floatCount := "0"
+	if t == TYPE_FLOAT {
+		format = "fmtf"
+		floatCount = "1"
+		fReg, _ := getRegister(t)
+		asm.program = append(asm.program, [3]string{"    ", "movq", fmt.Sprintf("%v, qword [%v]", fReg, vName)})
+		asm.program = append(asm.program, [3]string{"    ", "movq", "rsi, " + fReg})
+	} else {
+		asm.program = append(asm.program, [3]string{"    ", "mov", fmt.Sprintf("rsi, qword [%v]", vName)})
+	}
+	asm.program = append(asm.program, [3]string{"    ", "mov", "rdi, " + format})
+	asm.program = append(asm.program, [3]string{"    ", "mov", "rax, " + floatCount})
 	asm.program = append(asm.program, [3]string{"    ", "call", "printf"})
 }
 
@@ -273,8 +322,8 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		// Calculate expression
 		e.generateCode(asm, s)
 
-		register, _ := getRegister(e.getExpressionType())
-
+		// Just to get it from the stack into the variable.
+		register, _ := getRegister(TYPE_INT)
 		asm.program = append(asm.program, [3]string{"  ", "pop", register})
 
 		// Create corresponding variable, if it doesn't exist yet.
@@ -293,7 +342,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		// Move value from register of expression into variable!
 		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", vName, register)})
 
-		debugPrint(asm, vName)
+		debugPrint(asm, vName, v.vType)
 	}
 
 }
@@ -391,7 +440,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 		// Move value from register of expression into variable!
 		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", vName, register)})
-		debugPrint(asm, vName)
+		debugPrint(asm, vName, v.vType)
 	}
 
 	// Generate block code
@@ -422,6 +471,7 @@ func (ast AST) generateCode() ASM {
 	asm.constants = append(asm.constants, [2]string{"FALSE", "0"})
 
 	asm.variables = append(asm.variables, [3]string{"fmti", "db", "\"%i\", 10, 0"})
+	asm.variables = append(asm.variables, [3]string{"fmtf", "db", "\"%.2f\", 10, 0"})
 	asm.variables = append(asm.variables, [3]string{"negOneF", "dq", "-1.0"})
 	asm.variables = append(asm.variables, [3]string{"negOneI", "dq", "-1"})
 
