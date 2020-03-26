@@ -410,6 +410,16 @@ func (b Block) generateCode(asm *ASM, s *SymbolTable) {
 
 }
 
+// By convention, the first six integer arguments are passed in the following registers:
+// 		%rdi,%rsi,%rdx,%rcx,%r8,%r9
+// Additional integer arguments are passed on the stack.
+// TODO: Not yet implemented
+// The first eight floating point arguments are passed in the SSE registers:
+//		%xmm0,%xmm1, ...,%xmm7
+// Additional floating arguments are passed on the stack.
+//
+// For calling functions (C) with a variable count of arguments, the register %al (rax) must be set with
+// how many %xmm registers are used.
 func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	// As function declarations can not be nesting in assembler, we save the current program slice,
@@ -420,11 +430,8 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	asmName := asm.nextFunctionName()
 	asm.program = append(asm.program, [3]string{"", "global " + asmName, ""})
 	asm.program = append(asm.program, [3]string{"", asmName + ":", ""})
-	// TODO: Arbitrary register r12. Must be sure, that it never gets used for anything else!!!!
-	// Save the return address to r12.
-	//asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("r12, qword [rbp+%v]", len(f.parameters)*8)})
-	//asm.program = append(asm.program, [3]string{"  ", "mov", "rbp, rsp"})
-	//asm.program = append(asm.program, [3]string{"  ", "push", ""})
+
+	//asm.program = append(asm.program, [3]string{"  ", "pop", register})
 
 	// Create local variables for all function parameters
 	// Pop n parameters from stack and move into local variables
@@ -435,7 +442,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 		asm.variables = append(asm.variables, [3]string{vName, "dq", "0"})
 		f.block.symbolTable.setAsmName(v.vName, vName)
 
-		register, _ := getRegister(v.vType)
+		register, _ := getRegister(TYPE_INT)
 		asm.program = append(asm.program, [3]string{"  ", "pop", register})
 
 		// Move value from register of expression into variable!
