@@ -50,19 +50,32 @@ func (s *SymbolTable) getFun(name string) (SymbolFunEntry, bool) {
 	return s.parent.getFun(name)
 }
 
-func (s *SymbolTable) setAsmName(v string, asmName string) {
+func (s *SymbolTable) setVarAsmName(v string, asmName string) {
 	if s == nil {
-		fmt.Println("Could not set asm variable name in symbol varTable!")
+		panic("Could not set asm variable name in symbol table!")
 		return
 	}
 	if _, ok := s.varTable[v]; ok {
-
 		tmp := s.varTable[v]
 		tmp.varName = asmName
 		s.varTable[v] = tmp
 		return
 	}
-	s.parent.setAsmName(v, asmName)
+	s.parent.setVarAsmName(v, asmName)
+}
+
+func (s *SymbolTable) setFunAsmName(v string, asmName string) {
+	if s == nil {
+		panic("Could not set asm function name in symbol table!")
+		return
+	}
+	if _, ok := s.funTable[v]; ok {
+		tmp := s.funTable[v]
+		tmp.jumpLabel = asmName
+		s.funTable[v] = tmp
+		return
+	}
+	s.parent.setFunAsmName(v, asmName)
 }
 
 func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, error) {
@@ -186,6 +199,43 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	return binaryOp, nil
 }
 
+func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
+
+	funEntry, ok := symbolTable.getFun(fun.funName)
+	if !ok {
+		return fun, fmt.Errorf("%w[%v:%v] - Function '%v' called before declaration", ErrCritical, fun.line, fun.column, fun.funName)
+	}
+	fun.retTypes = funEntry.returnTypes
+
+	// Basically unpacking expression list before providing it to the function
+	expressionTypes := []Type{}
+	for i, e := range fun.args {
+		newE, parseErr := analyzeExpression(e, symbolTable)
+		if parseErr != nil {
+			return fun, parseErr
+		}
+		fun.args[i] = newE
+
+		expressionTypes = append(expressionTypes, newE.getExpressionTypes()...)
+	}
+
+	if len(expressionTypes) != len(funEntry.paramTypes) {
+		return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' has %v parameters, but needs %v",
+			ErrCritical, fun.line, fun.column, fun.funName, len(expressionTypes), len(funEntry.paramTypes),
+		)
+	}
+
+	for i, t := range expressionTypes {
+		if t != funEntry.paramTypes[i] {
+			return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' got type %v as %v. parameter, but needs %v",
+				ErrCritical, fun.line, fun.column, fun.funName, t, i+1, funEntry.paramTypes[i],
+			)
+		}
+	}
+
+	return fun, nil
+}
+
 func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Expression, error) {
 
 	switch e := expression.(type) {
@@ -205,6 +255,8 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 		return analyzeUnaryOp(e, symbolTable)
 	case BinaryOp:
 		return analyzeBinaryOp(e, symbolTable)
+	case FunCall:
+		return analyzeFunCall(e, symbolTable)
 	}
 	row, col := expression.startPos()
 	return expression, fmt.Errorf("%w[%v:%v] - Unknown type for expression %v", ErrCritical, row, col, expression)
@@ -374,6 +426,9 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	for _, v := range fun.parameters {
 		if v.vType == TYPE_UNKNOWN {
 			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v has invalid type", ErrCritical, v.line, v.column, v)
+		}
+		if _, ok := functionSymbolTable.getVar(v.vName); ok {
+			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v already exists", ErrCritical, v.line, v.column, v)
 		}
 		functionSymbolTable.setVar(v.vName, v.vType)
 	}

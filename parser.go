@@ -479,13 +479,6 @@ func (tc *TokenChannel) pushBack(t Token) {
 	tc.isCached = true
 }
 
-//func (tc *TokenChannel) lastLineColumn() (int, int) {
-//	if !tc.isCached {
-//		return -1, -1
-//	}
-//	return tc.token.line, tc.token.column
-//}
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // PARSER IMPLEMENTATION
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -635,13 +628,98 @@ func parseConstant(tokens *TokenChannel) (Constant, bool) {
 	return Constant{TYPE_UNKNOWN, "", tokens.token.line, tokens.token.column}, false
 }
 
-// parseSimpleExpression just parses variables, constants and '('...')'
-func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err error) {
-	// Expect either a constant/variable and you're done
-	if tmpV, ok := parseVariable(tokens); ok {
-		expression = tmpV
+//func parseFunCall(tokens *TokenChannel) (fun FunCall, err error) {
+
+//	name, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+//	if !ok {
+//		err = fmt.Errorf("%wFunction call expects identifier", ErrNormal)
+//		return
+//	}
+
+//	if _, _, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
+//		err = fmt.Errorf("%wFunction call expects '(' after identifier", ErrNormal)
+//		return
+//	}
+
+//	arguments, parseErr := parseExpressionList(tokens)
+//	if errors.Is(parseErr, ErrCritical) {
+//		err = parseErr
+//		return
+//	}
+
+//	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")"); !ok {
+//		err = fmt.Errorf("%w[%v:%v] - Function call expects ')' after parameter list", ErrCritical, row, col)
+//		return
+//	}
+
+//	fun.funName = name
+//	fun.args = arguments
+//	// We don't know yet, how many return types this function will have...
+//	fun.retTypes = []Type{}
+//	fun.line = startRow
+//	fun.column = startCol
+//	return
+//}
+
+// parseIdentifierExpression parses the _usage_ of variables and function calls.
+// Meaning, it will not process shadow variables or declarations!
+func parseIdentifierExpression(tokens *TokenChannel) (expression Expression, err error) {
+
+	name, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		err = fmt.Errorf("%wExpect identifier", ErrNormal)
 		return
 	}
+
+	// Depending on if we find the '(' or not, this is a function call or normal variable!
+	if _, _, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
+		expression = Variable{TYPE_UNKNOWN, name, false, startRow, startCol}
+		return
+	}
+
+	// We now parse for a function call!
+
+	arguments, parseErr := parseExpressionList(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = parseErr
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Function call expects ')' after parameter list", ErrCritical, row, col)
+		return
+	}
+
+	fun := FunCall{
+		funName:  name,
+		args:     arguments,
+		retTypes: []Type{},
+		line:     startRow,
+		column:   startCol,
+	}
+	expression = fun
+	return
+}
+
+// parseSimpleExpression just parses variables, constants and '('...')'
+func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err error) {
+
+	// We need to check function calls first, otherwise we will parse it as a variable!
+	tmpE, parseErr := parseIdentifierExpression(tokens)
+	if parseErr == nil {
+		expression = tmpE
+		return
+	}
+	if errors.Is(parseErr, ErrCritical) {
+		err = parseErr
+		return
+	}
+
+	// Expect either a constant/variable and you're done
+	//	if tmpV, ok := parseVariable(tokens); ok {
+	//		expression = tmpV
+	//		return
+	//	}
 
 	if tmpC, ok := parseConstant(tokens); ok {
 		expression = tmpC
@@ -652,7 +730,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); ok {
 		e, parseErr := parseExpression(tokens)
 		if parseErr != nil {
-			err = fmt.Errorf("%wInvalid expression in () --> %v", ErrCritical, parseErr.Error())
+			err = fmt.Errorf("%w%v", ErrCritical, parseErr.Error())
 			return
 		}
 		if tmpE, ok := e.(BinaryOp); ok {

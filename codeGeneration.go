@@ -306,6 +306,23 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"  ", "push", rLeft})
 }
 
+func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
+
+	for i := len(f.args) - 1; i >= 0; i-- {
+		// The expression results will just accumulate on the stack!
+		f.args[i].generateCode(asm, s)
+	}
+
+	if entry, ok := s.getFun(f.funName); ok {
+		asm.program = append(asm.program, [3]string{"  ", "call", entry.jumpLabel})
+		// TODO: Clear stack: Is that correct? Do something else?
+		//asm.program = append(asm.program, [3]string{"  ", "add", fmt.Sprintf("rsp, %v", 8*len(entry.paramTypes))})
+	} else {
+		panic("Code generation error: Unknown function called")
+	}
+
+}
+
 func debugPrint(asm *ASM, vName string, t Type) {
 
 	format := "fmti"
@@ -326,11 +343,12 @@ func debugPrint(asm *ASM, vName string, t Type) {
 
 func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 
-	for i, v := range a.variables {
-		e := a.expressions[i]
-
+	for _, e := range a.expressions {
 		// Calculate expression
 		e.generateCode(asm, s)
+	}
+
+	for _, v := range a.variables {
 
 		// Just to get it from the stack into the variable.
 		register, _ := getRegister(TYPE_INT)
@@ -343,7 +361,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 			// Variables are initialized with 0. This will be overwritten a few lines later!
 			// TODO: What about float or string variables? Does this really work? Do we care at all because it will be overwritten anyway?
 			asm.variables = append(asm.variables, [3]string{vName, "dq", "0"})
-			s.setAsmName(v.vName, vName)
+			s.setVarAsmName(v.vName, vName)
 		}
 		// This can not/should not fail!
 		entry, _ := s.getVar(v.vName)
@@ -352,7 +370,11 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		// Move value from register of expression into variable!
 		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", vName, register)})
 
-		debugPrint(asm, vName, v.vType)
+	}
+
+	for _, v := range a.variables {
+		entry, _ := s.getVar(v.vName)
+		debugPrint(asm, entry.varName, v.vType)
 	}
 
 }
@@ -438,36 +460,53 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = make([][3]string, 0)
 
 	asmName := asm.nextFunctionName()
+	s.setFunAsmName(f.fName, asmName)
+
 	asm.program = append(asm.program, [3]string{"", "global " + asmName, ""})
 	asm.program = append(asm.program, [3]string{"", asmName + ":", ""})
 
-	//asm.program = append(asm.program, [3]string{"  ", "pop", register})
+	// We save the return address from top of the stack
+	returnAddress := asm.nextVariableName()
+	register, _ := getRegister(TYPE_INT)
+	asm.variables = append(asm.variables, [3]string{returnAddress, "dq", "0"})
+
+	// Pops the return address from the top of the stack
+	asm.program = append(asm.program, [3]string{"  ", "pop", register})
+	asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", returnAddress, register)})
 
 	// Create local variables for all function parameters
 	// Pop n parameters from stack and move into local variables
-	// Needs to be in reversed order so we can push in correct order when calling the function
-	for i := len(f.parameters) - 1; i >= 0; i-- {
-		v := f.parameters[i]
+	for _, v := range f.parameters {
 		vName := asm.nextVariableName()
 		asm.variables = append(asm.variables, [3]string{vName, "dq", "0"})
-		f.block.symbolTable.setAsmName(v.vName, vName)
+		f.block.symbolTable.setVarAsmName(v.vName, vName)
 
 		register, _ := getRegister(TYPE_INT)
 		asm.program = append(asm.program, [3]string{"  ", "pop", register})
 
 		// Move value from register of expression into variable!
 		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", vName, register)})
-		debugPrint(asm, vName, v.vType)
+		//debugPrint(asm, vName, v.vType)
 	}
+
+	asm.program = append(asm.program, [3]string{"  ", "push", "rbx"})
+	asm.program = append(asm.program, [3]string{"  ", "push", "rbp"})
 
 	// Generate block code
 	f.block.generateCode(asm, s)
 
+	asm.program = append(asm.program, [3]string{"  ", "pop", "rbp"})
+	asm.program = append(asm.program, [3]string{"  ", "pop", "rbx"})
+
 	// Generate code for each return expression, they will all accumulate on the stack automatically!
-	// Careful, the will need to be popped in reversed order when function is called!
-	for _, e := range f.returns {
-		e.generateCode(asm, &f.block.symbolTable)
+	for i := len(f.returns) - 1; i >= 0; i-- {
+		f.returns[i].generateCode(asm, &f.block.symbolTable)
 	}
+
+	// Set the return address from underneath the return values to the top again!
+	// We might have to pop the second return address manually...
+	asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, qword [%v]", register, returnAddress)})
+	asm.program = append(asm.program, [3]string{"  ", "push", register})
 
 	asm.program = append(asm.program, [3]string{"  ", "ret", ""})
 
