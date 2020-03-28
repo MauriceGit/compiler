@@ -681,12 +681,6 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 		return
 	}
 
-	// Expect either a constant/variable and you're done
-	//	if tmpV, ok := parseVariable(tokens); ok {
-	//		expression = tmpV
-	//		return
-	//	}
-
 	if tmpC, ok := parseConstant(tokens); ok {
 		expression = tmpC
 		return
