@@ -628,39 +628,6 @@ func parseConstant(tokens *TokenChannel) (Constant, bool) {
 	return Constant{TYPE_UNKNOWN, "", tokens.token.line, tokens.token.column}, false
 }
 
-//func parseFunCall(tokens *TokenChannel) (fun FunCall, err error) {
-
-//	name, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
-//	if !ok {
-//		err = fmt.Errorf("%wFunction call expects identifier", ErrNormal)
-//		return
-//	}
-
-//	if _, _, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
-//		err = fmt.Errorf("%wFunction call expects '(' after identifier", ErrNormal)
-//		return
-//	}
-
-//	arguments, parseErr := parseExpressionList(tokens)
-//	if errors.Is(parseErr, ErrCritical) {
-//		err = parseErr
-//		return
-//	}
-
-//	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")"); !ok {
-//		err = fmt.Errorf("%w[%v:%v] - Function call expects ')' after parameter list", ErrCritical, row, col)
-//		return
-//	}
-
-//	fun.funName = name
-//	fun.args = arguments
-//	// We don't know yet, how many return types this function will have...
-//	fun.retTypes = []Type{}
-//	fun.line = startRow
-//	fun.column = startCol
-//	return
-//}
-
 // parseIdentifierExpression parses the _usage_ of variables and function calls.
 // Meaning, it will not process shadow variables or declarations!
 func parseIdentifierExpression(tokens *TokenChannel) (expression Expression, err error) {
@@ -678,7 +645,6 @@ func parseIdentifierExpression(tokens *TokenChannel) (expression Expression, err
 	}
 
 	// We now parse for a function call!
-
 	arguments, parseErr := parseExpressionList(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr

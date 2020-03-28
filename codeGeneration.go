@@ -281,7 +281,10 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"  ", "pop", rLeft})
 
 	if b.leftExpr.getResultCount() != 1 {
-		panic("Code generation error: Binary expression can only handle one result")
+		panic("Code generation error: Binary expression can only handle one result each")
+	}
+	if b.rightExpr.getResultCount() != 1 {
+		panic("Code generation error: Binary expression can only handle one result each")
 	}
 	t := b.leftExpr.getExpressionTypes()[0]
 
@@ -465,14 +468,9 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"", "global " + asmName, ""})
 	asm.program = append(asm.program, [3]string{"", asmName + ":", ""})
 
-	// We save the return address from top of the stack
-	returnAddress := asm.nextVariableName()
-	register, _ := getRegister(TYPE_INT)
-	asm.variables = append(asm.variables, [3]string{returnAddress, "dq", "0"})
-
-	// Pops the return address from the top of the stack
-	asm.program = append(asm.program, [3]string{"  ", "pop", register})
-	asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("qword [%v], %v", returnAddress, register)})
+	// Save return address from top of stack to get to the arguments
+	_, returnAddress := getRegister(TYPE_INT)
+	asm.program = append(asm.program, [3]string{"  ", "pop", returnAddress})
 
 	// Create local variables for all function parameters
 	// Pop n parameters from stack and move into local variables
@@ -489,6 +487,9 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 		//debugPrint(asm, vName, v.vType)
 	}
 
+	// Push the return address back to the stack
+	asm.program = append(asm.program, [3]string{"  ", "push", returnAddress})
+
 	asm.program = append(asm.program, [3]string{"  ", "push", "rbx"})
 	asm.program = append(asm.program, [3]string{"  ", "push", "rbp"})
 
@@ -499,14 +500,22 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = append(asm.program, [3]string{"  ", "pop", "rbx"})
 
 	// Generate code for each return expression, they will all accumulate on the stack automatically!
-	for i := len(f.returns) - 1; i >= 0; i-- {
+	// We do the first expression later!
+	for i := len(f.returns) - 2; i >= 0; i-- {
 		f.returns[i].generateCode(asm, &f.block.symbolTable)
 	}
-
-	// Set the return address from underneath the return values to the top again!
-	// We might have to pop the second return address manually...
-	asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, qword [%v]", register, returnAddress)})
-	asm.program = append(asm.program, [3]string{"  ", "push", register})
+	// First expression!
+	if len(f.returns) > 0 {
+		f.returns[len(f.returns)-1].generateCode(asm, &f.block.symbolTable)
+		register, returnAddress := getRegister(TYPE_INT)
+		asm.program = append(asm.program, [3]string{"  ", "pop", register})
+		// Save return address
+		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("%v, [rsp+%v]", returnAddress, 8*(len(f.returns)-1))})
+		// Overwrite old return address with first return value
+		asm.program = append(asm.program, [3]string{"  ", "mov", fmt.Sprintf("[rsp+%v], %v", 8*(len(f.returns)-1), register)})
+		// Push return address
+		asm.program = append(asm.program, [3]string{"  ", "push", returnAddress})
+	}
 
 	asm.program = append(asm.program, [3]string{"  ", "ret", ""})
 
