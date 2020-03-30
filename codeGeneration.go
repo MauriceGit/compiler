@@ -100,7 +100,7 @@ func getCommandInt(op Operator) string {
 	case OP_MULT:
 		return "imul"
 	case OP_DIV:
-		return "div"
+		return "idiv"
 	default:
 		panic("Code generation error. Unknown operator for Integer")
 	}
@@ -560,9 +560,9 @@ func (ast AST) generateCode() ASM {
 	ast.block.generateCode(&asm, &ast.globalSymbolTable)
 
 	asm.addLine("; Exit the program nicely", "")
-	asm.addLine("mov", "rbx, 0  ; normal exit code")
-	asm.addLine("mov", "rax, 1  ; process termination service (?)")
-	asm.addLine("int", "0x80    ; linux kernel service")
+	asm.addLine("mov", "rbx, 0  ; exit code")
+	asm.addLine("mov", "rax, 1  ; sys_exit (system call number)")
+	asm.addLine("int", "0x80    ; call kernel")
 
 	return asm
 }
