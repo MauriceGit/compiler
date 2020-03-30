@@ -41,8 +41,8 @@ func assemble(asm ASM, source, executable string) (err error) {
 	for _, v := range asm.header {
 		fmt.Fprintf(srcFile, "%v\n", v)
 	}
-	for _, v := range asm.constants {
-		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v[0], "equ", v[1])
+	for k, v := range asm.constants {
+		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v, "equ", k)
 	}
 	for _, v := range asm.variables {
 		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v[0], v[1], v[2])
