@@ -482,8 +482,10 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	asmName := asm.nextFunctionName()
 	s.setFunAsmName(f.fName, asmName)
-
 	asm.addFun(asmName)
+
+	epilogueLabel := asm.nextLabelName()
+	s.setFunEpilogueLabel(f.fName, epilogueLabel)
 
 	// Save return address from top of stack to get to the arguments
 	_, returnAddress := getRegister(TYPE_INT)
@@ -518,6 +520,14 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	//asm.addLine("ret", "")
 
+	// TODO: Add proper Epilogue here:
+
+	asm.addLabel(epilogueLabel)
+
+	// Epilogue.
+
+	asm.addLine("ret", "")
+
 	for _, line := range asm.program {
 		asm.functions = append(asm.functions, line)
 	}
@@ -543,8 +553,16 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 		asm.addLine("push", returnAddress)
 	}
 
+	epilogueLabel := ""
+	if entry, ok := s.getFun(s.activeFunctionName); ok {
+		epilogueLabel = entry.epilogueLabel
+	} else {
+		panic("Code generation error. Function not in symbol table.")
+	}
+
+	asm.addLine("jmp", epilogueLabel)
 	//asm.addLine("pop", "rbp")
-	asm.addLine("ret", "")
+	//asm.addLine("ret", "")
 }
 
 func (ast AST) generateCode() ASM {

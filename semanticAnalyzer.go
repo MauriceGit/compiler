@@ -29,7 +29,7 @@ func (s *SymbolTable) setVar(v string, t Type) {
 }
 
 func (s *SymbolTable) setFun(name string, argTypes, returnTypes []Type) {
-	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, ""}
+	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, "", ""}
 }
 
 func (s *SymbolTable) isLocalFun(name string) bool {
@@ -76,6 +76,20 @@ func (s *SymbolTable) setFunAsmName(v string, asmName string) {
 		return
 	}
 	s.parent.setFunAsmName(v, asmName)
+}
+
+func (s *SymbolTable) setFunEpilogueLabel(v string, label string) {
+	if s == nil {
+		panic("Could not set asm epilogue label in symbol table!")
+		return
+	}
+	if _, ok := s.funTable[v]; ok {
+		tmp := s.funTable[v]
+		tmp.epilogueLabel = label
+		s.funTable[v] = tmp
+		return
+	}
+	s.parent.setFunEpilogueLabel(v, label)
 }
 
 func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, error) {
@@ -393,6 +407,7 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 	nextSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string]SymbolFunEntry, 0),
+		symbolTable.activeFunctionName,
 		symbolTable.activeFunctionReturn,
 		symbolTable,
 	}
@@ -443,6 +458,7 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	functionSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string]SymbolFunEntry, 0),
+		fun.fName,
 		fun.returnTypes,
 		symbolTable,
 	}
@@ -533,6 +549,7 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 		block.symbolTable = SymbolTable{
 			make(map[string]SymbolVarEntry, 0),
 			make(map[string]SymbolFunEntry, 0),
+			symbolTable.activeFunctionName,
 			symbolTable.activeFunctionReturn,
 			symbolTable,
 		}
@@ -556,6 +573,7 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable = SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string]SymbolFunEntry, 0),
+		"",
 		nil,
 		nil,
 	}

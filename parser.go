@@ -96,9 +96,10 @@ type SymbolVarEntry struct {
 // and we need to know how many and what kind of variables are
 // pushed onto the stack or popped from afterwards.
 type SymbolFunEntry struct {
-	paramTypes  []Type
-	returnTypes []Type
-	jumpLabel   string
+	paramTypes    []Type
+	returnTypes   []Type
+	jumpLabel     string
+	epilogueLabel string
 	// ... more information
 }
 
@@ -107,6 +108,7 @@ type SymbolTable struct {
 	funTable map[string]SymbolFunEntry
 	// activeFunctionReturn references the function return types, if we are within a function, otherwise nil
 	// This is required to check validity and code generation of return statements
+	activeFunctionName   string
 	activeFunctionReturn []Type
 	parent               *SymbolTable
 }
