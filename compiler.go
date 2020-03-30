@@ -110,6 +110,8 @@ fun abc(i int) int {
 
 a = abc(10)
 
+blubb = -5 - 6
+
 `)
 
 	tokenChan := make(chan Token, 1)

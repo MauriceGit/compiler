@@ -79,6 +79,29 @@ func (s *SymbolTable) setFunAsmName(v string, asmName string) {
 }
 
 func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, error) {
+
+	// Re-order expression, if the expression is not fixed and the priority is of the operator is not according to the priority
+	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
+	if tmpE, ok := unaryOp.expr.(BinaryOp); ok {
+		if unaryOp.operator.priority() < tmpE.operator.priority() && !tmpE.fixed {
+
+			newChild := unaryOp
+			newChild.expr = tmpE.leftExpr
+			tmpE.leftExpr = newChild
+
+			var newRoot Expression
+			newRoot = tmpE
+
+			// The unary expression is now a binary, so we have to start over. The following checks won't be working any more.
+			expression, err := analyzeExpression(newRoot, symbolTable)
+			if err != nil {
+				return newRoot, err
+			}
+			newRoot = expression
+			return newRoot, nil
+		}
+	}
+
 	expression, err := analyzeExpression(unaryOp.expr, symbolTable)
 	if err != nil {
 		return unaryOp, err

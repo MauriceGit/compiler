@@ -145,6 +145,7 @@ func testAST(code []byte, expected AST, t *testing.T) {
 	go tokenize(code, tokenChan, lexerErr)
 
 	generated, err := parse(tokenChan)
+
 	select {
 	case e := <-lexerErr:
 		t.Errorf("%v", e.Error())
@@ -196,7 +197,7 @@ func newAST(statements []Statement) AST {
 
 func TestParserExpression1(t *testing.T) {
 
-	var code []byte = []byte(`shadow a = 6 + 7 * variable / -(5 -- (-8 * - 10000.1234))`)
+	var code []byte = []byte(`shadow a = 6 + 7 * variable / -(5 -- (8 * - 10000.1234))`)
 
 	expected := newAST(
 		[]Statement{
@@ -210,9 +211,10 @@ func TestParserExpression1(t *testing.T) {
 									OP_NEGATIVE, newBinary(
 										OP_MINUS, newConst(TYPE_INT, "5"), newUnary(
 											OP_NEGATIVE, newBinary(
-												OP_MULT, newConst(TYPE_INT, "-8"), newUnary(
-													OP_NEGATIVE, newConst(TYPE_FLOAT, "10000.1234"),
-												), false,
+												OP_MULT,
+												newConst(TYPE_INT, "8"),
+												newUnary(OP_NEGATIVE, newConst(TYPE_FLOAT, "10000.1234")),
+												false,
 											),
 										), false,
 									),

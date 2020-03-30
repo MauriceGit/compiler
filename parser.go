@@ -484,12 +484,15 @@ func (tc *TokenChannel) pushBack(t Token) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Operator priority (Descending priority!):
+// 0:	'-', '!'
 // 1: 	'*', '/'
 // 2: 	'+', '-'
 // 3:	'==', '!=', '<=', '>=', '<', '>'
 // 4:	'&&', '||'
 func (o Operator) priority() int {
 	switch o {
+	case OP_NEGATIVE, OP_NOT:
+		return 0
 	case OP_MULT, OP_DIV:
 		return 1
 	case OP_PLUS, OP_MINUS:

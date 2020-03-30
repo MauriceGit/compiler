@@ -77,7 +77,7 @@ func TestLexerExpression1(t *testing.T) {
 
 	expect := []Token{tokenConstant("6"), tokenOperator("+"), tokenConstant("7"), tokenOperator("*"),
 		tokenIdentifier("variable"), tokenOperator("/"), tokenOperator("-"), tokenParenOpen(), tokenConstant("5"),
-		tokenOperator("-"), tokenOperator("-"), tokenParenOpen(), tokenConstant("-8"), tokenOperator("*"),
+		tokenOperator("-"), tokenOperator("-"), tokenParenOpen(), tokenOperator("-"), tokenConstant("8"), tokenOperator("*"),
 		tokenOperator("-"), tokenConstant("10000.1234"), tokenParenClose(), tokenParenClose(), tokenEOF(),
 	}
 
