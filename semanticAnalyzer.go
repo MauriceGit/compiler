@@ -488,6 +488,12 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	}
 	fun.block = newBlock
 
+	// Checks, that every single path has one return statement so we don't have undefined function returns,
+	// unassigned registers or no expected values on stack
+	if err = fun.block.functionReturnAnalysis(); err != nil {
+		return fun, fmt.Errorf("%w[%v:%v] - %v", ErrCritical, fun.line, fun.column, err.Error())
+	}
+
 	return fun, nil
 }
 
