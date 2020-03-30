@@ -113,8 +113,11 @@ func compareStatement(s1, s2 Statement) (bool, string) {
 			ok1, err1 := compareVariables(v1.parameters, v2.parameters)
 			ok2, err2 := compareTypes(v1.returnTypes, v2.returnTypes)
 			ok3, err3 := compareBlock(v1.block, v2.block)
-			ok4, err4 := compareExpressions(v1.returns, v2.returns)
-			return ok1 && ok2 && ok3 && ok4, err1 + err2 + err3 + err4
+			return ok1 && ok2 && ok3, err1 + err2 + err3
+		}
+	case Return:
+		if v2, ok := s2.(Return); ok {
+			return compareExpressions(v1.expressions, v2.expressions)
 		}
 	default:
 		return false, fmt.Sprintf("Unknown statement: %v", s1)
@@ -185,8 +188,11 @@ func newCondition(e Expression, block, elseBlock Block) Condition {
 func newLoop(a Assignment, exprs []Expression, incrA Assignment, b Block) Loop {
 	return Loop{a, exprs, incrA, b, 0, 0}
 }
-func newFunction(name string, params []Variable, returnTypes []Type, b Block, returns []Expression) Function {
-	return Function{name, params, returnTypes, b, returns, 0, 0}
+func newFunction(name string, params []Variable, returnTypes []Type, b Block) Function {
+	return Function{name, params, returnTypes, b, 0, 0}
+}
+func newReturn(expressions []Expression) Return {
+	return Return{expressions, 0, 0}
 }
 func newBlock(statements []Statement) Block {
 	return Block{statements, SymbolTable{}, 0, 0}
@@ -462,7 +468,7 @@ func TestParserFunction1(t *testing.T) {
 		[]Statement{
 			newFunction("abc", []Variable{}, []Type{}, newBlock(
 				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
-			), []Expression{}),
+			)),
 		},
 	)
 
@@ -481,8 +487,8 @@ func TestParserFunction2(t *testing.T) {
 	expected := newAST(
 		[]Statement{
 			newFunction("abc", []Variable{newParam(TYPE_INT, "a"), newParam(TYPE_FLOAT, "b"), newParam(TYPE_BOOL, "c")}, []Type{}, newBlock(
-				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
-			), []Expression{}),
+				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")}), newReturn(nil)},
+			)),
 		},
 	)
 
@@ -501,8 +507,11 @@ func TestParserFunction3(t *testing.T) {
 	expected := newAST(
 		[]Statement{
 			newFunction("abc", []Variable{}, []Type{TYPE_INT, TYPE_FLOAT, TYPE_BOOL}, newBlock(
-				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
-			), []Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true")}),
+				[]Statement{
+					newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")}),
+					newReturn([]Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true")}),
+				},
+			)),
 		},
 	)
 

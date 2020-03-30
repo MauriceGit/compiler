@@ -53,6 +53,10 @@ func (asm *ASM) nextFunctionName() string {
 func (asm *ASM) addLabel(label string) {
 	asm.program = append(asm.program, [3]string{"", label + ":", ""})
 }
+func (asm *ASM) addFun(name string) {
+	asm.program = append(asm.program, [3]string{"", "global " + name, ""})
+	asm.program = append(asm.program, [3]string{"", name + ":"})
+}
 func (asm *ASM) addLine(command, args string) {
 	asm.program = append(asm.program, [3]string{"  ", command, args})
 }
@@ -479,8 +483,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	asmName := asm.nextFunctionName()
 	s.setFunAsmName(f.fName, asmName)
 
-	asm.addLine("global "+asmName, "")
-	asm.addLine(asmName+":", "")
+	asm.addFun(asmName)
 
 	// Save return address from top of stack to get to the arguments
 	_, returnAddress := getRegister(TYPE_INT)
@@ -504,39 +507,44 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	// Push the return address back to the stack
 	asm.addLine("push", returnAddress)
 
-	asm.addLine("push", "rbx")
-	asm.addLine("push", "rbp")
+	//asm.addLine("push", "rbx")
+	//asm.addLine("push", "rbp")
 
 	// Generate block code
 	f.block.generateCode(asm, s)
 
-	asm.addLine("pop", "rbp")
-	asm.addLine("pop", "rbx")
+	//asm.addLine("pop", "rbp")
+	//asm.addLine("pop", "rbx")
 
-	// Generate code for each return expression, they will all accumulate on the stack automatically!
-	// We do the first expression later!
-	for i := len(f.returns) - 2; i >= 0; i-- {
-		f.returns[i].generateCode(asm, &f.block.symbolTable)
-	}
-	// First expression!
-	if len(f.returns) > 0 {
-		f.returns[len(f.returns)-1].generateCode(asm, &f.block.symbolTable)
-		register, returnAddress := getRegister(TYPE_INT)
-		asm.addLine("pop", register)
-		// Save return address
-		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v]", returnAddress, 8*(len(f.returns)-1)))
-		// Overwrite old return address with first return value
-		asm.addLine("mov", fmt.Sprintf("[rsp+%v], %v", 8*(len(f.returns)-1), register))
-		// Push return address
-		asm.addLine("push", returnAddress)
-	}
-
-	asm.addLine("ret", "")
+	//asm.addLine("ret", "")
 
 	for _, line := range asm.program {
 		asm.functions = append(asm.functions, line)
 	}
 	asm.program = savedProgram
+}
+
+func (r Return) generateCode(asm *ASM, s *SymbolTable) {
+	// Generate code for each return expression, they will all accumulate on the stack automatically!
+	// We do the first expression later!
+	for i := len(r.expressions) - 2; i >= 0; i-- {
+		r.expressions[i].generateCode(asm, s)
+	}
+	// First expression!
+	if len(r.expressions) > 0 {
+		r.expressions[len(r.expressions)-1].generateCode(asm, s)
+		register, returnAddress := getRegister(TYPE_INT)
+		asm.addLine("pop", register)
+		// Save return address
+		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v]", returnAddress, 8*(len(r.expressions)-1)))
+		// Overwrite old return address with first return value
+		asm.addLine("mov", fmt.Sprintf("[rsp+%v], %v", 8*(len(r.expressions)-1), register))
+		// Push return address
+		asm.addLine("push", returnAddress)
+	}
+
+	//asm.addLine("pop", "rbp")
+	asm.addLine("ret", "")
 }
 
 func (ast AST) generateCode() ASM {
@@ -554,8 +562,7 @@ func (ast AST) generateCode() ASM {
 
 	asm.sectionText = append(asm.sectionText, "section .text")
 
-	asm.addLine("global _start", "")
-	asm.addLine("_start:", "")
+	asm.addFun("_start")
 
 	ast.block.generateCode(&asm, &ast.globalSymbolTable)
 

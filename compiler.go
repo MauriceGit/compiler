@@ -100,17 +100,14 @@ func main() {
 	var program []byte = []byte(`
 
 fun abc(i int) int {
-
-	result = 1
-	if i > 1 {
-		result = i*abc(i-1)
+	if i == 0 {
+		return 0
 	}
-	return result
+	return i+abc(i-1)
 }
 
-a = abc(10)
+a = abc(5)
 
-blubb = -5 - 6
 
 `)
 

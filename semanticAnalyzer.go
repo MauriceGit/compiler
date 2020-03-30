@@ -309,8 +309,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 		}
 
 		return assignment, fmt.Errorf(
-			"%w[%v:%v] - Assignment %v - variables and expression count need to match",
-			ErrCritical, row, col, assignment,
+			"%w[%v:%v] - Variables and expression count need to match", ErrCritical, row, col,
 		)
 	}
 
@@ -394,6 +393,7 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 	nextSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string]SymbolFunEntry, 0),
+		symbolTable.activeFunctionReturn,
 		symbolTable,
 	}
 
@@ -443,6 +443,7 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	functionSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string]SymbolFunEntry, 0),
+		fun.returnTypes,
 		symbolTable,
 	}
 
@@ -454,14 +455,6 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v already exists", ErrCritical, v.line, v.column, v)
 		}
 		functionSymbolTable.setVar(v.vName, v.vType)
-	}
-
-	if len(fun.returnTypes) != len(fun.returns) {
-		row, col := fun.startPos()
-		if len(fun.returns) > 0 {
-			row, col = fun.returns[0].startPos()
-		}
-		return fun, fmt.Errorf("%w[%v:%v] - Function return count does not match function definition", ErrCritical, row, col)
 	}
 
 	if symbolTable.isLocalFun(fun.fName) {
@@ -479,26 +472,36 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	}
 	fun.block = newBlock
 
-	typeI := 0
-	for i, e := range fun.returns {
-
-		newE, err := analyzeExpression(e, &functionSymbolTable)
-		if err != nil {
-			return fun, err
-		}
-
-		for _, t := range newE.getExpressionTypes() {
-			if t != fun.returnTypes[typeI] {
-				row, col := e.startPos()
-				return fun, fmt.Errorf("%w[%v:%v] - Function return type des not match function definition", ErrCritical, row, col)
-			}
-			typeI++
-		}
-
-		fun.returns[i] = newE
-	}
-
 	return fun, nil
+}
+
+func analyzeReturn(ret Return, symbolTable *SymbolTable) (Return, error) {
+
+	typeIndex := 0
+	for i, e := range ret.expressions {
+
+		newE, err := analyzeExpression(e, symbolTable)
+		if err != nil {
+			return ret, err
+		}
+		row, col := e.startPos()
+		for _, t := range newE.getExpressionTypes() {
+
+			if typeIndex >= len(symbolTable.activeFunctionReturn) {
+				return ret, fmt.Errorf("%w[%v:%v] - Too many expressions returned. Expected %v",
+					ErrCritical, row, col, len(symbolTable.activeFunctionReturn),
+				)
+			}
+
+			if t != symbolTable.activeFunctionReturn[typeIndex] {
+				return ret, fmt.Errorf("%w[%v:%v] - Function return type does not match definition. Expected %v, got %v",
+					ErrCritical, row, col, symbolTable.activeFunctionReturn[typeIndex], t)
+			}
+			typeIndex++
+		}
+		ret.expressions[i] = newE
+	}
+	return ret, nil
 }
 
 func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement, error) {
@@ -511,6 +514,8 @@ func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement,
 		return analyzeAssignment(st, symbolTable)
 	case Function:
 		return analyzeFunction(st, symbolTable)
+	case Return:
+		return analyzeReturn(st, symbolTable)
 	}
 	row, col := statement.startPos()
 	return statement, fmt.Errorf("%w[%v:%v] - Unexpected statement: %v", ErrCritical, row, col, statement)
@@ -528,6 +533,7 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 		block.symbolTable = SymbolTable{
 			make(map[string]SymbolVarEntry, 0),
 			make(map[string]SymbolFunEntry, 0),
+			symbolTable.activeFunctionReturn,
 			symbolTable,
 		}
 	}
@@ -550,6 +556,7 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable = SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string]SymbolFunEntry, 0),
+		nil,
 		nil,
 	}
 

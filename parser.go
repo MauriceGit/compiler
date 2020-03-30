@@ -9,7 +9,7 @@ import (
 /*
 
 
-stat	 	::= assign | if | for | funDecl
+stat	 	::= assign | if | for | funDecl | ret
 statlist	::= stat [statlist]
 
 if 			::= 'if' exp '{' [statlist] '}' [else '{' [statlist] '}']
@@ -18,7 +18,9 @@ for			::= 'for' [assign] ';' [explist] ';' [assign] '{' [statlist] '}'
 type		::= 'int' | 'float' | 'string' | 'bool'
 typelist	::= type [',' typelist]
 paramlist	::= var type [',' paramlist]
-funDecl		::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] ['return' [explist]] '}'
+funDecl		::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] '}'
+
+ret			::= 'return' [explist]
 
 assign 		::= varlist ‘=’ explist
 varlist		::= varDecl [‘,’ varlist]
@@ -103,7 +105,10 @@ type SymbolFunEntry struct {
 type SymbolTable struct {
 	varTable map[string]SymbolVarEntry
 	funTable map[string]SymbolFunEntry
-	parent   *SymbolTable
+	// activeFunctionReturn references the function return types, if we are within a function, otherwise nil
+	// This is required to check validity and code generation of return statements
+	activeFunctionReturn []Type
+	parent               *SymbolTable
 }
 
 type AST struct {
@@ -264,7 +269,11 @@ type Function struct {
 	parameters   []Variable
 	returnTypes  []Type
 	block        Block
-	returns      []Expression
+	line, column int
+}
+
+type Return struct {
+	expressions  []Expression
 	line, column int
 }
 
@@ -273,6 +282,7 @@ func (a Assignment) statement() {}
 func (c Condition) statement()  {}
 func (l Loop) statement()       {}
 func (f Function) statement()   {}
+func (r Return) statement()     {}
 
 func (s Block) startPos() (int, int) {
 	return s.line, s.column
@@ -287,6 +297,9 @@ func (s Loop) startPos() (int, int) {
 	return s.line, s.column
 }
 func (s Function) startPos() (int, int) {
+	return s.line, s.column
+}
+func (s Return) startPos() (int, int) {
 	return s.line, s.column
 }
 
@@ -445,6 +458,10 @@ func (l Loop) String() (s string) {
 
 	s += "}"
 	return
+}
+
+func (s Return) String() string {
+	return fmt.Sprintf("return %v", s.expressions)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1107,20 +1124,6 @@ func parseFunction(tokens *TokenChannel) (fun Function, err error) {
 		return
 	}
 
-	if row, col, ok := tokens.expect(TOKEN_KEYWORD, "return"); !ok && len(returnTypes) > 0 {
-		err = fmt.Errorf("%w[%v:%v] - Expected 'return' after function block", ErrCritical, row, col)
-		return
-	}
-
-	expressions := []Expression{}
-	if len(returnTypes) > 0 {
-		expressions, parseErr = parseExpressionList(tokens)
-		if errors.Is(parseErr, ErrCritical) {
-			err = fmt.Errorf("%w - Invalid expression list for function return", parseErr)
-			return
-		}
-	}
-
 	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
 		err = fmt.Errorf("%w[%v:%v] - Expected '}' after function block", ErrCritical, row, col)
 		return
@@ -1130,10 +1133,27 @@ func parseFunction(tokens *TokenChannel) (fun Function, err error) {
 	fun.parameters = variables
 	fun.returnTypes = returnTypes
 	fun.block = funBlock
-	fun.returns = expressions
 	fun.line = startRow
 	fun.column = startCol
 
+	return
+}
+
+func parseReturn(tokens *TokenChannel) (ret Return, err error) {
+	startRow, startCol, ok := 0, 0, false
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "return"); !ok {
+		err = fmt.Errorf("%wExpected 'return' keyword", ErrNormal)
+		return
+	}
+
+	expressions, parseErr := parseExpressionList(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid expression list in return statement", parseErr)
+		return
+	}
+	ret.expressions = expressions
+	ret.line = startRow
+	ret.column = startCol
 	return
 }
 
@@ -1170,6 +1190,15 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 		switch function, parseErr := parseFunction(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, function)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
+
+		switch ret, parseErr := parseReturn(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, ret)
 			continue
 		case errors.Is(parseErr, ErrCritical):
 			err = parseErr
