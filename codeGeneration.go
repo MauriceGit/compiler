@@ -18,7 +18,6 @@ type ASM struct {
 
 	// Increasing number to generate unique const variable names
 	constName int
-	varName   int
 	labelName int
 	funName   int
 }
@@ -33,11 +32,6 @@ func (asm *ASM) addConstant(value string) string {
 	asm.constants[value] = name
 
 	return name
-}
-
-func (asm *ASM) nextVariableName() string {
-	asm.varName += 1
-	return fmt.Sprintf("var_%v", asm.varName-1)
 }
 
 func (asm *ASM) nextLabelName() string {
@@ -362,26 +356,12 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	for _, v := range a.variables {
-
 		// Just to get it from the stack into the variable.
 		register, _ := getRegister(TYPE_INT)
 		asm.addLine("pop", register)
 
-		// Create corresponding variable, if it doesn't exist yet.
-		if entry, ok := s.getVar(v.vName); !ok || entry.varName == "" {
-
-			vName := asm.nextVariableName()
-			// Variables are initialized with 0. This will be overwritten a few lines later!
-			// TODO: What about float or string variables? Does this really work? Do we care at all because it will be overwritten anyway?
-			asm.variables = append(asm.variables, [3]string{vName, "dq", "0"})
-			s.setVarAsmName(v.vName, vName)
-		}
 		// This can not/should not fail!
 		entry, _ := s.getVar(v.vName)
-		//vName := entry.varName
-
-		// Move value from register of expression into variable!
-		//asm.addLine("mov", fmt.Sprintf("qword [%v], %v", vName, register))
 
 		sign := "+"
 		if entry.offset < 0 {
@@ -389,7 +369,6 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		}
 
 		asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, register))
-
 	}
 
 	for _, v := range a.variables {
@@ -493,7 +472,16 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 	if entry, ok := s.getFun(f.funName); ok {
 		asm.addLine("call", entry.jumpLabel)
 
-		asm.addLine("push", "rax")
+		// TODO: expand to handle multiple return values!
+		switch f.retTypes[0] {
+		case TYPE_INT:
+			asm.addLine("push", "rax")
+		case TYPE_FLOAT:
+			tmpR, _ := getRegister(TYPE_INT)
+			asm.addLine("movq", fmt.Sprintf("%v, xmm0", tmpR))
+			asm.addLine("push", tmpR)
+		}
+
 	} else {
 		panic("Code generation error: Unknown function called")
 	}
@@ -512,6 +500,7 @@ func (b Block) extractAllFunctionVariables() (vars []FunctionVar) {
 
 	tmpVars := b.symbolTable.getLocalVars()
 	for _, v := range tmpVars {
+		fmt.Println(v)
 		vars = append(vars, FunctionVar{v, &b.symbolTable})
 	}
 
@@ -533,6 +522,7 @@ func (b Block) extractAllFunctionVariables() (vars []FunctionVar) {
 // and returns the new offset on the stack.
 func (b Block) assignBlockVariableStackOffsets(initialOffset int) int {
 	funNames := b.extractAllFunctionVariables()
+
 	// Assign the symbol table variables their corresponding stack offset.
 	for _, fn := range funNames {
 		fn.symbolTable.setVarAsmOffset(fn.name, -initialOffset)
@@ -549,6 +539,12 @@ func addFunctionPrologue(asm *ASM, variableStackSpace int) {
 	asm.addLine("mov", "rbp, rsp")
 	// This will add space for one local variable on the stack! Multiply, if we need more!
 	// TODO: This count must be change, when we allow parameter passing on the stack! As they are already on the stack
+
+	// IMPORTANT: rbp/rsp must be 16-bit aligned (expected by OS and libraries), otherwise we segfault.
+	if (variableStackSpace+8)%16 != 0 {
+		variableStackSpace += 8
+	}
+
 	asm.addLine("sub", fmt.Sprintf("rsp, %v", variableStackSpace))
 	asm.addLine("push", "rdi")
 	asm.addLine("push", "rsi")
@@ -583,11 +579,12 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	// In the prologue, we save both rdi and rsi on the stack.
 	// That means, that we have to add 2*8 on top of the variables we want to refer on the stack!
-	varStackIndex := 2 * 8
-	varStackIndex = f.block.assignBlockVariableStackOffsets(varStackIndex)
+	// This will also include parameters from function headers, as they are handled as assignment in the
+	// semantic analyzer.
+	varStackIndex := f.block.assignBlockVariableStackOffsets(2 * 8)
 
 	// Prologue:
-	addFunctionPrologue(asm, 8*len(f.parameters)+varStackIndex)
+	addFunctionPrologue(asm, varStackIndex-16)
 
 	intRegisters := getFunctionRegisters(TYPE_INT)
 	intRegIndex := 0
@@ -596,17 +593,19 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	// Create local variables for all function parameters
 	for _, v := range f.parameters {
+		entry, _ := f.block.symbolTable.getVar(v.vName)
+		sign := "+"
+		if entry.offset < 0 {
+			sign = ""
+		}
 		switch v.vType {
 		case TYPE_INT:
-			asm.addLine("mov", fmt.Sprintf("[rbp-%v], %v", varStackIndex, intRegisters[intRegIndex]))
+			asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, intRegisters[intRegIndex]))
 			intRegIndex++
 		case TYPE_FLOAT:
-			asm.addLine("movq", fmt.Sprintf("[rbp-%v], %v", varStackIndex, floatRegisters[floatRegIndex]))
+			asm.addLine("movq", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, floatRegisters[floatRegIndex]))
 			floatRegIndex++
 		}
-		// Negative offset from rbp.
-		f.block.symbolTable.setVarAsmOffset(v.vName, -varStackIndex)
-		varStackIndex += 8
 	}
 
 	// Generate block code
@@ -626,28 +625,21 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 }
 
 func (r Return) generateCode(asm *ASM, s *SymbolTable) {
-	//	// Generate code for each return expression, they will all accumulate on the stack automatically!
-	//	// We do the first expression later!
-	//	for i := len(r.expressions) - 2; i >= 0; i-- {
-	//		r.expressions[i].generateCode(asm, s)
-	//	}
-	//	// First expression!
-	//	if len(r.expressions) > 0 {
-	//		r.expressions[len(r.expressions)-1].generateCode(asm, s)
-	//		register, returnAddress := getRegister(TYPE_INT)
-	//		asm.addLine("pop", register)
-	//		// Save return address
-	//		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v]", returnAddress, 8*(len(r.expressions)-1)))
-	//		// Overwrite old return address with first return value
-	//		asm.addLine("mov", fmt.Sprintf("[rsp+%v], %v", 8*(len(r.expressions)-1), register))
-	//		// Push return address
-	//		asm.addLine("push", returnAddress)
-	//	}
 
 	for _, e := range r.expressions {
 		e.generateCode(asm, s)
 		// Right now, we just overwrite rax!
-		asm.addLine("pop", "rax")
+
+		// TODO: Handle multiple returns
+		switch e.getExpressionTypes()[0] {
+		case TYPE_INT:
+			asm.addLine("pop", "rax")
+		case TYPE_FLOAT:
+			tmpR, _ := getRegister(TYPE_INT)
+			asm.addLine("pop", tmpR)
+			asm.addLine("movq", fmt.Sprintf("xmm0, %v", tmpR))
+		}
+
 	}
 
 	epilogueLabel := ""
@@ -658,8 +650,6 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	asm.addLine("jmp", epilogueLabel)
-	//asm.addLine("pop", "rbp")
-	//asm.addLine("ret", "")
 }
 
 func (ast AST) generateCode() ASM {
@@ -679,8 +669,8 @@ func (ast AST) generateCode() ASM {
 
 	asm.addFun("_start")
 
-	funNameCnt := ast.block.assignBlockVariableStackOffsets(0)
-	addFunctionPrologue(&asm, funNameCnt*8)
+	stackOffset := ast.block.assignBlockVariableStackOffsets(0)
+	addFunctionPrologue(&asm, stackOffset)
 
 	ast.block.generateCode(&asm, &ast.globalSymbolTable)
 
