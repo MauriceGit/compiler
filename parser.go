@@ -89,6 +89,7 @@ type SymbolVarEntry struct {
 	sType Type
 	// Refers to the name used in the final assembler
 	varName string
+	offset  int
 	// ... more information
 }
 

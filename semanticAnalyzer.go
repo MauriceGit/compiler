@@ -24,8 +24,15 @@ func (s *SymbolTable) isLocalVar(v string) bool {
 	return ok
 }
 
+func (s *SymbolTable) getLocalVars() (keys []string) {
+	for k := range s.varTable {
+		keys = append(keys, k)
+	}
+	return
+}
+
 func (s *SymbolTable) setVar(v string, t Type) {
-	s.varTable[v] = SymbolVarEntry{t, ""}
+	s.varTable[v] = SymbolVarEntry{t, "", 0}
 }
 
 func (s *SymbolTable) setFun(name string, argTypes, returnTypes []Type) {
@@ -62,6 +69,20 @@ func (s *SymbolTable) setVarAsmName(v string, asmName string) {
 		return
 	}
 	s.parent.setVarAsmName(v, asmName)
+}
+
+func (s *SymbolTable) setVarAsmOffset(v string, offset int) {
+	if s == nil {
+		panic("Could not set asm variable name in symbol table!")
+		return
+	}
+	if _, ok := s.varTable[v]; ok {
+		tmp := s.varTable[v]
+		tmp.offset = offset
+		s.varTable[v] = tmp
+		return
+	}
+	s.parent.setVarAsmOffset(v, offset)
 }
 
 func (s *SymbolTable) setFunAsmName(v string, asmName string) {
