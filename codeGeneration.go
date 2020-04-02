@@ -500,7 +500,6 @@ func (b Block) extractAllFunctionVariables() (vars []FunctionVar) {
 
 	tmpVars := b.symbolTable.getLocalVars()
 	for _, v := range tmpVars {
-		fmt.Println(v)
 		vars = append(vars, FunctionVar{v, &b.symbolTable})
 	}
 
@@ -518,16 +517,38 @@ func (b Block) extractAllFunctionVariables() (vars []FunctionVar) {
 	return
 }
 
-// assignBlockVariableStackOffsets sets all stack offsets based on the initialOffset
+func varOnStack(vName string, varsOnStack []Variable) bool {
+	for _, sv := range varsOnStack {
+		if vName == sv.vName {
+			return true
+		}
+	}
+	return false
+}
+
+// assignFunVariableStackOffsets sets all stack offsets based on the initialOffset
 // and returns the new offset on the stack.
-func (b Block) assignBlockVariableStackOffsets(initialOffset int) int {
+// If there are variables passed on stack instead of registers, we calculate the positive offset
+// we expect the variable at.
+func (b Block) assignFunVariableStackOffsets(initialOffset int, varsOnStack []Variable) int {
 	funNames := b.extractAllFunctionVariables()
+
+	// We already pushed rbp initially in the prologue, so we have to add that
+	positiveStackOffset := 8
 
 	// Assign the symbol table variables their corresponding stack offset.
 	for _, fn := range funNames {
+		// Do not assign stack offsets for variables already on the stack!
+		if varOnStack(fn.name, varsOnStack) {
+			fn.symbolTable.setVarAsmOffset(fn.name, positiveStackOffset)
+			positiveStackOffset += 8
+			continue
+		}
+
 		fn.symbolTable.setVarAsmOffset(fn.name, -initialOffset)
 		initialOffset += 8
 	}
+
 	return initialOffset
 }
 
@@ -537,7 +558,8 @@ func addFunctionPrologue(asm *ASM, variableStackSpace int) {
 	asm.addLine("push", "rbp")
 	// Our new base pointer we can relate to within this function, to access stack local variables or parameter!
 	asm.addLine("mov", "rbp, rsp")
-	// This will add space for one local variable on the stack! Multiply, if we need more!
+
+	// This will add space for local variables on the stack!
 	// TODO: This count must be change, when we allow parameter passing on the stack! As they are already on the stack
 
 	// IMPORTANT: rbp/rsp must be 16-bit aligned (expected by OS and libraries), otherwise we segfault.
@@ -563,6 +585,36 @@ func addFunctionEpilogue(asm *ASM) {
 	asm.addLine("", "")
 }
 
+func filterVarType(t Type, vars []Variable) (out []Variable) {
+	for _, v := range vars {
+		if v.vType == t {
+			out = append(out, v)
+		}
+	}
+	return
+}
+
+// getParametersOnStack filters the given parameter/variable list an returns lists of variables by type
+// that are placed on the stack instead of registers!
+func getParametersOnStack(parameters []Variable) (intStack, floatStack []Variable) {
+
+	intRegisters := getFunctionRegisters(TYPE_INT)
+	floatRegisters := getFunctionRegisters(TYPE_FLOAT)
+
+	intVars := filterVarType(TYPE_INT, parameters)
+	// Remaining variables are placed on the stack instead of registers.
+	if len(intVars) > len(intRegisters) {
+		intStack = intVars[len(intRegisters):]
+	}
+
+	floatVars := filterVarType(TYPE_FLOAT, parameters)
+	// Remaining variables are placed on the stack instead of registers.
+	if len(floatVars) > len(floatRegisters) {
+		floatStack = floatVars[len(floatRegisters):]
+	}
+	return
+}
+
 func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	// As function declarations can not be nesting in assembler, we save the current program slice,
@@ -577,14 +629,17 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	epilogueLabel := asm.nextLabelName()
 	s.setFunEpilogueLabel(f.fName, epilogueLabel)
 
+	intOnStack, floatOnStack := getParametersOnStack(f.parameters)
+	varsOnStack := append(intOnStack, floatOnStack...)
+
 	// In the prologue, we save both rdi and rsi on the stack.
 	// That means, that we have to add 2*8 on top of the variables we want to refer on the stack!
 	// This will also include parameters from function headers, as they are handled as assignment in the
 	// semantic analyzer.
-	varStackIndex := f.block.assignBlockVariableStackOffsets(2 * 8)
+	varStackIndex := f.block.assignFunVariableStackOffsets(2*8, varsOnStack)
 
 	// Prologue:
-	addFunctionPrologue(asm, varStackIndex-16)
+	addFunctionPrologue(asm, varStackIndex-2*8)
 
 	intRegisters := getFunctionRegisters(TYPE_INT)
 	intRegIndex := 0
@@ -600,11 +655,15 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 		}
 		switch v.vType {
 		case TYPE_INT:
-			asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, intRegisters[intRegIndex]))
-			intRegIndex++
+			if intRegIndex < len(intRegisters) {
+				asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, intRegisters[intRegIndex]))
+				intRegIndex++
+			}
 		case TYPE_FLOAT:
-			asm.addLine("movq", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, floatRegisters[floatRegIndex]))
-			floatRegIndex++
+			if floatRegIndex < len(floatRegisters) {
+				asm.addLine("movq", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, floatRegisters[floatRegIndex]))
+				floatRegIndex++
+			}
 		}
 	}
 
@@ -669,7 +728,7 @@ func (ast AST) generateCode() ASM {
 
 	asm.addFun("_start")
 
-	stackOffset := ast.block.assignBlockVariableStackOffsets(0)
+	stackOffset := ast.block.assignFunVariableStackOffsets(0, []Variable{})
 	addFunctionPrologue(&asm, stackOffset)
 
 	ast.block.generateCode(&asm, &ast.globalSymbolTable)
