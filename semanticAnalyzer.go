@@ -36,7 +36,7 @@ func (s *SymbolTable) setVar(v string, t Type) {
 }
 
 func (s *SymbolTable) setFun(name string, argTypes, returnTypes []Type) {
-	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, "", ""}
+	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, "", "", 0}
 }
 
 func (s *SymbolTable) isLocalFun(name string) bool {
@@ -111,6 +111,20 @@ func (s *SymbolTable) setFunEpilogueLabel(v string, label string) {
 		return
 	}
 	s.parent.setFunEpilogueLabel(v, label)
+}
+
+func (s *SymbolTable) setFunReturnStackPointer(v string, offset int) {
+	if s == nil {
+		panic("Could not set asm return stack pointer in symbol table!")
+		return
+	}
+	if _, ok := s.funTable[v]; ok {
+		tmp := s.funTable[v]
+		tmp.returnStackPointerOffset = offset
+		s.funTable[v] = tmp
+		return
+	}
+	s.parent.setFunReturnStackPointer(v, offset)
 }
 
 func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, error) {

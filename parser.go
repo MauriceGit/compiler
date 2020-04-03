@@ -97,11 +97,11 @@ type SymbolVarEntry struct {
 // and we need to know how many and what kind of variables are
 // pushed onto the stack or popped from afterwards.
 type SymbolFunEntry struct {
-	paramTypes    []Type
-	returnTypes   []Type
-	jumpLabel     string
-	epilogueLabel string
-	// ... more information
+	paramTypes               []Type
+	returnTypes              []Type
+	jumpLabel                string
+	epilogueLabel            string
+	returnStackPointerOffset int
 }
 
 type SymbolTable struct {

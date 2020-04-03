@@ -179,6 +179,17 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 	register, _ := getRegister(TYPE_INT)
 	asm.addLine("mov", fmt.Sprintf("%v, %v", register, name))
 	asm.addLine("push", register)
+
+	// Uncomment, when we go from stack to rax/xmm0!
+	//	switch c.cType {
+	//	case TYPE_INT:
+	//		asm.addLine("mov", "rax, "+name)
+	//	case TYPE_FLOAT:
+	//		register, _ := getRegister(TYPE_INT)
+	//		asm.addLine("mov", fmt.Sprintf("%v, %v", register, name))
+	//		asm.addLine("movq", fmt.Sprintf("xmm0, %v", register))
+	//	}
+
 }
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
@@ -449,38 +460,89 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 	floatRegisters := getFunctionRegisters(TYPE_FLOAT)
 	floatRegIndex := 0
 
-	for _, e := range f.args {
-		// The expression results will just accumulate on the stack!
-		e.generateCode(asm, s)
+	// In case we have multiple return values, we want to provide a pointer to the stack space to write to
+	// as very first argument to the function. So we skip the first register here on purpose!
+	if len(f.retTypes) > 1 {
+		intRegIndex++
+	}
 
-		if len(e.getExpressionTypes()) != 1 {
-			panic("Invalid error. We have to fix this and allow multiple returns again....")
+	// Make space on (our) stack, if f has multiple return values!
+	// The return stack space is now BEFORE the parameter stack space! So we can just pop used parameters
+	// from the stack after the function call.
+	if len(f.retTypes) > 1 {
+		asm.addLine("sub", fmt.Sprintf("rsp, %v", 8*len(f.retTypes)))
+		// rsp already points to one return stack space right now, so we only offset by count-1
+		asm.addLine("lea", fmt.Sprintf("rdi, [rsp+%v]", 8*(len(f.retTypes)-1)))
+	}
+
+	// Expect value in rax/xmm0 instead of stack.
+	// For floating point, the first parameter is already xmm0, so we are done.
+	// Int must be moved into rax.
+	if len(f.args) == 1 && f.args[0].getResultCount() == 1 {
+		f.args[0].generateCode(asm, s)
+
+		// TODO: Remove when switching to rax/xmm0
+		if f.args[0].getExpressionTypes()[0] == TYPE_FLOAT {
+			r, _ := getRegister(TYPE_INT)
+			asm.addLine("pop", r)
+			asm.addLine("movq", "xmm0, "+r)
 		}
 
-		switch e.getExpressionTypes()[0] {
-		case TYPE_INT:
-			asm.addLine("pop", intRegisters[intRegIndex])
-			intRegIndex++
-		case TYPE_FLOAT:
-			tmpR, _ := getRegister(TYPE_INT)
-			asm.addLine("pop", tmpR)
-			asm.addLine("movq", fmt.Sprintf("%v, %v", floatRegisters[floatRegIndex], tmpR))
-			floatRegIndex++
+		if f.args[0].getExpressionTypes()[0] == TYPE_INT {
+
+			// TODO: Remove when switching to rax/xmm0
+			asm.addLine("pop", "rax")
+
+			asm.addLine("mov", intRegisters[intRegIndex]+", rax")
+		}
+	} else {
+
+		// First generate code for all expressions, THEN put them in function parameter registers!
+		// To avoid register overwriting by functions!
+		for i := len(f.args) - 1; i >= 0; i-- {
+			f.args[i].generateCode(asm, s)
+		}
+
+		// Iterate in reverse order to correctly pop from stack!
+		for _, e := range f.args {
+			for _, t := range e.getExpressionTypes() {
+				switch t {
+				case TYPE_INT:
+					// All further values stay on the stack and are not assigned to registers!
+					if intRegIndex < len(intRegisters) {
+						asm.addLine("pop", intRegisters[intRegIndex])
+						intRegIndex++
+					}
+				case TYPE_FLOAT:
+					if floatRegIndex < len(floatRegisters) {
+						tmpR, _ := getRegister(TYPE_INT)
+						asm.addLine("pop", tmpR)
+						asm.addLine("movq", fmt.Sprintf("%v, %v", floatRegisters[floatRegIndex], tmpR))
+						floatRegIndex++
+					}
+				}
+			}
 		}
 	}
 
 	if entry, ok := s.getFun(f.funName); ok {
+
 		asm.addLine("call", entry.jumpLabel)
 
-		// TODO: expand to handle multiple return values!
-		switch f.retTypes[0] {
-		case TYPE_INT:
-			asm.addLine("push", "rax")
-		case TYPE_FLOAT:
-			tmpR, _ := getRegister(TYPE_INT)
-			asm.addLine("movq", fmt.Sprintf("%v, xmm0", tmpR))
-			asm.addLine("push", tmpR)
+		paramCount := len(entry.paramTypes)
+		if len(f.retTypes) > 1 {
+			paramCount++
 		}
+
+		// Remove the stack space used for the parameters for the function by resetting rsp by the
+		// amount of stack space we used.
+		paramStackCount := paramCount - intRegIndex - floatRegIndex
+		asm.addLine("add", fmt.Sprintf("rsp, %v    ; Remove function parameters from stack", 8*paramStackCount))
+
+		// TODO: Remove when switching to rax/xmm0
+		//		if len(f.retTypes) == 1 {
+		//			asm.addLine()
+		//		}
 
 	} else {
 		panic("Code generation error: Unknown function called")
@@ -596,15 +658,21 @@ func filterVarType(t Type, vars []Variable) (out []Variable) {
 
 // getParametersOnStack filters the given parameter/variable list an returns lists of variables by type
 // that are placed on the stack instead of registers!
-func getParametersOnStack(parameters []Variable) (intStack, floatStack []Variable) {
+func getParametersOnStack(parameters []Variable, isMultiReturn bool) (intStack, floatStack []Variable) {
 
 	intRegisters := getFunctionRegisters(TYPE_INT)
 	floatRegisters := getFunctionRegisters(TYPE_FLOAT)
 
+	// If we have a multi-return function, the first parameter is used as a pointer to the stack.
+	additionalRegister := 0
+	if isMultiReturn {
+		additionalRegister = 1
+	}
+
 	intVars := filterVarType(TYPE_INT, parameters)
 	// Remaining variables are placed on the stack instead of registers.
-	if len(intVars) > len(intRegisters) {
-		intStack = intVars[len(intRegisters):]
+	if len(intVars) > len(intRegisters)+additionalRegister {
+		intStack = intVars[len(intRegisters)+additionalRegister:]
 	}
 
 	floatVars := filterVarType(TYPE_FLOAT, parameters)
@@ -629,7 +697,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	epilogueLabel := asm.nextLabelName()
 	s.setFunEpilogueLabel(f.fName, epilogueLabel)
 
-	intOnStack, floatOnStack := getParametersOnStack(f.parameters)
+	intOnStack, floatOnStack := getParametersOnStack(f.parameters, len(f.returnTypes) > 1)
 	varsOnStack := append(intOnStack, floatOnStack...)
 
 	// In the prologue, we save both rdi and rsi on the stack.
@@ -646,8 +714,16 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	floatRegisters := getFunctionRegisters(TYPE_FLOAT)
 	floatRegIndex := 0
 
+	// Save stack pointer for return values
+	if len(f.returnTypes) > 1 {
+		asm.addLine("mov", fmt.Sprintf("[rbp%v], %v", -8, intRegisters[intRegIndex]))
+		intRegIndex++
+		s.setFunReturnStackPointer(f.fName, -8)
+	}
+
 	// Create local variables for all function parameters
 	for _, v := range f.parameters {
+
 		entry, _ := f.block.symbolTable.getVar(v.vName)
 		sign := "+"
 		if entry.offset < 0 {
@@ -685,30 +761,46 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 
+	entry, ok := s.getFun(s.activeFunctionName)
+	if !ok {
+		panic("Code generation error. Function not in symbol table.")
+	}
+
 	for _, e := range r.expressions {
 		e.generateCode(asm, s)
-		// Right now, we just overwrite rax!
 
-		// TODO: Handle multiple returns
-		switch e.getExpressionTypes()[0] {
-		case TYPE_INT:
-			asm.addLine("pop", "rax")
-		case TYPE_FLOAT:
-			tmpR, _ := getRegister(TYPE_INT)
+		// TODO: Uncomment when we switch to rax/xmm0
+		//		// Make sure everything is actually on the stack!
+		//		if r.expressions[i].getResultCount() == 1 {
+		//			switch r.expressions[i].getExpressionTypes()[0] {
+		//			case TYPE_INT:
+		//				asm.addLine("push", "rax")
+		//			case TYPE_FLOAT:
+		//				tmpR, _ := getRegister(TYPE_INT)
+		//				asm.addLine("movq", fmt.Sprintf("%v, xmm0", tmpR))
+		//				asm.addLine("push", tmpR)
+		//			}
+		//		}
+	}
+
+	// If we only have one return value, we want it in rax/xmm0. But that should already be the case anyway...
+	if len(entry.returnTypes) > 1 {
+		// For multiple expressions/return values, they will assemble on the stack in reverse order.
+		// So we have to pop them and move them onto the pre-allocated stack space!
+
+		tmpR, stackPointerReg := getRegister(TYPE_INT)
+		asm.addLine("mov", fmt.Sprintf("%v, [rbp%v]", stackPointerReg, entry.returnStackPointerOffset))
+
+		offset := 0
+		for _ = range entry.returnTypes {
 			asm.addLine("pop", tmpR)
-			asm.addLine("movq", fmt.Sprintf("xmm0, %v", tmpR))
+			asm.addLine("mov", fmt.Sprintf("[%v-%v], %v", stackPointerReg, offset, tmpR))
+			offset += 8
 		}
 
 	}
 
-	epilogueLabel := ""
-	if entry, ok := s.getFun(s.activeFunctionName); ok {
-		epilogueLabel = entry.epilogueLabel
-	} else {
-		panic("Code generation error. Function not in symbol table.")
-	}
-
-	asm.addLine("jmp", epilogueLabel)
+	asm.addLine("jmp", entry.epilogueLabel)
 }
 
 func (ast AST) generateCode() ASM {
