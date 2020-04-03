@@ -99,11 +99,11 @@ func assemble(asm ASM, source, executable string) (err error) {
 func main() {
 	var program []byte = []byte(`
 
-fun abc(a int, b float) int, float {
-	return a, b
+fun abc(a int, b int) int {
+	return a + b
 }
 
-a, b = abc(2,2.5)
+a = abc(1,1)
 
 `)
 
