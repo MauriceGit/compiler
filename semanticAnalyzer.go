@@ -620,9 +620,7 @@ func semanticAnalysis(ast AST) (AST, error) {
 	}
 
 	ast.globalSymbolTable.setFun("printInt", []Type{TYPE_INT}, []Type{TYPE_INT})
-
-	// TODO: Possibly fill global symbol varTable with something?
-	// Right now it will stay empty just because the block we parse will create its own symbol varTable.
+	ast.globalSymbolTable.setFun("printFloat", []Type{TYPE_FLOAT}, []Type{TYPE_INT})
 
 	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
 	if err != nil {

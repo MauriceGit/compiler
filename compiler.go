@@ -106,7 +106,8 @@ a, b = abc(1,1,1,1,1,1,2, 3, 4)
 
 c = printInt(a)
 c = printInt(b)
-
+d = 7.9
+c = printFloat(d)
 
 
 

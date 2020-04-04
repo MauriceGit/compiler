@@ -411,10 +411,14 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 	if len(f.args) == 1 && f.args[0].getResultCount() == 1 {
 		f.args[0].generateCode(asm, s)
 
-		if f.args[0].getExpressionTypes()[0] == TYPE_INT {
+		switch f.args[0].getExpressionTypes()[0] {
+		case TYPE_INT:
 			asm.addLine("mov", intRegisters[intRegIndex]+", rax")
 			intRegIndex++
+		case TYPE_FLOAT:
+			floatRegIndex++
 		}
+
 	} else {
 
 		// First generate code for all expressions, THEN put them in function parameter registers!
@@ -660,7 +664,7 @@ func addFunctionPrologue(asm *ASM, variableStackSpace int) {
 	asm.addLine("mov", "rbp, rsp")
 
 	// IMPORTANT: rbp/rsp must be 16-bit aligned (expected by OS and libraries), otherwise we segfault.
-	if (variableStackSpace+8)%16 != 0 {
+	if (variableStackSpace+8)%16 != 0 && variableStackSpace != 0 {
 		variableStackSpace += 8
 	}
 
@@ -901,12 +905,45 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 
 	asm.addFun("printInt")
 
+	addFunctionPrologue(asm, 0)
+
 	// We cheat us the format parameter into the function, so we have to shift the integer once.
 	// It will be written to rdi as first parameter, so we move it to rsi instead.
 	asm.addLine("  mov", "rsi, rdi")
 	asm.addLine("  mov", "rdi, fmti")
 	asm.addLine("  mov", "rax, 0")
 	asm.addLine("  call", "printf")
+
+	addFunctionEpilogue(asm)
+
+	asm.addLine("  ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addPrintFloatFunction(asm *ASM) {
+
+	ast.globalSymbolTable.setFunAsmName("printFloat", "printFloat")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("printFloat")
+
+	addFunctionPrologue(asm, 0)
+
+	// We cheat us the format parameter into the function, so we have to shift the integer once.
+	// It will be written to rdi as first parameter, so we move it to rsi instead.
+	asm.addLine("  movq", "rsi, xmm0")
+	asm.addLine("  mov", "rdi, fmtf")
+	asm.addLine("  mov", "rax, 1")
+	asm.addLine("  call", "printf")
+
+	addFunctionEpilogue(asm)
+
 	asm.addLine("  ret", "")
 
 	for _, line := range asm.program {
@@ -931,6 +968,7 @@ func (ast AST) generateCode() ASM {
 	asm.sectionText = append(asm.sectionText, "section .text")
 
 	ast.addPrintIntFunction(&asm)
+	ast.addPrintFloatFunction(&asm)
 
 	asm.addFun("_start")
 
