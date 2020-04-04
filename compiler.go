@@ -98,18 +98,15 @@ func assemble(asm ASM, source, executable string) (err error) {
 
 func main() {
 	var program []byte = []byte(`
-
 fun abc(a int, b int, c int, d int, e int, f int, g int, h int, i int) int, int {
+	printInt(c)
 	return a + b + c + d + e + f + g + h + i, 37
 }
-a, b = abc(1,1,1,1,1,1,2, 3, 4)
+abc(1,1,1,1,1,1,2, 3, 4)
 
-c = printInt(a)
-c = printInt(b)
-d = 7.9
-c = printFloat(d)
-
-
+//printInt(a)
+//printInt(b)
+printFloat(7.9)
 
 `)
 

@@ -9,7 +9,7 @@ import (
 /*
 
 
-stat	 	::= assign | if | for | funDecl | ret
+stat	 	::= assign | if | for | funDecl | ret | funCall
 statlist	::= stat [statlist]
 
 if 			::= 'if' exp '{' [statlist] '}' [else '{' [statlist] '}']
@@ -216,7 +216,6 @@ func (e BinaryOp) getExpressionTypes() []Type {
 	return []Type{e.opType}
 }
 func (e FunCall) getExpressionTypes() []Type {
-	// TODO: Change return to []Type for all methods!
 	return e.retTypes
 }
 
@@ -286,6 +285,7 @@ func (c Condition) statement()  {}
 func (l Loop) statement()       {}
 func (f Function) statement()   {}
 func (r Return) statement()     {}
+func (f FunCall) statement()    {}
 
 func (s Block) startPos() (int, int) {
 	return s.line, s.column
@@ -473,16 +473,20 @@ func (s Return) String() string {
 
 // Implements a channel with one cache/lookahead, that can be pushed back in (logically)
 type TokenChannel struct {
-	c        chan Token
-	isCached bool
-	token    Token
+	c      chan Token
+	cached []Token
+	//	isCached bool
+	//	token    Token
 }
 
 func (tc *TokenChannel) next() Token {
-	if tc.isCached {
-		tc.isCached = false
-		return tc.token
+
+	if len(tc.cached) > 0 {
+		t := tc.cached[len(tc.cached)-1]
+		tc.cached = tc.cached[:len(tc.cached)-1]
+		return t
 	}
+
 	v, ok := <-tc.c
 	if !ok {
 		fmt.Println("Error: Channel closed unexpectedly.")
@@ -490,13 +494,12 @@ func (tc *TokenChannel) next() Token {
 	return v
 }
 
+func (tc *TokenChannel) createToken(t TokenType, v string, line, column int) Token {
+	return Token{t, v, line, column}
+}
+
 func (tc *TokenChannel) pushBack(t Token) {
-	if tc.isCached {
-		fmt.Println("Error: Can only cache one item at a time.")
-		return
-	}
-	tc.token = t
-	tc.isCached = true
+	tc.cached = append(tc.cached, t)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -566,7 +569,7 @@ func (tokens *TokenChannel) expectType(ttype TokenType) (string, int, int, bool)
 	t := tokens.next()
 	if t.tokenType != ttype {
 		tokens.pushBack(t)
-		return "", t.line, t.column, false
+		return t.value, t.line, t.column, false
 	}
 	return t.value, t.line, t.column, true
 }
@@ -648,7 +651,7 @@ func parseConstant(tokens *TokenChannel) (Constant, bool) {
 	if v, row, col, ok := tokens.expectType(TOKEN_CONSTANT); ok {
 		return Constant{getConstType(v), v, row, col}, true
 	}
-	return Constant{TYPE_UNKNOWN, "", tokens.token.line, tokens.token.column}, false
+	return Constant{TYPE_UNKNOWN, "", 0, 0}, false
 }
 
 // parseIdentifierExpression parses the _usage_ of variables and function calls.
@@ -847,8 +850,13 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 
 	// One TOKEN_ASSIGNMENT
 	// If we got this far, we have a valid variable list. So from here on out, this _needs_ to be valid!
+	// Right now, it can still be a function call!
 	if row, col, ok := tokens.expect(TOKEN_ASSIGNMENT, "="); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected '=' in assignment, got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected '=' in assignment, got something else", ErrNormal, row, col)
+
+		// LL(2)
+		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, variables[0].vName, variables[0].line, variables[0].column))
+
 		return
 	}
 
@@ -1160,6 +1168,43 @@ func parseReturn(tokens *TokenChannel) (ret Return, err error) {
 	return
 }
 
+func parseFunCallStatement(tokens *TokenChannel) (funCall FunCall, err error) {
+
+	v, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		err = fmt.Errorf("%w - Invalid function call statement", ErrNormal)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
+		// This could still be just an assignment, so just a normal error!
+		err = fmt.Errorf("%w[%v:%v] - Expected '(' for function call parameters", ErrNormal, row, col)
+
+		// LL(2)
+		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, v, startRow, startCol))
+		return
+	}
+
+	expressions, parseErr := parseExpressionList(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = parseErr
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Function call expects ')' after parameter list", ErrCritical, row, col)
+		return
+	}
+
+	funCall.funName = v
+	funCall.args = expressions
+	funCall.retTypes = []Type{}
+	funCall.line = startRow
+	funCall.column = startCol
+
+	return
+}
+
 func parseBlock(tokens *TokenChannel) (block Block, err error) {
 	for {
 
@@ -1208,6 +1253,27 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			return
 		}
 
+		switch ret, parseErr := parseFunCallStatement(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, ret)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
+
+		if _, _, ok := tokens.expect(TOKEN_EOF, ""); ok {
+			return
+		}
+
+		// A block can only be closed with }. If we don't find that, we have an error on hand.
+		row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}")
+		if !ok {
+			err = fmt.Errorf("%w[%v:%v] - Unexpected symbol. Can not be parsed.", ErrCritical, row, col)
+			return
+		}
+		tokens.pushBack(tokens.createToken(TOKEN_CURLY_CLOSE, "}", row, col))
+
 		// If we don't recognize the current token as part of a known statement, we break
 		// This means likely, that we are at the end of a block
 		break
@@ -1218,11 +1284,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 		row, col := block.statements[0].startPos()
 		block.line = row
 		block.column = col
-	} else {
-		// Backup solution! As we tried parsing statements (unsuccessfully), there must be
-		// a token cached. We just take its position for now
-		block.line = tokens.token.line
-		block.column = tokens.token.column
 	}
 
 	return

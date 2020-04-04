@@ -973,6 +973,10 @@ func (ast AST) generateCode() ASM {
 	asm.addFun("_start")
 
 	stackOffset := ast.block.assignVariableStackOffset([]Variable{}, false)
+	// To make the stack later 16bit aligned. Not really here, sure to be honest...
+	if stackOffset == 0 {
+		stackOffset = 8
+	}
 
 	addFunctionPrologue(&asm, stackOffset)
 

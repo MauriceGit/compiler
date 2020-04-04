@@ -573,6 +573,8 @@ func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement,
 		return analyzeFunction(st, symbolTable)
 	case Return:
 		return analyzeReturn(st, symbolTable)
+	case FunCall:
+		return analyzeFunCall(st, symbolTable)
 	}
 	row, col := statement.startPos()
 	return statement, fmt.Errorf("%w[%v:%v] - Unexpected statement: %v", ErrCritical, row, col, statement)
