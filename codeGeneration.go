@@ -200,10 +200,6 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 		panic("Could not generate code for Const. Unknown type!")
 	}
 
-	//	register, _ := getRegister(TYPE_INT)
-	//	asm.addLine("mov", fmt.Sprintf("%v, %v", register, name))
-	//	asm.addLine("push", register)
-
 	switch c.cType {
 	case TYPE_INT:
 		asm.addLine("mov", "rax, "+name)
@@ -219,13 +215,10 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 	if symbol, ok := s.getVar(v.vName); ok {
 		// We just push it on the stack. So here we can't use floating point registers for example!
-		//register, _ := getRegister(TYPE_INT)
 		sign := "+"
 		if symbol.offset < 0 {
 			sign = ""
 		}
-		//		asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", register, sign, symbol.offset))
-		//		asm.addLine("push", register)
 
 		switch v.vType {
 		case TYPE_INT:
@@ -245,11 +238,6 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	u.expr.generateCode(asm, s)
 
-	//	stackReg, _ := getRegister(TYPE_INT)
-	//	asm.addLine("pop", stackReg)
-
-	//register, _ := getRegister(u.getExpressionType())
-
 	if u.getResultCount() != 1 {
 		panic("Code generation error: Unary expression can only handle one result")
 	}
@@ -259,14 +247,12 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	case TYPE_BOOL:
 		if u.operator == OP_NOT {
 			// 'not' switches between 0 and -1. So False: 0, True: -1
-			//asm.addLine("pop", register})
 			asm.addLine("not", "rax")
 		} else {
 			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v\n", u.operator, u.opType))
 		}
 	case TYPE_INT:
 		if u.operator == OP_NEGATIVE {
-			//asm.addLine("pop", register})
 			asm.addLine("neg", "rax")
 
 		} else {
@@ -274,12 +260,7 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	case TYPE_FLOAT:
 		if u.operator == OP_NEGATIVE {
-			//asm.addLine("pop", register})
-
-			//fReg, _ := getRegister(TYPE_FLOAT)
-			//asm.addLine("movq", fmt.Sprintf("%v, %v", fReg, stackReg))
 			asm.addLine("mulsd", "xmm0, qword [negOneF]")
-			//asm.addLine("movq", fmt.Sprintf("%v, %v", stackReg, fReg))
 
 		} else {
 			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v", u.operator, u.opType))
@@ -288,8 +269,6 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		panic("Code generation error. No unary expression for Type String")
 		return
 	}
-
-	//asm.addLine("push", stackReg)
 }
 
 // binaryOperationFloat executes the operation on the two registers and writes the result into rLeft!
@@ -303,7 +282,6 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 		labelOK := asm.nextLabelName()
 		jump := getJumpType(op)
 
-		// TODO: Verify that this works with float as well!
 		asm.addLine("cmp", fmt.Sprintf("%v, %v", rLeft, rRight))
 		asm.addLine(jump, labelTrue)
 		asm.addLine("mov", fmt.Sprintf("%v, 0", rLeft))
@@ -316,22 +294,6 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 	default:
 		command := getCommand(t, op)
 		asm.addLine(command, fmt.Sprintf("%v, %v", rLeft, rRight))
-
-		//		switch t {
-		//		case TYPE_INT:
-		//			asm.addLine(command, fmt.Sprintf("%v, %v", rLeft, rRight))
-		//		case TYPE_FLOAT:
-		//			fLeft, fRight := getRegister(TYPE_FLOAT)
-		//			// We need to move the values from stack/int registers to the corresponding xmm* ones and back afterwards
-		//			// So the stack push works!
-		//			asm.addLine("movq", fmt.Sprintf("%v, %v", fLeft, rLeft))
-		//			asm.addLine("movq", fmt.Sprintf("%v, %v", fRight, rRight))
-		//			asm.addLine(command, fmt.Sprintf("%v, %v", fLeft, fRight))
-		//			asm.addLine("movq", fmt.Sprintf("%v, %v", rLeft, fLeft))
-		//			asm.addLine("movq", fmt.Sprintf("%v, %v", rRight, fRight))
-
-		//			asm.addLine(command, fmt.Sprintf("%v, %v", fLeft, fRight))
-		//		}
 	}
 }
 
@@ -357,9 +319,6 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	rLeft := getReturnRegister(t)
 
-	//	asm.addLine("pop", rRight)
-	//	asm.addLine("pop", rLeft)
-
 	switch t {
 	case TYPE_INT, TYPE_FLOAT:
 		binaryOperationNumber(b.operator, b.opType, rLeft, rRight, asm)
@@ -369,8 +328,6 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 			binaryOperationNumber(b.operator, b.opType, rLeft, rRight, asm)
 		} else {
 			panic("Code generation error. Unknown operator for bool (I think?).")
-			//			command := getCommand(TYPE_BOOL, b.operator)
-			//			asm.addLine(command, fmt.Sprintf("%v, %v", rLeft, rRight))
 		}
 
 	case TYPE_STRING:
@@ -378,8 +335,6 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	default:
 		panic(fmt.Sprintf("Code generation error: Unknown operation type %v\n", int(b.opType)))
 	}
-
-	//	asm.addLine("push", rLeft)
 }
 
 func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
@@ -481,29 +436,6 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 	}
 }
 
-func debugPrint(asm *ASM, offset int, t Type) {
-
-	format := "fmti"
-	floatCount := "0"
-	sign := "+"
-	if offset < 0 {
-		sign = ""
-	}
-	if t == TYPE_FLOAT {
-		format = "fmtf"
-		floatCount = "1"
-		fReg, _ := getRegister(t)
-
-		asm.addLine("  movq", fmt.Sprintf("%v, [rbp%v%v]", fReg, sign, offset))
-		asm.addLine("  movq", "rsi, "+fReg)
-	} else {
-		asm.addLine("  mov", fmt.Sprintf("rsi, [rbp%v%v]", sign, offset))
-	}
-	asm.addLine("  mov", "rdi, "+format)
-	asm.addLine("  mov", "rax, "+floatCount)
-	asm.addLine("  call", "printf")
-}
-
 func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 
 	for i := len(a.expressions) - 1; i >= 0; i-- {
@@ -538,12 +470,6 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 
 		asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, register))
 	}
-
-	//	for _, v := range a.variables {
-	//		entry, _ := s.getVar(v.vName)
-	//		debugPrint(asm, entry.offset, v.vType)
-	//	}
-
 }
 
 func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
@@ -556,7 +482,7 @@ func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
 	endLabel := asm.nextLabelName()
 
 	switch c.expression.getExpressionTypes()[0] {
-	case TYPE_INT:
+	case TYPE_BOOL, TYPE_INT:
 		register = getReturnRegister(TYPE_INT)
 	case TYPE_FLOAT:
 		asm.addLine("movq", fmt.Sprintf("%v, %v", register, getReturnRegister(TYPE_FLOAT)))
@@ -714,7 +640,6 @@ func getParametersOnStack(parameters []Variable, isMultiReturn bool) (map[string
 	intVars := filterVarType(TYPE_INT, parameters)
 	// Remaining variables are placed on the stack instead of registers.
 	if len(intVars)+additionalRegister > len(intRegisters) {
-		//intStack = intVars[len(intRegisters)-additionalRegister:]
 		for _, v := range intVars[len(intRegisters)-additionalRegister:] {
 			intStack[v.vName] = true
 		}
@@ -723,7 +648,6 @@ func getParametersOnStack(parameters []Variable, isMultiReturn bool) (map[string
 	floatVars := filterVarType(TYPE_FLOAT, parameters)
 	// Remaining variables are placed on the stack instead of registers.
 	if len(floatVars) > len(floatRegisters) {
-		//floatStack = floatVars[len(floatRegisters):]
 		for _, v := range floatVars[len(floatRegisters):] {
 			floatStack[v.vName] = true
 		}
@@ -916,7 +840,7 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 
 	addFunctionEpilogue(asm)
 
-	asm.addLine("  ret", "")
+	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
 		asm.functions = append(asm.functions, line)
@@ -937,14 +861,14 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 
 	// We cheat us the format parameter into the function, so we have to shift the integer once.
 	// It will be written to rdi as first parameter, so we move it to rsi instead.
-	asm.addLine("  movq", "rsi, xmm0")
-	asm.addLine("  mov", "rdi, fmtf")
-	asm.addLine("  mov", "rax, 1")
-	asm.addLine("  call", "printf")
+	asm.addLine("movq", "rsi, xmm0")
+	asm.addLine("mov", "rdi, fmtf")
+	asm.addLine("mov", "rax, 1")
+	asm.addLine("call", "printf")
 
 	addFunctionEpilogue(asm)
 
-	asm.addLine("  ret", "")
+	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
 		asm.functions = append(asm.functions, line)
@@ -973,7 +897,7 @@ func (ast AST) generateCode() ASM {
 	asm.addFun("_start")
 
 	stackOffset := ast.block.assignVariableStackOffset([]Variable{}, false)
-	// To make the stack later 16bit aligned. Not really here, sure to be honest...
+	// To make the stack later 16bit aligned. Not really sure if thats the issue, to be honest...
 	if stackOffset == 0 {
 		stackOffset = 8
 	}
