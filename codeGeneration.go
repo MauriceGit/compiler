@@ -535,10 +535,10 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, register))
 	}
 
-	for _, v := range a.variables {
-		entry, _ := s.getVar(v.vName)
-		debugPrint(asm, entry.offset, v.vType)
-	}
+	//	for _, v := range a.variables {
+	//		entry, _ := s.getVar(v.vName)
+	//		debugPrint(asm, entry.offset, v.vType)
+	//	}
 
 }
 
@@ -892,6 +892,30 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("jmp", entry.epilogueLabel)
 }
 
+func (ast AST) addPrintIntFunction(asm *ASM) {
+
+	ast.globalSymbolTable.setFunAsmName("printInt", "printInt")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("printInt")
+
+	// We cheat us the format parameter into the function, so we have to shift the integer once.
+	// It will be written to rdi as first parameter, so we move it to rsi instead.
+	asm.addLine("  mov", "rsi, rdi")
+	asm.addLine("  mov", "rdi, fmti")
+	asm.addLine("  mov", "rax, 0")
+	asm.addLine("  call", "printf")
+	asm.addLine("  ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+
+}
+
 func (ast AST) generateCode() ASM {
 
 	asm := ASM{}
@@ -903,9 +927,10 @@ func (ast AST) generateCode() ASM {
 	asm.variables = append(asm.variables, [3]string{"fmti", "db", "\"%i\", 10, 0"})
 	asm.variables = append(asm.variables, [3]string{"fmtf", "db", "\"%.2f\", 10, 0"})
 	asm.variables = append(asm.variables, [3]string{"negOneF", "dq", "-1.0"})
-	asm.variables = append(asm.variables, [3]string{"negOneI", "dq", "-1"})
 
 	asm.sectionText = append(asm.sectionText, "section .text")
+
+	ast.addPrintIntFunction(&asm)
 
 	asm.addFun("_start")
 
