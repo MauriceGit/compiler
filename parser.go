@@ -855,24 +855,21 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 		return
 	}
 
+	// Special case: i++ as an assignment i = i+1
 	if len(variables) == 1 {
-		// Special case: i++ as an assignment i = i+1
 		o, row, col, ok := tokens.expectType(TOKEN_OPERATOR)
-		if ok && (o == "+" || o == "-") {
+		if ok {
+			assignment.variables = variables
+			assignment.line = row
+			assignment.column = col
+
 			// Same one again!
 			_, _, ok := tokens.expect(TOKEN_OPERATOR, o)
-			if ok {
-				var operator Operator = OP_UNKNOWN
-				switch o {
-				case "+":
-					operator = OP_PLUS
-				case "-":
-					operator = OP_MINUS
-				}
-				assignment.variables = variables
+			if ok && (o == "+" || o == "-") {
+
 				assignment.expressions = []Expression{
 					BinaryOp{
-						operator,
+						getOperatorType(o),
 						variables[0],
 						Constant{TYPE_INT, "1", row, col},
 						TYPE_INT,
@@ -883,10 +880,26 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 				assignment.line = row
 				assignment.column = col
 				return
-			} else {
-				// push the first one back.
-				tokens.pushBack(tokens.createToken(TOKEN_OPERATOR, o, row, col))
 			}
+
+			// Check, if we have the special case of: i += 2
+			_, _, ok = tokens.expect(TOKEN_ASSIGNMENT, "=")
+			if ok && (o == "+" || o == "-" || o == "*" || o == "/") {
+
+				e, parseErr := parseExpression(tokens)
+				if errors.Is(parseErr, ErrCritical) {
+					err = parseErr
+					return
+				}
+
+				assignment.expressions = []Expression{
+					BinaryOp{getOperatorType(o), variables[0], e, TYPE_UNKNOWN, false, row, col},
+				}
+				return
+			}
+
+			// push the first operator token back
+			tokens.pushBack(tokens.createToken(TOKEN_OPERATOR, o, row, col))
 		}
 	}
 

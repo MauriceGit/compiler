@@ -108,8 +108,8 @@ fun sum(i int) int {
 
 printInt(sum(10))
 
-for i = 0; i < 50; i++ {
-	if i % 4 == 0 {
+for i = 0; i < 50; i += 2 {
+	if i % 3 == 0 {
 		printInt(i)
 	}
 }
