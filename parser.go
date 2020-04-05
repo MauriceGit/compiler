@@ -15,14 +15,16 @@ statlist	::= stat [statlist]
 if 			::= 'if' exp '{' [statlist] '}' [else '{' [statlist] '}']
 for			::= 'for' [assign] ';' [explist] ';' [assign] '{' [statlist] '}'
 
-type		::= 'int' | 'float' | 'string' | 'bool'
+type		::= 'int' | 'float' | 'bool'
 typelist	::= type [',' typelist]
 paramlist	::= var type [',' paramlist]
 funDecl		::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] '}'
 
 ret			::= 'return' [explist]
 
-assign 		::= varlist ‘=’ explist
+assign 		::= varlist ‘=’ explist | postIncr | postDecr
+postIncr	::= varDecl '++'
+postDecr	::= varDecl '--'
 varlist		::= varDecl [‘,’ varlist]
 explist		::= exp [‘,’ explist]
 exp 		::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp | funCall
