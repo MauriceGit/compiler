@@ -107,9 +107,13 @@ fun sum(i int) int {
 }
 
 printInt(sum(10))
-for i = 0; i < 5; i++ {
-	printInt(i)
+for i = 0; i < 50; i++ {
+	if i % 4 == 0 {
+		printInt(i)
+	}
 }
+
+printInt(5 % 2)
 
 `)
 

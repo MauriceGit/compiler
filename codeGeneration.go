@@ -97,7 +97,7 @@ func getCommandInt(op Operator) string {
 		return "sub"
 	case OP_MULT:
 		return "imul"
-	case OP_DIV:
+	case OP_DIV, OP_MOD:
 		return "idiv"
 	default:
 		panic("Code generation error. Unknown operator for Integer")
@@ -290,10 +290,21 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 		asm.addLine("mov", fmt.Sprintf("%v, -1", rLeft))
 		asm.addLabel(labelOK)
 
-	// add, sub, mul, div...
+	// add, sub, mul, div, mod...
 	default:
 		command := getCommand(t, op)
-		asm.addLine(command, fmt.Sprintf("%v, %v", rLeft, rRight))
+
+		// idiv calculates both the integer division, as well as the remainder.
+		// The reminder will be written to rdx. So move back to rax.
+		if op == OP_MOD {
+			// Clear rdx!
+			asm.addLine("mov", "rdx, 0")
+			asm.addLine(command, fmt.Sprintf("%v, %v", rLeft, rRight))
+			asm.addLine("mov", fmt.Sprintf("%v, rdx", rLeft))
+		} else {
+			asm.addLine(command, fmt.Sprintf("%v, %v", rLeft, rRight))
+		}
+
 	}
 }
 
@@ -311,13 +322,25 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	// mov rsi, rax
 	// mov xmm1, xmm0
-	_, rRight := getRegister(t)
-	asm.addLine(getMov(t), fmt.Sprintf("%v, %v", rRight, getReturnRegister(t)))
+
+	//asm.addLine(getMov(t), fmt.Sprintf("%v, %v", rRight, getReturnRegister(t)))
+
+	switch t {
+	case TYPE_INT, TYPE_BOOL:
+		asm.addLine("push", getReturnRegister(t))
+	case TYPE_FLOAT:
+		tmpR, _ := getRegister(TYPE_INT)
+		asm.addLine("movq", fmt.Sprintf("%v, %v", tmpR, getReturnRegister(t)))
+		asm.addLine("push", tmpR)
+	}
 
 	// Result will be left in rax/xmm0
 	b.leftExpr.generateCode(asm, s)
 
 	rLeft := getReturnRegister(t)
+
+	_, rRight := getRegister(t)
+	asm.addLine("pop", rRight)
 
 	switch t {
 	case TYPE_INT, TYPE_FLOAT:

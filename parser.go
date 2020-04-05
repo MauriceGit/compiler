@@ -31,7 +31,7 @@ exp 		::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp | funC
 funCall		::= Name '(' [explist] ')'
 varDecl		::= [shadow] var
 var 		::= Name
-binop		::= '+' | '-' | '*' | '/' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' | '||'
+binop		::= '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' | '||'
 unop		::= '-' | '!'
 
 
@@ -61,6 +61,7 @@ const (
 	OP_MINUS
 	OP_MULT
 	OP_DIV
+	OP_MOD
 
 	OP_NEGATIVE
 	OP_NOT
@@ -331,6 +332,8 @@ func (o Operator) String() string {
 		return "*"
 	case OP_DIV:
 		return "/"
+	case OP_MOD:
+		return "%"
 	case OP_NEGATIVE:
 		return "-"
 	case OP_EQ:
@@ -518,7 +521,7 @@ func (o Operator) priority() int {
 	switch o {
 	case OP_NEGATIVE, OP_NOT:
 		return 0
-	case OP_MULT, OP_DIV:
+	case OP_MULT, OP_DIV, OP_MOD:
 		return 1
 	case OP_PLUS, OP_MINUS:
 		return 2
@@ -542,6 +545,8 @@ func getOperatorType(o string) Operator {
 		return OP_MULT
 	case "/":
 		return OP_DIV
+	case "%":
+		return OP_MOD
 	case "==":
 		return OP_EQ
 	case "!=":

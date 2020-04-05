@@ -235,6 +235,14 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 			)
 		}
 		//return binaryOp, TYPE_BOOL, nil
+	case OP_MOD:
+		binaryOp.opType = TYPE_INT
+		if tLeft != TYPE_INT {
+			return binaryOp, fmt.Errorf(
+				"%w[%v:%v] - BinaryOp '%v' only works for int",
+				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator,
+			)
+		}
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
 
 		if tLeft == TYPE_FLOAT {
