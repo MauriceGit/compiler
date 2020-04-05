@@ -452,7 +452,10 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		// Remove the stack space used for the parameters for the function by resetting rsp by the
 		// amount of stack space we used.
 		paramStackCount := paramCount - intRegIndex - floatRegIndex
-		asm.addLine("add", fmt.Sprintf("rsp, %v    ; Remove function parameters from stack", 8*paramStackCount))
+
+		if paramStackCount > 0 {
+			asm.addLine("add", fmt.Sprintf("rsp, %v    ; Remove function parameters from stack", 8*paramStackCount))
+		}
 
 	} else {
 		panic("Code generation error: Unknown function called")
