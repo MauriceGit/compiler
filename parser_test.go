@@ -12,6 +12,16 @@ func (e Variable) eq(e2 Variable) bool {
 	return e.vName == e2.vName && e.vShadow == e2.vShadow && e.vType == e2.vType
 }
 
+func compareFunCall(v1, v2 FunCall) (bool, string) {
+
+	if v1.funName != v2.funName {
+		return false, fmt.Sprintf("Function names are different: %v != %v", v1.funName, v2.funName)
+	}
+	ok1, err1 := compareExpressions(v1.args, v2.args)
+	ok2, err2 := compareTypes(v1.retTypes, v2.retTypes)
+	return ok1 && ok2, err1 + err2
+}
+
 func compareExpression(e1, e2 Expression) (bool, string) {
 
 	switch v1 := e1.(type) {
@@ -39,7 +49,12 @@ func compareExpression(e1, e2 Expression) (bool, string) {
 			return v1.operator == v2.operator && ok1, err1
 		}
 		return false, fmt.Sprintf("%v != %v (UnaryOp)", e1, e2)
+	case FunCall:
+		if v2, ok := e2.(FunCall); ok {
+			return compareFunCall(v1, v2)
+		}
 	}
+
 	return false, fmt.Sprintf("%v is not an expression", e1)
 }
 
@@ -119,6 +134,10 @@ func compareStatement(s1, s2 Statement) (bool, string) {
 		if v2, ok := s2.(Return); ok {
 			return compareExpressions(v1.expressions, v2.expressions)
 		}
+	case FunCall:
+		if v2, ok := s2.(FunCall); ok {
+			return compareFunCall(v1, v2)
+		}
 	default:
 		return false, fmt.Sprintf("Unknown statement: %v", s1)
 	}
@@ -193,6 +212,9 @@ func newFunction(name string, params []Variable, returnTypes []Type, b Block) Fu
 }
 func newReturn(expressions []Expression) Return {
 	return Return{expressions, 0, 0}
+}
+func newFunCall(name string, exprs []Expression) FunCall {
+	return FunCall{name, exprs, []Type{}, 0, 0}
 }
 func newBlock(statements []Statement) Block {
 	return Block{statements, SymbolTable{}, 0, 0}
@@ -512,6 +534,31 @@ func TestParserFunction3(t *testing.T) {
 					newReturn([]Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true")}),
 				},
 			)),
+		},
+	)
+
+	testAST(code, expected, t)
+}
+
+func TestParserFunCall(t *testing.T) {
+
+	var code []byte = []byte(`
+	fun abc() int {
+		return 1
+	}
+	a = abc()
+	abc()
+	`)
+
+	expected := newAST(
+		[]Statement{
+			newFunction("abc", []Variable{}, []Type{TYPE_INT}, newBlock(
+				[]Statement{
+					newReturn([]Expression{newConst(TYPE_INT, "1")}),
+				},
+			)),
+			newAssignment([]Variable{newVar("a", false)}, []Expression{newFunCall("abc", nil)}),
+			newFunCall("abc", nil),
 		},
 	)
 
