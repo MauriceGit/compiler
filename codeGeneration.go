@@ -527,7 +527,7 @@ func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
 		e.generateCode(asm, &l.block.symbolTable)
 
 		switch e.getExpressionTypes()[0] {
-		case TYPE_INT:
+		case TYPE_INT, TYPE_BOOL:
 			register = getReturnRegister(TYPE_INT)
 		case TYPE_FLOAT:
 			asm.addLine("movq", fmt.Sprintf("%v, %v", register, getReturnRegister(TYPE_FLOAT)))

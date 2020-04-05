@@ -733,7 +733,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 			return
 		}
 
-		err = fmt.Errorf("%w[%v:%v] - Expected ')', got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected ')'", ErrCritical, row, col)
 		return
 	}
 
@@ -777,7 +777,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 	} else {
 		simpleExpression, parseErr := parseSimpleExpression(tokens)
 		if parseErr != nil {
-			err = fmt.Errorf("%wSimple expression expected, got something else", parseErr)
+			err = fmt.Errorf("%wSimple expression expected", parseErr)
 			return
 		}
 		expression = simpleExpression
@@ -839,7 +839,7 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 	variables, parseErr := parseVarList(tokens)
 	// No variables will return an ErrNormal. So all good, severity is handled up stream.
 	if len(variables) == 0 {
-		err = fmt.Errorf("%wExpected variable in assignment, got something else", parseErr)
+		err = fmt.Errorf("%wExpected variable in assignment", parseErr)
 		return
 	}
 	// This is most likely a critical error, like: a, = ...
@@ -848,11 +848,46 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 		return
 	}
 
+	if len(variables) == 1 {
+		// Special case: i++ as an assignment i = i+1
+		o, row, col, ok := tokens.expectType(TOKEN_OPERATOR)
+		if ok && (o == "+" || o == "-") {
+			// Same one again!
+			_, _, ok := tokens.expect(TOKEN_OPERATOR, o)
+			if ok {
+				var operator Operator = OP_UNKNOWN
+				switch o {
+				case "+":
+					operator = OP_PLUS
+				case "-":
+					operator = OP_MINUS
+				}
+				assignment.variables = variables
+				assignment.expressions = []Expression{
+					BinaryOp{
+						operator,
+						variables[0],
+						Constant{TYPE_INT, "1", row, col},
+						TYPE_INT,
+						false,
+						row, col,
+					},
+				}
+				assignment.line = row
+				assignment.column = col
+				return
+			} else {
+				// push the first one back.
+				tokens.pushBack(tokens.createToken(TOKEN_OPERATOR, o, row, col))
+			}
+		}
+	}
+
 	// One TOKEN_ASSIGNMENT
 	// If we got this far, we have a valid variable list. So from here on out, this _needs_ to be valid!
 	// Right now, it can still be a function call!
 	if row, col, ok := tokens.expect(TOKEN_ASSIGNMENT, "="); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected '=' in assignment, got something else", ErrNormal, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected '=' in assignment", ErrNormal, row, col)
 
 		// LL(2)
 		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, variables[0].vName, variables[0].line, variables[0].column))
@@ -879,7 +914,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	startRow, startCol, ok := 0, 0, false
 
 	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "if"); !ok {
-		err = fmt.Errorf("%wExpected 'if' keyword for condition, got something else", ErrNormal)
+		err = fmt.Errorf("%wExpected 'if' keyword for condition", ErrNormal)
 		return
 	}
 
@@ -890,7 +925,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected '{' after condition, got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected '{' after condition", ErrCritical, row, col)
 		return
 	}
 
@@ -901,7 +936,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected '}' after condition block, got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected '}' after condition block", ErrCritical, row, col)
 		return
 	}
 
@@ -911,7 +946,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	// Just in case we have an else, handle it!
 	if _, _, ok := tokens.expect(TOKEN_KEYWORD, "else"); ok {
 		if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
-			err = fmt.Errorf("%w[%v:%v] - Expected '{' after 'else' in condition, got something else", ErrCritical, row, col)
+			err = fmt.Errorf("%w[%v:%v] - Expected '{' after 'else' in condition", ErrCritical, row, col)
 			return
 		}
 
@@ -922,7 +957,7 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 		}
 
 		if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
-			err = fmt.Errorf("%w[%v:%v] - Expected '}' after 'else' block in condition, got something else", ErrCritical, row, col)
+			err = fmt.Errorf("%w[%v:%v] - Expected '}' after 'else' block in condition", ErrCritical, row, col)
 			return
 		}
 
@@ -940,7 +975,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	startRow, startCol, ok := 0, 0, false
 
 	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "for"); !ok {
-		err = fmt.Errorf("%wExpected 'for' keyword for loop, got something else", ErrNormal)
+		err = fmt.Errorf("%wExpected 'for' keyword for loop", ErrNormal)
 		return
 	}
 
@@ -952,7 +987,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_SEMICOLON, ";"); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected ';' after loop assignment, got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected ';' after loop assignment", ErrCritical, row, col)
 		return
 	}
 
@@ -963,7 +998,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_SEMICOLON, ";"); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected ';' after loop expression, got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected ';' after loop expression", ErrCritical, row, col)
 		return
 	}
 
@@ -975,7 +1010,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected '{' after loop header, got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected '{' after loop header", ErrCritical, row, col)
 		return
 	}
 
@@ -986,7 +1021,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected '}' after loop block, got something else", ErrCritical, row, col)
+		err = fmt.Errorf("%w[%v:%v] - Expected '}' after loop block", ErrCritical, row, col)
 		return
 	}
 
