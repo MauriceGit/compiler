@@ -661,24 +661,24 @@ func parseConstant(tokens *TokenChannel) (Constant, bool) {
 	return Constant{TYPE_UNKNOWN, "", 0, 0}, false
 }
 
-// parseIdentifierExpression parses the _usage_ of variables and function calls.
-// Meaning, it will not process shadow variables or declarations!
-func parseIdentifierExpression(tokens *TokenChannel) (expression Expression, err error) {
+func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 
-	name, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	v, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
 	if !ok {
-		err = fmt.Errorf("%wExpect identifier", ErrNormal)
+		err = fmt.Errorf("%w - Invalid function call statement", ErrNormal)
 		return
 	}
 
-	// Depending on if we find the '(' or not, this is a function call or normal variable!
-	if _, _, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
-		expression = Variable{TYPE_UNKNOWN, name, false, startRow, startCol}
+	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
+		// This could still be just an assignment, so just a normal error!
+		err = fmt.Errorf("%w[%v:%v] - Expected '(' for function call parameters", ErrNormal, row, col)
+
+		// LL(2)
+		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, v, startRow, startCol))
 		return
 	}
 
-	// We now parse for a function call!
-	arguments, parseErr := parseExpressionList(tokens)
+	expressions, parseErr := parseExpressionList(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return
@@ -689,27 +689,47 @@ func parseIdentifierExpression(tokens *TokenChannel) (expression Expression, err
 		return
 	}
 
-	fun := FunCall{
-		funName:  name,
-		args:     arguments,
-		retTypes: []Type{},
-		line:     startRow,
-		column:   startCol,
+	funCall.funName = v
+	funCall.args = expressions
+	funCall.retTypes = []Type{}
+	funCall.line = startRow
+	funCall.column = startCol
+
+	return
+}
+
+func parseVariableExpression(tokens *TokenChannel) (expression Expression, err error) {
+
+	name, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		err = fmt.Errorf("%wExpect identifier", ErrNormal)
+		return
 	}
-	expression = fun
+	expression = Variable{TYPE_UNKNOWN, name, false, startRow, startCol}
 	return
 }
 
 // parseSimpleExpression just parses variables, constants and '('...')'
 func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err error) {
 
-	// We need to check function calls first, otherwise we will parse it as a variable!
-	tmpE, parseErr := parseIdentifierExpression(tokens)
-	if parseErr == nil {
-		expression = tmpE
+	// Parse function call before parsing for variables, as they are syntactically equal
+	// until the '(' for a function call!
+	tmpFunCall, parseErr := parseFunCall(tokens)
+	switch {
+	case parseErr == nil:
+		expression = tmpFunCall
+		return
+	case errors.Is(parseErr, ErrCritical):
+		err = parseErr
 		return
 	}
-	if errors.Is(parseErr, ErrCritical) {
+
+	tmpV, parseErr := parseVariableExpression(tokens)
+	switch {
+	case parseErr == nil:
+		expression = tmpV
+		return
+	case errors.Is(parseErr, ErrCritical):
 		err = parseErr
 		return
 	}
@@ -1223,43 +1243,6 @@ func parseReturn(tokens *TokenChannel) (ret Return, err error) {
 	return
 }
 
-func parseFunCallStatement(tokens *TokenChannel) (funCall FunCall, err error) {
-
-	v, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
-	if !ok {
-		err = fmt.Errorf("%w - Invalid function call statement", ErrNormal)
-		return
-	}
-
-	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
-		// This could still be just an assignment, so just a normal error!
-		err = fmt.Errorf("%w[%v:%v] - Expected '(' for function call parameters", ErrNormal, row, col)
-
-		// LL(2)
-		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, v, startRow, startCol))
-		return
-	}
-
-	expressions, parseErr := parseExpressionList(tokens)
-	if errors.Is(parseErr, ErrCritical) {
-		err = parseErr
-		return
-	}
-
-	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")"); !ok {
-		err = fmt.Errorf("%w[%v:%v] - Function call expects ')' after parameter list", ErrCritical, row, col)
-		return
-	}
-
-	funCall.funName = v
-	funCall.args = expressions
-	funCall.retTypes = []Type{}
-	funCall.line = startRow
-	funCall.column = startCol
-
-	return
-}
-
 func parseBlock(tokens *TokenChannel) (block Block, err error) {
 	for {
 
@@ -1308,7 +1291,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			return
 		}
 
-		switch ret, parseErr := parseFunCallStatement(tokens); {
+		switch ret, parseErr := parseFunCall(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, ret)
 			continue
