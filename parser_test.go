@@ -347,7 +347,7 @@ func TestParserIfElse(t *testing.T) {
 	testAST(code, expected, t)
 }
 
-func TestParserAssignment(t *testing.T) {
+func TestParserAssignment1(t *testing.T) {
 
 	var code []byte = []byte(`
 	a = 1
@@ -368,6 +368,54 @@ func TestParserAssignment(t *testing.T) {
 			newAssignment(
 				[]Variable{newVar("a", false), newVar("b", false), newVar("c", false)},
 				[]Expression{newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3")},
+			),
+		},
+	)
+
+	testAST(code, expected, t)
+}
+
+func TestParserAssignment2(t *testing.T) {
+
+	var code []byte = []byte(`
+	a = 1
+	a++
+	a--
+	a *= 1
+	a /= 1
+	a -= 1
+	a += 1
+	`)
+
+	expected := newAST(
+		[]Statement{
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newConst(TYPE_INT, "1")},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newBinary(OP_PLUS, newVar("a", false), newConst(TYPE_INT, "1"), false)},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newBinary(OP_MINUS, newVar("a", false), newConst(TYPE_INT, "1"), false)},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newBinary(OP_MULT, newVar("a", false), newConst(TYPE_INT, "1"), false)},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newBinary(OP_DIV, newVar("a", false), newConst(TYPE_INT, "1"), false)},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newBinary(OP_MINUS, newVar("a", false), newConst(TYPE_INT, "1"), false)},
+			),
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newBinary(OP_PLUS, newVar("a", false), newConst(TYPE_INT, "1"), false)},
 			),
 		},
 	)
