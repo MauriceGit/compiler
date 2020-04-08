@@ -108,10 +108,12 @@ func main() {
 
 //printInt(sum(10))
 
-list  = [](int, 5)
-//list2 = [1, 2, 3, 4, 5]
+//list  = [](int, 5)
+list2 = [1, 2, 3, 4, 5]
 
-printInt(5)
+
+printInt(list2[3])
+
 
 
 `)

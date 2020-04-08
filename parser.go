@@ -95,6 +95,11 @@ type SymbolVarEntry struct {
 	// Refers to the name used in the final assembler
 	varName string
 	offset  int
+
+	// In case the variable is indexing an array (see sType), we need this second underlaying type  as well!
+	isIndexed bool
+	arrayType Type
+
 	// ... more information
 }
 
@@ -153,9 +158,15 @@ type Expression interface {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 type Variable struct {
-	vType        Type
-	vName        string
-	vShadow      bool
+	vType   Type
+	vName   string
+	vShadow bool
+
+	// Lets try it this way first...
+	vIsIndexedArray  bool
+	vIndexExpression Expression
+	vArrayType       Type
+
 	line, column int
 }
 type Constant struct {
@@ -383,11 +394,14 @@ func (o Operator) String() string {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (v Variable) String() string {
-	shadowString := ""
-	if v.vShadow {
-		shadowString = "shadow "
+	if !v.vIsIndexedArray {
+		shadowString := ""
+		if v.vShadow {
+			shadowString = "shadow "
+		}
+		return fmt.Sprintf("%v%v(%v)", shadowString, v.vType, v.vName)
 	}
-	return fmt.Sprintf("%v%v(%v)", shadowString, v.vType, v.vName)
+	return fmt.Sprintf("%v(%v[%v])", v.vArrayType, v.vName, v.vIndexExpression)
 }
 func (c Constant) String() string {
 	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
@@ -616,23 +630,58 @@ func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, boo
 	return t.line, t.column, true
 }
 
-func parseVariable(tokens *TokenChannel) (Variable, bool) {
+func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 
+	severity := ErrNormal
 	_, _, shadowing := tokens.expect(TOKEN_KEYWORD, "shadow")
-
-	if v, row, col, ok := tokens.expectType(TOKEN_IDENTIFIER); ok {
-		return Variable{TYPE_UNKNOWN, v, shadowing, row, col}, true
+	if shadowing {
+		severity = ErrCritical
 	}
-	// Only line/column are valid!
-	return Variable{}, false
+
+	vName, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		err = fmt.Errorf("%wExpected identifier for variable", severity)
+		return
+	}
+
+	if _, _, ok = tokens.expect(TOKEN_SQUARE_OPEN, "["); ok {
+
+		indexExpression, parseErr := parseExpression(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+
+		if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
+			err = fmt.Errorf("%w[%v:%%v] - Expected ']' after array index expression",
+				ErrCritical, row, col,
+			)
+			return
+		}
+
+		variable.vIsIndexedArray = true
+		variable.vIndexExpression = indexExpression
+		variable.vArrayType = TYPE_UNKNOWN
+	}
+
+	variable.vType = TYPE_UNKNOWN
+	variable.vName = vName
+	variable.vShadow = shadowing
+	variable.line = startRow
+	variable.column = startCol
+	return
 }
 
 func parseVarList(tokens *TokenChannel) (variables []Variable, err error) {
-	lastRow, lastCol := 0, 0
+	lastRow, lastCol, ok := 0, 0, false
 	i := 0
 	for {
-		v, ok := parseVariable(tokens)
-		if !ok {
+		v, parseErr := parseVariable(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+		if parseErr != nil {
 
 			// If we don't find any variable, thats fine. Just don't end in ',', thats an error!
 			// We throw a normal error, so the parser up the chain can handle it how it likes.
@@ -722,14 +771,23 @@ func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 	return
 }
 
-func parseVariableExpression(tokens *TokenChannel) (expression Expression, err error) {
+func parseVariableExpression(tokens *TokenChannel) (variable Variable, err error) {
 
-	name, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
-	if !ok {
-		err = fmt.Errorf("%wExpect identifier", ErrNormal)
+	v, parseErr := parseVariable(tokens)
+	if parseErr != nil {
+		// This also handles errCritical.
+		err = parseErr
 		return
 	}
-	expression = Variable{TYPE_UNKNOWN, name, false, startRow, startCol}
+	// Variables used in an expression can NOT have a shadowing keyword. Wouldn't make any sense semantically...
+	if v.vShadow {
+		err = fmt.Errorf("%w[%v:%v] - Variables used in expressions can not use 'shadow' keyword",
+			ErrCritical, v.line, v.column,
+		)
+		return
+	}
+
+	variable = v
 	return
 }
 
@@ -1206,10 +1264,14 @@ func parseType(tokens *TokenChannel) (t Type, err error) {
 }
 func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
 	i := 0
-	lastRow, lastCol := 0, 0
+	lastRow, lastCol, ok := 0, 0, false
 	for {
-		v, ok := parseVariable(tokens)
-		if !ok {
+		v, parseErr := parseVariable(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+		if parseErr != nil {
 			// If we don't find any variable, thats fine. Just don't end in ',', thats an error!
 			if i == 0 {
 				// We propagate the error from the parser. This might be normal or critical.

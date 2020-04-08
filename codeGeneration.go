@@ -220,13 +220,34 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 			sign = ""
 		}
 
-		switch v.vType {
-		case TYPE_INT:
-			asm.addLine("mov", fmt.Sprintf("rax, [rbp%v%v]", sign, symbol.offset))
-		case TYPE_FLOAT:
-			register, _ := getRegister(TYPE_INT)
-			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", register, sign, symbol.offset))
-			asm.addLine("movq", fmt.Sprintf("xmm0, %v", register))
+		if v.vIsIndexedArray {
+
+			index, address := getRegister(TYPE_INT)
+
+			v.vIndexExpression.generateCode(asm, s)
+			asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
+
+			sign := "+"
+			if symbol.offset < 0 {
+				sign = ""
+			}
+			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", address, sign, symbol.offset))
+
+			asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8]", getReturnRegister(TYPE_INT), address, index))
+
+			if v.vArrayType == TYPE_FLOAT {
+				asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
+			}
+
+		} else {
+			switch v.vType {
+			case TYPE_INT:
+				asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", getReturnRegister(TYPE_INT), sign, symbol.offset))
+			case TYPE_FLOAT:
+				register, _ := getRegister(TYPE_INT)
+				asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", register, sign, symbol.offset))
+				asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), register))
+			}
 		}
 
 		return
@@ -407,7 +428,28 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		// clear the flag set by 'std'
 		asm.addLine("cld", "")
 	} else {
-		// TODO: Fill with correct values from a.aExpressions
+		for i := len(a.aExpressions) - 1; i >= 0; i-- {
+			e := a.aExpressions[i]
+			// Calculate expression
+			e.generateCode(asm, s)
+			// Multiple return values are already on the stack, single ones not!
+			if e.getResultCount() == 1 {
+				switch e.getExpressionTypes()[0] {
+				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+					asm.addLine("push", getReturnRegister(TYPE_INT))
+				case TYPE_FLOAT:
+					tmpR, _ := getRegister(TYPE_INT)
+					asm.addLine("movq", fmt.Sprintf("%v, %v", tmpR, getReturnRegister(TYPE_FLOAT)))
+					asm.addLine("push", tmpR)
+				}
+			}
+		}
+
+		register, _ := getRegister(TYPE_INT)
+		for i := 0; i < a.aCount; i++ {
+			asm.addLine("pop", register)
+			asm.addLine("mov", fmt.Sprintf("[rsi+%v], %v", i*8, register))
+		}
 	}
 
 	asm.addLine("mov", ret+", rsi")
@@ -534,9 +576,9 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	}
 
+	// Just to get it from the stack into the variable.
+	register, _ := getRegister(TYPE_INT)
 	for _, v := range a.variables {
-		// Just to get it from the stack into the variable.
-		register, _ := getRegister(TYPE_INT)
 		asm.addLine("pop", register)
 
 		// This can not/should not fail!

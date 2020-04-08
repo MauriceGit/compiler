@@ -31,9 +31,13 @@ func (s *SymbolTable) getLocalVars() (keys []string) {
 	return
 }
 
-func (s *SymbolTable) setVar(v string, t Type) {
-	s.varTable[v] = SymbolVarEntry{t, "", 0}
+func (s *SymbolTable) setVar(v string, t, arrayType Type, isIndexed bool) {
+	s.varTable[v] = SymbolVarEntry{t, "", 0, isIndexed, arrayType}
 }
+
+//func (s *SymbolTable) setIndexedVar(v string, t Type) {
+//	s.varTable[v] = SymbolVarEntry{TYPE_ARRAY, "", 0, true, t}
+//}
 
 func (s *SymbolTable) setFun(name string, argTypes, returnTypes []Type) {
 	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, "", "", 0}
@@ -318,7 +322,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	return fun, nil
 }
 
-func analyzeArray(a Array, symbolTable *SymbolTable) (Array, error) {
+func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 
 	var arrayType Type = TYPE_UNKNOWN
 	arraySize := 0
@@ -348,21 +352,45 @@ func analyzeArray(a Array, symbolTable *SymbolTable) (Array, error) {
 	return a, nil
 }
 
+func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
+	// Lookup variable type and annotate node.
+	if vTable, ok := symbolTable.getVar(e.vName); ok {
+		e.vType = vTable.sType
+
+		// Type is not array, if it is indexed, but the type of the element itself.
+		if e.vType == TYPE_ARRAY && e.vIsIndexedArray {
+
+			indexExpression, tmpE := analyzeExpression(e.vIndexExpression, symbolTable)
+			if tmpE != nil {
+				return e, tmpE
+			}
+
+			if len(indexExpression.getExpressionTypes()) != 1 {
+				return e, fmt.Errorf("%w[%v:%v] - Index expression can only have one value", ErrCritical, e.line, e.column)
+			}
+			if indexExpression.getExpressionTypes()[0] != TYPE_INT {
+				return e, fmt.Errorf("%w[%v:%v] - Index expression must be int", ErrCritical, e.line, e.column)
+			}
+
+			e.vIndexExpression = indexExpression
+			e.vArrayType = vTable.arrayType
+			e.vType = vTable.arrayType
+		}
+
+	} else {
+		return e, fmt.Errorf("%w[%v:%v] - Variable '%v' referenced before declaration", ErrCritical, e.line, e.column, e.vName)
+	}
+	// Always access the very last entry for variables!
+	return e, nil
+}
+
 func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Expression, error) {
 
 	switch e := expression.(type) {
 	case Constant:
 		return e, nil
 	case Variable:
-
-		// Lookup variable type and annotate node.
-		if vTable, ok := symbolTable.getVar(e.vName); ok {
-			e.vType = vTable.sType
-		} else {
-			return e, fmt.Errorf("%w[%v:%v] - Variable '%v' referenced before declaration", ErrCritical, e.line, e.column, e.vName)
-		}
-		// Always access the very last entry for variables!
-		return e, nil
+		return analyzeVariable(e, symbolTable)
 	case UnaryOp:
 		return analyzeUnaryOp(e, symbolTable)
 	case BinaryOp:
@@ -370,7 +398,7 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 	case FunCall:
 		return analyzeFunCall(e, symbolTable)
 	case Array:
-		return analyzeArray(e, symbolTable)
+		return analyzeArrayDecl(e, symbolTable)
 	}
 	row, col := expression.startPos()
 	return expression, fmt.Errorf("%w[%v:%v] - Unknown type for expression '%v'", ErrCritical, row, col, expression)
@@ -382,13 +410,28 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignment, error) {
 
 	expressionTypes := make([]Type, 0)
+	// We need this temporary array to hold information about sub-types for arrays, so we can
+	// pass this information on for later usage in indexed variables!
+	arrayExpressionTypes := make([]Type, 0)
 	for i, e := range assignment.expressions {
 		expression, err := analyzeExpression(e, symbolTable)
 		if err != nil {
 			return assignment, err
 		}
-		expressionTypes = append(expressionTypes, expression.getExpressionTypes()...)
+
+		tmpTypes := expression.getExpressionTypes()
+		expressionTypes = append(expressionTypes, tmpTypes...)
 		assignment.expressions[i] = expression
+
+		if len(tmpTypes) == 1 && tmpTypes[0] == TYPE_ARRAY {
+			// Should not fail!
+			tmpA, _ := expression.(Array)
+			arrayExpressionTypes = append(arrayExpressionTypes, tmpA.aType)
+		} else {
+			// Doesn't matter what we write here. We only need the same index as expressionTypes
+			arrayExpressionTypes = append(arrayExpressionTypes, tmpTypes...)
+		}
+
 	}
 
 	// Populate/overwrite the dictionary of variables for futher statements :)
@@ -427,15 +470,21 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 					)
 				}
 			} else {
-				symbolTable.setVar(v.vName, expressionType)
+				if v.vIsIndexedArray {
+					return assignment, fmt.Errorf("%w[%v:%v] - An indexed array write can not shadow its source",
+						ErrCritical, v.line, v.column,
+					)
+				}
+
+				symbolTable.setVar(v.vName, expressionType, arrayExpressionTypes[i], false)
 			}
 		} else {
-			symbolTable.setVar(v.vName, expressionType)
+			symbolTable.setVar(v.vName, expressionType, arrayExpressionTypes[i], v.vIsIndexedArray)
 		}
 
-		//assignment.expressions[i] = expression
-
+		assignment.variables[i].vArrayType = arrayExpressionTypes[i]
 		assignment.variables[i].vType = expressionType
+
 	}
 	return assignment, nil
 }
@@ -547,7 +596,7 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 		if _, ok := functionSymbolTable.getVar(v.vName); ok {
 			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v already exists", ErrCritical, v.line, v.column, v)
 		}
-		functionSymbolTable.setVar(v.vName, v.vType)
+		functionSymbolTable.setVar(v.vName, v.vType, v.vType, false)
 	}
 
 	if symbolTable.isLocalFun(fun.fName) {
