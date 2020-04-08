@@ -16,6 +16,8 @@ const (
 	TOKEN_PARENTHESIS_CLOSE
 	TOKEN_CURLY_OPEN
 	TOKEN_CURLY_CLOSE
+	TOKEN_SQUARE_OPEN
+	TOKEN_SQUARE_CLOSE
 	TOKEN_SEMICOLON
 	TOKEN_EOF
 	TOKEN_UNKNOWN
@@ -79,6 +81,10 @@ func parseByte(program []byte) (TokenType, bool) {
 		return TOKEN_CURLY_OPEN, true
 	case '}':
 		return TOKEN_CURLY_CLOSE, true
+	case '[':
+		return TOKEN_SQUARE_OPEN, true
+	case ']':
+		return TOKEN_SQUARE_CLOSE, true
 	}
 	return TOKEN_UNKNOWN, false
 }

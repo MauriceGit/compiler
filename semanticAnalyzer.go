@@ -181,6 +181,8 @@ func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, erro
 
 func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, error) {
 
+	fmt.Println(binaryOp.leftExpr.getExpressionTypes(), binaryOp.rightExpr.getExpressionTypes())
+
 	// Re-order expression, if the expression is not fixed and the priority is of the operator is not according to the priority
 	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
 	if tmpE, ok := binaryOp.rightExpr.(BinaryOp); ok {
@@ -316,6 +318,36 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	return fun, nil
 }
 
+func analyzeArray(a Array, symbolTable *SymbolTable) (Array, error) {
+
+	var arrayType Type = TYPE_UNKNOWN
+	arraySize := 0
+	for i, e := range a.aExpressions {
+		newE, err := analyzeExpression(e, symbolTable)
+		if err != nil {
+			return a, err
+		}
+		a.aExpressions[i] = newE
+		if i == 0 {
+			arrayType = newE.getExpressionTypes()[0]
+		}
+		if newE.getExpressionTypes()[0] != arrayType {
+			return a, fmt.Errorf("%w[%v:%v] - Not all expressions in array declaration have the same type",
+				ErrCritical, a.line, a.column,
+			)
+		}
+		arraySize += newE.getResultCount()
+	}
+
+	// If aCount is already set to something, we know, this value is correct!!!
+	if a.aCount == 0 && arraySize > 0 {
+		a.aCount = arraySize
+	}
+	a.aType = arrayType
+
+	return a, nil
+}
+
 func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Expression, error) {
 
 	switch e := expression.(type) {
@@ -337,9 +369,11 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 		return analyzeBinaryOp(e, symbolTable)
 	case FunCall:
 		return analyzeFunCall(e, symbolTable)
+	case Array:
+		return analyzeArray(e, symbolTable)
 	}
 	row, col := expression.startPos()
-	return expression, fmt.Errorf("%w[%v:%v] - Unknown type for expression %v", ErrCritical, row, col, expression)
+	return expression, fmt.Errorf("%w[%v:%v] - Unknown type for expression '%v'", ErrCritical, row, col, expression)
 }
 
 // Returns newly created variables and variables that should shadow others!

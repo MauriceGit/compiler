@@ -99,20 +99,20 @@ func assemble(asm ASM, source, executable string) (err error) {
 func main() {
 	var program []byte = []byte(`
 
-fun sum(i int) int {
-	if i == 0 {
-		return 0
-	}
-	return i+sum(i-1)
-}
+//fun sum(i int) int {
+//	if i == 0 {
+//		return 0
+//	}
+//	return i+sum(i-1)
+//}
 
-printInt(sum(10))
+//printInt(sum(10))
 
-for i = 0; i < 50; i += 2 {
-	if i % 3 == 0 {
-		printInt(i)
-	}
-}
+list  = [](int, 5)
+//list2 = [1, 2, 3, 4, 5]
+
+printInt(5)
+
 
 `)
 

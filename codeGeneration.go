@@ -360,6 +360,59 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	}
 }
 
+func (a Array) generateCode(asm *ASM, s *SymbolTable) {
+
+	arg0 := getFunctionRegisters(TYPE_INT)[0]
+	ret := getReturnRegister(TYPE_INT)
+
+	// determine the first memory location by allocating zero byte.
+	asm.addLine("mov", "rax, 12    ; sys_brk")
+	asm.addLine("mov", arg0+", 0")
+	asm.addLine("syscall", "")
+
+	// Save our first memory register!
+	// We use rsi manually here as a register that is Caller-saved and will not be
+	// altered by anything that happens while creating/allocating/filling the array (well, only by myself)
+	asm.addLine("mov", "rsi, "+ret)
+
+	// n bytes is what we want to allocate here!
+	// rax is the pointer to the first memory with 0 byte space
+	// So we use the pointer rax and extend our memory. This is also, how we
+	// can extend memory dynamically or free it (by setting it to [rax+0])
+
+	// lea rdi, [rax+n]
+	asm.addLine("lea", fmt.Sprintf("%v, [%v+%v]", arg0, ret, a.aCount*8))
+	asm.addLine("mov", "rax, 12    ; sys_brk")
+	asm.addLine("syscall", "")
+
+	// Check memory error
+	asm.addLine("cmp", "rax, 0")
+	asm.addLine("jl", "exit")
+
+	// Initialize array with 0s, if they are not initialized.
+	if len(a.aExpressions) == 0 {
+		// rdi is now the highest available address
+		asm.addLine("mov", fmt.Sprintf("%v, %v", arg0, ret))
+		// rdi now points to the last available qword
+		asm.addLine("sub", arg0+", 8")
+		// Number of qwords allocated. Not really sure, why we use rcx here though.
+		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount))
+
+		// rax == What to write into memory (default). So we fill it up with 0s
+		asm.addLine("xor", "rax, rax")
+		// go backwards in memory
+		asm.addLine("std", "")
+		// store the value of rax into rcx at every position!
+		asm.addLine("rep", "stosq")
+		// clear the flag set by 'std'
+		asm.addLine("cld", "")
+	} else {
+		// TODO: Fill with correct values from a.aExpressions
+	}
+
+	asm.addLine("mov", ret+", rsi")
+}
+
 func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 
 	intRegisters := getFunctionRegisters(TYPE_INT)
@@ -471,7 +524,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		// Multiple return values are already on the stack, single ones not!
 		if e.getResultCount() == 1 {
 			switch e.getExpressionTypes()[0] {
-			case TYPE_INT:
+			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 				asm.addLine("push", getReturnRegister(TYPE_INT))
 			case TYPE_FLOAT:
 				tmpR, _ := getRegister(TYPE_INT)
@@ -935,9 +988,10 @@ func (ast AST) generateCode() ASM {
 	addFunctionEpilogue(&asm)
 
 	asm.addLine("; Exit the program nicely", "")
-	asm.addLine("mov", "rbx, 0  ; exit code")
-	asm.addLine("mov", "rax, 1  ; sys_exit (system call number)")
-	asm.addLine("int", "0x80    ; call kernel")
+	asm.addLabel("exit")
+	asm.addLine("mov", "rax, 60  ; sys_exit")
+	asm.addLine("mov", "rdi, 0   ; exit code")
+	asm.addLine("syscall", "")
 
 	return asm
 }

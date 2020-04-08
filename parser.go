@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 )
 
 /*
@@ -54,6 +55,7 @@ const (
 	TYPE_FLOAT
 	TYPE_BOOL
 	// TYPE_FUNCTION ?
+	TYPE_ARRAY
 	TYPE_UNKNOWN
 )
 const (
@@ -161,6 +163,12 @@ type Constant struct {
 	cValue       string
 	line, column int
 }
+type Array struct {
+	aType        Type
+	aCount       int
+	aExpressions []Expression
+	line, column int
+}
 type BinaryOp struct {
 	operator  Operator
 	leftExpr  Expression
@@ -186,6 +194,7 @@ type FunCall struct {
 
 func (_ Variable) expression() {}
 func (_ Constant) expression() {}
+func (_ Array) expression()    {}
 func (_ BinaryOp) expression() {}
 func (_ UnaryOp) expression()  {}
 func (_ FunCall) expression()  {}
@@ -194,6 +203,9 @@ func (e Variable) startPos() (int, int) {
 	return e.line, e.column
 }
 func (e Constant) startPos() (int, int) {
+	return e.line, e.column
+}
+func (e Array) startPos() (int, int) {
 	return e.line, e.column
 }
 func (e BinaryOp) startPos() (int, int) {
@@ -209,6 +221,9 @@ func (e FunCall) startPos() (int, int) {
 func (e Constant) getExpressionTypes() []Type {
 	return []Type{e.cType}
 }
+func (e Array) getExpressionTypes() []Type {
+	return []Type{TYPE_ARRAY}
+}
 func (e Variable) getExpressionTypes() []Type {
 	return []Type{e.vType}
 }
@@ -223,6 +238,9 @@ func (e FunCall) getExpressionTypes() []Type {
 }
 
 func (e Constant) getResultCount() int {
+	return 1
+}
+func (e Array) getResultCount() int {
 	return 1
 }
 func (e Variable) getResultCount() int {
@@ -387,6 +405,10 @@ func (u UnaryOp) String() string {
 	return fmt.Sprintf("%v(%v)", u.operator, u.expr)
 }
 
+func (a Array) String() string {
+	return fmt.Sprintf("[](%v, %v)", a.aType, a.aCount)
+}
+
 func (v Type) String() string {
 	switch v {
 	case TYPE_INT:
@@ -397,6 +419,8 @@ func (v Type) String() string {
 		return "float"
 	case TYPE_BOOL:
 		return "bool"
+	case TYPE_ARRAY:
+		return "array"
 	}
 	return "?"
 }
@@ -709,6 +733,80 @@ func parseVariableExpression(tokens *TokenChannel) (expression Expression, err e
 	return
 }
 
+func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
+
+	startRow, startCol, ok := tokens.expect(TOKEN_SQUARE_OPEN, "[")
+	if !ok {
+		err = fmt.Errorf("%wExpected '['", ErrNormal)
+		return
+	}
+	// .. = [](int, 5)
+	if _, _, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); ok {
+
+		if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
+			err = fmt.Errorf("%w[%v:%v] - Expected '(' after '[]'", ErrCritical, row, col)
+			return
+		}
+
+		t, parseErr := parseType(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+
+		if row, col, ok := tokens.expect(TOKEN_SEPARATOR, ","); !ok {
+			err = fmt.Errorf("%w[%v:%v] - Expected ',' after array type", ErrCritical, row, col)
+			return
+		}
+
+		c, ok := parseConstant(tokens)
+		cValue, tmpE := strconv.ParseInt(c.cValue, 10, 64)
+		if !ok || tmpE != nil || c.cType != TYPE_INT || cValue <= 0 {
+			err = fmt.Errorf("%w[%v:%v] - Invalid size for array literal. Must be a constant int > 0", ErrCritical, c.line, c.column)
+			return
+		}
+
+		if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_CLOSE, ")"); !ok {
+			err = fmt.Errorf("%w[%v:%v] - Expected ')' after array declaration", ErrCritical, row, col)
+			return
+		}
+
+		array.aType = t
+		array.aCount = int(cValue)
+		array.aExpressions = []Expression{}
+		array.line = startRow
+		array.column = startCol
+		return
+	} else {
+		// .. = [1,2,3,4,5]
+
+		expressions, parseErr := parseExpressionList(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+
+		if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
+			err = fmt.Errorf("%w[%v:%v] - Expected ']' after expression list in array declaration", ErrCritical, row, col)
+			return
+		}
+
+		if len(expressions) == 0 {
+			err = fmt.Errorf("%w[%v:%v] - Expression list in array declaration can not be empty", ErrCritical, startRow, startCol)
+			return
+		}
+
+		array.aType = TYPE_UNKNOWN
+		// This needs to be evaluated and counted up in analysis - One expression might have multiple values!
+		array.aCount = 0
+		array.aExpressions = expressions
+		array.line = startRow
+		array.column = startCol
+		return
+	}
+
+}
+
 // parseSimpleExpression just parses variables, constants and '('...')'
 func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err error) {
 
@@ -728,6 +826,16 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 	switch {
 	case parseErr == nil:
 		expression = tmpV
+		return
+	case errors.Is(parseErr, ErrCritical):
+		err = parseErr
+		return
+	}
+
+	tmpA, parseErr := parseArrayExpression(tokens)
+	switch {
+	case parseErr == nil:
+		expression = tmpA
 		return
 	case errors.Is(parseErr, ErrCritical):
 		err = parseErr
