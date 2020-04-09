@@ -7,7 +7,7 @@ Assembling and linking is currently done with yasm and ld.
 
 ## Current (incomplete) language grammar:
 
-``
+```
 stat        ::= assign | if | for | funDecl | ret | funCall
 statlist    ::= stat [statlist]
 
@@ -40,12 +40,12 @@ Operator priority (Descending priority!):
 2:  '+', '-', '%'
 3:  '==', '!=', '<=', '>=', '<', '>'
 4:  '&&', '||'
-``
+```
 
 ## Currently working example code:
 
 
-``
+```
 fun sum(i int) int {
     if i == 0 {
         return 0
@@ -71,4 +71,4 @@ list = [1, 2, 3, 4, 5]
 printInt(sum(10))
 printInt(abc(list))
 printInt(sumArray(list))
-``
+```
