@@ -571,7 +571,7 @@ func equalType(c1, c2 ComplexType) bool {
 	if c1.t != c2.t {
 		return false
 	}
-	if c1.subType != nil && c1.subType != nil {
+	if c1.subType != nil && c2.subType != nil {
 		return equalType(*c1.subType, *c2.subType)
 	}
 	return c1.subType == nil && c2.subType == nil
@@ -681,7 +681,7 @@ func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 		}
 
 		if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
-			err = fmt.Errorf("%w[%v:%%v] - Expected ']' after array index expression",
+			err = fmt.Errorf("%w[%v:%v] - Expected ']' after array index expression",
 				ErrCritical, row, col,
 			)
 			return

@@ -83,12 +83,12 @@ func compareVariables(vv1, vv2 []Variable) (bool, string) {
 	return true, ""
 }
 
-func compareTypes(tt1, tt2 []Type) (bool, string) {
+func compareTypes(tt1, tt2 []ComplexType) (bool, string) {
 	if len(tt1) != len(tt2) {
 		return false, fmt.Sprintf("Different lengths: %v, %v", tt1, tt2)
 	}
 	for i, t := range tt1 {
-		if t != tt2[i] {
+		if !equalType(t, tt2[i]) {
 			return false, fmt.Sprintf("Type comparison: %v != %v", t, tt2[i])
 		}
 	}
@@ -184,19 +184,22 @@ func testAST(code []byte, expected AST, t *testing.T) {
 }
 
 func newVar(value string, shadow bool) Variable {
-	return Variable{TYPE_UNKNOWN, value, shadow, 0, 0}
+	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, shadow, false, nil, 0, 0}
 }
-func newParam(t Type, value string) Variable {
-	return Variable{t, value, true, 0, 0}
+func newIndexedVar(value string, e Expression) Variable {
+	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, false, true, e, 0, 0}
+}
+func newParam(t ComplexType, value string) Variable {
+	return Variable{t, value, true, false, nil, 0, 0}
 }
 func newConst(t Type, value string) Constant {
 	return Constant{t, value, 0, 0}
 }
 func newUnary(op Operator, e Expression) UnaryOp {
-	return UnaryOp{op, e, TYPE_UNKNOWN, 0, 0}
+	return UnaryOp{op, e, ComplexType{TYPE_UNKNOWN, nil}, 0, 0}
 }
 func newBinary(op Operator, eLeft, eRight Expression, fixed bool) BinaryOp {
-	return BinaryOp{op, eLeft, eRight, TYPE_UNKNOWN, fixed, 0, 0}
+	return BinaryOp{op, eLeft, eRight, ComplexType{TYPE_UNKNOWN, nil}, fixed, 0, 0}
 }
 func newAssignment(variables []Variable, expressions []Expression) Assignment {
 	return Assignment{variables, expressions, 0, 0}
@@ -207,20 +210,26 @@ func newCondition(e Expression, block, elseBlock Block) Condition {
 func newLoop(a Assignment, exprs []Expression, incrA Assignment, b Block) Loop {
 	return Loop{a, exprs, incrA, b, 0, 0}
 }
-func newFunction(name string, params []Variable, returnTypes []Type, b Block) Function {
+func newFunction(name string, params []Variable, returnTypes []ComplexType, b Block) Function {
 	return Function{name, params, returnTypes, b, 0, 0}
 }
 func newReturn(expressions []Expression) Return {
 	return Return{expressions, 0, 0}
 }
 func newFunCall(name string, exprs []Expression) FunCall {
-	return FunCall{name, exprs, []Type{}, 0, 0}
+	return FunCall{name, exprs, []ComplexType{}, 0, 0}
 }
 func newBlock(statements []Statement) Block {
 	return Block{statements, SymbolTable{}, 0, 0}
 }
 func newAST(statements []Statement) AST {
 	return AST{newBlock(statements), SymbolTable{}}
+}
+func newSimpleTypeList(ts []Type) (tcs []ComplexType) {
+	for _, t := range ts {
+		tcs = append(tcs, ComplexType{t, nil})
+	}
+	return
 }
 
 func TestParserExpression1(t *testing.T) {
@@ -536,7 +545,7 @@ func TestParserFunction1(t *testing.T) {
 
 	expected := newAST(
 		[]Statement{
-			newFunction("abc", []Variable{}, []Type{}, newBlock(
+			newFunction("abc", []Variable{}, []ComplexType{}, newBlock(
 				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")})},
 			)),
 		},
@@ -556,7 +565,11 @@ func TestParserFunction2(t *testing.T) {
 
 	expected := newAST(
 		[]Statement{
-			newFunction("abc", []Variable{newParam(TYPE_INT, "a"), newParam(TYPE_FLOAT, "b"), newParam(TYPE_BOOL, "c")}, []Type{}, newBlock(
+			newFunction("abc", []Variable{
+				newParam(ComplexType{TYPE_INT, nil}, "a"),
+				newParam(ComplexType{TYPE_FLOAT, nil}, "b"),
+				newParam(ComplexType{TYPE_BOOL, nil}, "c"),
+			}, []ComplexType{}, newBlock(
 				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")}), newReturn(nil)},
 			)),
 		},
@@ -576,7 +589,7 @@ func TestParserFunction3(t *testing.T) {
 
 	expected := newAST(
 		[]Statement{
-			newFunction("abc", []Variable{}, []Type{TYPE_INT, TYPE_FLOAT, TYPE_BOOL}, newBlock(
+			newFunction("abc", []Variable{}, newSimpleTypeList([]Type{TYPE_INT, TYPE_FLOAT, TYPE_BOOL}), newBlock(
 				[]Statement{
 					newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")}),
 					newReturn([]Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true")}),
@@ -600,7 +613,7 @@ func TestParserFunCall(t *testing.T) {
 
 	expected := newAST(
 		[]Statement{
-			newFunction("abc", []Variable{}, []Type{TYPE_INT}, newBlock(
+			newFunction("abc", []Variable{}, newSimpleTypeList([]Type{TYPE_INT}), newBlock(
 				[]Statement{
 					newReturn([]Expression{newConst(TYPE_INT, "1")}),
 				},
