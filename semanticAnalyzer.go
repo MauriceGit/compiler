@@ -641,7 +641,7 @@ func analyzeReturn(ret Return, symbolTable *SymbolTable) (Return, error) {
 				)
 			}
 
-			if t != symbolTable.activeFunctionReturn[typeIndex] {
+			if !equalType(t, symbolTable.activeFunctionReturn[typeIndex]) {
 				return ret, fmt.Errorf("%w[%v:%v] - Function return type does not match definition. Expected %v, got %v",
 					ErrCritical, row, col, symbolTable.activeFunctionReturn[typeIndex], t)
 			}

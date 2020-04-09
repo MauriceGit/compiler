@@ -241,7 +241,7 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 		} else {
 			switch v.vType.t {
-			case TYPE_INT:
+			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 				asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", getReturnRegister(TYPE_INT), sign, symbol.offset))
 			case TYPE_FLOAT:
 				register, _ := getRegister(TYPE_INT)
@@ -485,7 +485,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		f.args[0].generateCode(asm, s)
 
 		switch f.args[0].getExpressionTypes()[0].t {
-		case TYPE_INT:
+		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 			asm.addLine("mov", intRegisters[intRegIndex]+", rax")
 			intRegIndex++
 		case TYPE_FLOAT:
@@ -503,7 +503,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 			// Multiple return values are already on the stack, single ones not!
 			if e.getResultCount() == 1 {
 				switch e.getExpressionTypes()[0].t {
-				case TYPE_INT:
+				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
 					tmpR, _ := getRegister(TYPE_INT)
@@ -517,7 +517,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		for _, e := range f.args {
 			for _, t := range e.getExpressionTypes() {
 				switch t.t {
-				case TYPE_INT:
+				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					// All further values stay on the stack and are not assigned to registers!
 					if intRegIndex < len(intRegisters) {
 						asm.addLine("pop", intRegisters[intRegIndex])
@@ -879,7 +879,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 			sign = ""
 		}
 		switch v.vType.t {
-		case TYPE_INT:
+		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 			if intRegIndex < len(intRegisters) {
 				asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, intRegisters[intRegIndex]))
 				intRegIndex++
