@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 )
@@ -91,14 +92,14 @@ var (
 )
 
 type SymbolVarEntry struct {
-	sType Type
+	sType ComplexType
 	// Refers to the name used in the final assembler
 	varName string
 	offset  int
 
 	// In case the variable is indexing an array (see sType), we need this second underlaying type  as well!
 	isIndexed bool
-	arrayType Type
+	//arrayType Type
 
 	// ... more information
 }
@@ -107,8 +108,8 @@ type SymbolVarEntry struct {
 // and we need to know how many and what kind of variables are
 // pushed onto the stack or popped from afterwards.
 type SymbolFunEntry struct {
-	paramTypes               []Type
-	returnTypes              []Type
+	paramTypes               []ComplexType
+	returnTypes              []ComplexType
 	jumpLabel                string
 	epilogueLabel            string
 	returnStackPointerOffset int
@@ -120,13 +121,19 @@ type SymbolTable struct {
 	// activeFunctionReturn references the function return types, if we are within a function, otherwise nil
 	// This is required to check validity and code generation of return statements
 	activeFunctionName   string
-	activeFunctionReturn []Type
+	activeFunctionReturn []ComplexType
 	parent               *SymbolTable
 }
 
 type AST struct {
 	block             Block
 	globalSymbolTable SymbolTable
+}
+
+type ComplexType struct {
+	// Array
+	t       Type
+	subType *ComplexType
 }
 
 type Type int
@@ -149,7 +156,7 @@ type Statement interface {
 type Expression interface {
 	Node
 	expression()
-	getExpressionTypes() []Type
+	getExpressionTypes() []ComplexType
 	getResultCount() int
 }
 
@@ -158,14 +165,14 @@ type Expression interface {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 type Variable struct {
-	vType   Type
+	vType   ComplexType
 	vName   string
 	vShadow bool
 
 	// Lets try it this way first...
 	vIsIndexedArray  bool
 	vIndexExpression Expression
-	vArrayType       Type
+	//vArrayType       ComplexType
 
 	line, column int
 }
@@ -175,7 +182,7 @@ type Constant struct {
 	line, column int
 }
 type Array struct {
-	aType        Type
+	aType        ComplexType
 	aCount       int
 	aExpressions []Expression
 	line, column int
@@ -184,7 +191,7 @@ type BinaryOp struct {
 	operator  Operator
 	leftExpr  Expression
 	rightExpr Expression
-	opType    Type
+	opType    ComplexType
 	// fixed means, that the whole binary operation is in '(' ')' and should not be combined differently
 	// independent on operator priority!
 	fixed        bool
@@ -193,13 +200,13 @@ type BinaryOp struct {
 type UnaryOp struct {
 	operator     Operator
 	expr         Expression
-	opType       Type
+	opType       ComplexType
 	line, column int
 }
 type FunCall struct {
 	funName      string
 	args         []Expression
-	retTypes     []Type
+	retTypes     []ComplexType
 	line, column int
 }
 
@@ -229,22 +236,25 @@ func (e FunCall) startPos() (int, int) {
 	return e.line, e.column
 }
 
-func (e Constant) getExpressionTypes() []Type {
-	return []Type{e.cType}
+func (e Constant) getExpressionTypes() []ComplexType {
+	return []ComplexType{ComplexType{e.cType, nil}}
 }
-func (e Array) getExpressionTypes() []Type {
-	return []Type{TYPE_ARRAY}
+func (e Array) getExpressionTypes() []ComplexType {
+	return []ComplexType{ComplexType{TYPE_ARRAY, &e.aType}}
 }
-func (e Variable) getExpressionTypes() []Type {
-	return []Type{e.vType}
+func (e Variable) getExpressionTypes() []ComplexType {
+	if e.vIsIndexedArray {
+		return []ComplexType{*e.vType.subType}
+	}
+	return []ComplexType{e.vType}
 }
-func (e UnaryOp) getExpressionTypes() []Type {
-	return []Type{e.opType}
+func (e UnaryOp) getExpressionTypes() []ComplexType {
+	return []ComplexType{e.opType}
 }
-func (e BinaryOp) getExpressionTypes() []Type {
-	return []Type{e.opType}
+func (e BinaryOp) getExpressionTypes() []ComplexType {
+	return []ComplexType{e.opType}
 }
-func (e FunCall) getExpressionTypes() []Type {
+func (e FunCall) getExpressionTypes() []ComplexType {
 	return e.retTypes
 }
 
@@ -301,7 +311,7 @@ type Loop struct {
 type Function struct {
 	fName        string
 	parameters   []Variable
-	returnTypes  []Type
+	returnTypes  []ComplexType
 	block        Block
 	line, column int
 }
@@ -393,15 +403,23 @@ func (o Operator) String() string {
 // EXPRESSION STRING
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+func (c ComplexType) String() string {
+	if c.t == TYPE_ARRAY {
+		return fmt.Sprintf("array[%v]", c.subType)
+	}
+	return fmt.Sprintf("%v", c.t)
+}
+
 func (v Variable) String() string {
 	if !v.vIsIndexedArray {
 		shadowString := ""
 		if v.vShadow {
 			shadowString = "shadow "
 		}
-		return fmt.Sprintf("%v%v(%v)", shadowString, v.vType, v.vName)
+		return fmt.Sprintf("%v%v(%v)", shadowString, v.vType.t, v.vName)
 	}
-	return fmt.Sprintf("%v(%v[%v])", v.vArrayType, v.vName, v.vIndexExpression)
+
+	return fmt.Sprintf("%v(%v[%v])", v.vType.subType, v.vName, v.vIndexExpression)
 }
 func (c Constant) String() string {
 	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
@@ -549,6 +567,16 @@ func (tc *TokenChannel) pushBack(t Token) {
 // PARSER IMPLEMENTATION
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+func equalType(c1, c2 ComplexType) bool {
+	if c1.t != c2.t {
+		return false
+	}
+	if c1.subType != nil && c1.subType != nil {
+		return equalType(*c1.subType, *c2.subType)
+	}
+	return c1.subType == nil && c2.subType == nil
+}
+
 // Operator priority (Descending priority!):
 // 0:	'-', '!'
 // 1: 	'*', '/'
@@ -661,10 +689,9 @@ func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 
 		variable.vIsIndexedArray = true
 		variable.vIndexExpression = indexExpression
-		variable.vArrayType = TYPE_UNKNOWN
 	}
 
-	variable.vType = TYPE_UNKNOWN
+	variable.vType = ComplexType{TYPE_UNKNOWN, nil}
 	variable.vName = vName
 	variable.vShadow = shadowing
 	variable.line = startRow
@@ -764,7 +791,7 @@ func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 
 	funCall.funName = v
 	funCall.args = expressions
-	funCall.retTypes = []Type{}
+	funCall.retTypes = []ComplexType{}
 	funCall.line = startRow
 	funCall.column = startCol
 
@@ -854,7 +881,7 @@ func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 			return
 		}
 
-		array.aType = TYPE_UNKNOWN
+		array.aType = ComplexType{TYPE_UNKNOWN, nil}
 		// This needs to be evaluated and counted up in analysis - One expression might have multiple values!
 		array.aCount = 0
 		array.aExpressions = expressions
@@ -943,7 +970,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 			return
 		}
 
-		expression = UnaryOp{OP_NEGATIVE, e, TYPE_UNKNOWN, row, col}
+		expression = UnaryOp{OP_NEGATIVE, e, ComplexType{TYPE_UNKNOWN, nil}, row, col}
 		return
 	}
 	// Check for unary operator before the expression
@@ -954,7 +981,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 			return
 		}
 
-		expression = UnaryOp{OP_NOT, e, TYPE_UNKNOWN, row, col}
+		expression = UnaryOp{OP_NOT, e, ComplexType{TYPE_UNKNOWN, nil}, row, col}
 		return
 	}
 
@@ -987,7 +1014,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 			return
 		}
 		row, col = expression.startPos()
-		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, TYPE_UNKNOWN, false, row, col}
+		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, ComplexType{TYPE_UNKNOWN, nil}, false, row, col}
 		expression = finalExpression
 	}
 
@@ -1058,7 +1085,7 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 						getOperatorType(o),
 						variables[0],
 						Constant{TYPE_INT, "1", row, col},
-						TYPE_INT,
+						ComplexType{TYPE_INT, nil},
 						false,
 						row, col,
 					},
@@ -1079,7 +1106,7 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 				}
 
 				assignment.expressions = []Expression{
-					BinaryOp{getOperatorType(o), variables[0], e, TYPE_UNKNOWN, false, row, col},
+					BinaryOp{getOperatorType(o), variables[0], e, ComplexType{TYPE_UNKNOWN, nil}, false, row, col},
 				}
 				return
 			}
@@ -1241,37 +1268,63 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	return
 }
 
-func parseType(tokens *TokenChannel) (t Type, err error) {
-	funName, row, col, ok := tokens.expectType(TOKEN_KEYWORD)
+func parseType(tokens *TokenChannel) (t ComplexType, err error) {
+
+	name, row, col, ok := tokens.expectType(TOKEN_KEYWORD)
 	if !ok {
-		err = fmt.Errorf("%w[%v:%v] - Expected a type", ErrCritical, row, col)
-		return
-	}
-	switch funName {
-	case "int":
-		t = TYPE_INT
-	case "float":
-		t = TYPE_FLOAT
-	case "bool":
-		t = TYPE_BOOL
-	case "string":
-		t = TYPE_STRING
-	default:
-		err = fmt.Errorf("%w[%v:%v] - Not a valid type. Should be: 'int' | 'float' | 'bool' | 'string'", ErrCritical, row, col)
-		return
-	}
-	return
-}
-func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
-	i := 0
-	lastRow, lastCol, ok := 0, 0, false
-	for {
-		v, parseErr := parseVariable(tokens)
-		if errors.Is(parseErr, ErrCritical) {
+
+		if row, col, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); !ok {
+			os.Exit(0)
+			err = fmt.Errorf("%w[%v:%v] - Expected a type or '['", ErrCritical, row, col)
+			return
+		}
+		if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
+			err = fmt.Errorf("%w[%v:%v] - Expected ']'", ErrCritical, row, col)
+			return
+		}
+
+		subType, parseErr := parseType(tokens)
+		if parseErr != nil {
 			err = parseErr
 			return
 		}
-		if parseErr != nil {
+
+		t.t = TYPE_ARRAY
+		t.subType = &subType
+
+		return
+	}
+	switch name {
+	case "int":
+		t.t = TYPE_INT
+	case "float":
+		t.t = TYPE_FLOAT
+	case "bool":
+		t.t = TYPE_BOOL
+	case "string":
+		t.t = TYPE_STRING
+	default:
+
+		err = fmt.Errorf("%w[%v:%v] - Not a valid type. Should be: 'int' | 'float' | 'bool' | 'string'", ErrCritical, row, col)
+		return
+	}
+	t.subType = nil
+	return
+}
+func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
+
+	i := 0
+	lastRow, lastCol, ok := 0, 0, false
+	for {
+		//		v, parseErr := parseVariable(tokens)
+		//		if errors.Is(parseErr, ErrCritical) {
+		//			err = parseErr
+		//			return
+		//		}
+
+		vName, row, col, vOK := tokens.expectType(TOKEN_IDENTIFIER)
+		if !vOK {
+
 			// If we don't find any variable, thats fine. Just don't end in ',', thats an error!
 			if i == 0 {
 				// We propagate the error from the parser. This might be normal or critical.
@@ -1283,6 +1336,7 @@ func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
 			variables = nil
 			return
 		}
+		v := Variable{ComplexType{TYPE_UNKNOWN, nil}, vName, false, false, nil, row, col}
 
 		t, parseErr := parseType(tokens)
 		if parseErr != nil {
@@ -1304,7 +1358,7 @@ func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
 	return
 }
 
-func parseTypeList(tokens *TokenChannel) (types []Type, err error) {
+func parseTypeList(tokens *TokenChannel) (types []ComplexType, err error) {
 	lastRow, lastCol, ok := 0, 0, false
 	i := 0
 	for {

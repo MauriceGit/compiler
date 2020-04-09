@@ -201,7 +201,7 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	switch c.cType {
-	case TYPE_INT:
+	case TYPE_INT, TYPE_BOOL:
 		asm.addLine("mov", "rax, "+name)
 	case TYPE_FLOAT:
 		register, _ := getRegister(TYPE_INT)
@@ -235,12 +235,12 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 			asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8]", getReturnRegister(TYPE_INT), address, index))
 
-			if v.vArrayType == TYPE_FLOAT {
+			if v.vType.subType.t == TYPE_FLOAT {
 				asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 			}
 
 		} else {
-			switch v.vType {
+			switch v.vType.t {
 			case TYPE_INT:
 				asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", getReturnRegister(TYPE_INT), sign, symbol.offset))
 			case TYPE_FLOAT:
@@ -264,7 +264,7 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	}
 	t := u.getExpressionTypes()[0]
 
-	switch t {
+	switch t.t {
 	case TYPE_BOOL:
 		if u.operator == OP_NOT {
 			// 'not' switches between 0 and -1. So False: 0, True: -1
@@ -346,30 +346,30 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	//asm.addLine(getMov(t), fmt.Sprintf("%v, %v", rRight, getReturnRegister(t)))
 
-	switch t {
+	switch t.t {
 	case TYPE_INT, TYPE_BOOL:
-		asm.addLine("push", getReturnRegister(t))
+		asm.addLine("push", getReturnRegister(t.t))
 	case TYPE_FLOAT:
 		tmpR, _ := getRegister(TYPE_INT)
-		asm.addLine("movq", fmt.Sprintf("%v, %v", tmpR, getReturnRegister(t)))
+		asm.addLine("movq", fmt.Sprintf("%v, %v", tmpR, getReturnRegister(t.t)))
 		asm.addLine("push", tmpR)
 	}
 
 	// Result will be left in rax/xmm0
 	b.leftExpr.generateCode(asm, s)
 
-	rLeft := getReturnRegister(t)
+	rLeft := getReturnRegister(t.t)
 
-	_, rRight := getRegister(t)
+	_, rRight := getRegister(t.t)
 	asm.addLine("pop", rRight)
 
-	switch t {
+	switch t.t {
 	case TYPE_INT, TYPE_FLOAT:
-		binaryOperationNumber(b.operator, b.opType, rLeft, rRight, asm)
+		binaryOperationNumber(b.operator, b.opType.t, rLeft, rRight, asm)
 	case TYPE_BOOL:
 		// Equal and unequal are identical for bool or int, as a bool is an integer type.
 		if b.operator == OP_EQ || b.operator == OP_NE {
-			binaryOperationNumber(b.operator, b.opType, rLeft, rRight, asm)
+			binaryOperationNumber(b.operator, b.opType.t, rLeft, rRight, asm)
 		} else {
 			panic("Code generation error. Unknown operator for bool (I think?).")
 		}
@@ -377,7 +377,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	case TYPE_STRING:
 		panic("Code generation error: Strings not supported yet.")
 	default:
-		panic(fmt.Sprintf("Code generation error: Unknown operation type %v\n", int(b.opType)))
+		panic(fmt.Sprintf("Code generation error: Unknown operation type %v\n", int(b.opType.t)))
 	}
 }
 
@@ -434,7 +434,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 			e.generateCode(asm, s)
 			// Multiple return values are already on the stack, single ones not!
 			if e.getResultCount() == 1 {
-				switch e.getExpressionTypes()[0] {
+				switch e.getExpressionTypes()[0].t {
 				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
@@ -484,7 +484,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 	if len(f.args) == 1 && f.args[0].getResultCount() == 1 {
 		f.args[0].generateCode(asm, s)
 
-		switch f.args[0].getExpressionTypes()[0] {
+		switch f.args[0].getExpressionTypes()[0].t {
 		case TYPE_INT:
 			asm.addLine("mov", intRegisters[intRegIndex]+", rax")
 			intRegIndex++
@@ -502,7 +502,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 
 			// Multiple return values are already on the stack, single ones not!
 			if e.getResultCount() == 1 {
-				switch e.getExpressionTypes()[0] {
+				switch e.getExpressionTypes()[0].t {
 				case TYPE_INT:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
@@ -516,7 +516,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		// Iterate in reverse order to correctly pop from stack!
 		for _, e := range f.args {
 			for _, t := range e.getExpressionTypes() {
-				switch t {
+				switch t.t {
 				case TYPE_INT:
 					// All further values stay on the stack and are not assigned to registers!
 					if intRegIndex < len(intRegisters) {
@@ -565,7 +565,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		e.generateCode(asm, s)
 		// Multiple return values are already on the stack, single ones not!
 		if e.getResultCount() == 1 {
-			switch e.getExpressionTypes()[0] {
+			switch e.getExpressionTypes()[0].t {
 			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 				asm.addLine("push", getReturnRegister(TYPE_INT))
 			case TYPE_FLOAT:
@@ -589,7 +589,23 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 			sign = ""
 		}
 
-		asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, register))
+		if v.vIsIndexedArray {
+			// Manually save the register to rsi for now...
+			asm.addLine("mov", "rsi, "+register)
+
+			index, address := getRegister(TYPE_INT)
+
+			v.vIndexExpression.generateCode(asm, s)
+			asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
+
+			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", address, sign, entry.offset))
+
+			asm.addLine("mov", fmt.Sprintf("[%v+%v*8], rsi", address, index))
+
+		} else {
+			asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, register))
+		}
+
 	}
 }
 
@@ -602,7 +618,7 @@ func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
 	elseLabel := asm.nextLabelName()
 	endLabel := asm.nextLabelName()
 
-	switch c.expression.getExpressionTypes()[0] {
+	switch c.expression.getExpressionTypes()[0].t {
 	case TYPE_BOOL, TYPE_INT:
 		register = getReturnRegister(TYPE_INT)
 	case TYPE_FLOAT:
@@ -647,7 +663,7 @@ func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
 	for _, e := range l.expressions {
 		e.generateCode(asm, &l.block.symbolTable)
 
-		switch e.getExpressionTypes()[0] {
+		switch e.getExpressionTypes()[0].t {
 		case TYPE_INT, TYPE_BOOL:
 			register = getReturnRegister(TYPE_INT)
 		case TYPE_FLOAT:
@@ -735,7 +751,7 @@ func addFunctionEpilogue(asm *ASM) {
 
 func filterVarType(t Type, vars []Variable) (out []Variable) {
 	for _, v := range vars {
-		if v.vType == t {
+		if v.vType.t == t {
 			out = append(out, v)
 		}
 	}
@@ -862,7 +878,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 		if entry.offset < 0 {
 			sign = ""
 		}
-		switch v.vType {
+		switch v.vType.t {
 		case TYPE_INT:
 			if intRegIndex < len(intRegisters) {
 				asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, intRegisters[intRegIndex]))
@@ -912,7 +928,7 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 
 			// Make sure everything is actually on the stack!
 			if e.getResultCount() == 1 {
-				switch e.getExpressionTypes()[0] {
+				switch e.getExpressionTypes()[0].t {
 				case TYPE_INT:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:

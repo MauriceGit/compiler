@@ -54,6 +54,10 @@ func (t TokenType) String() string {
 		return "TOKEN_CURLY_OPEN"
 	case TOKEN_CURLY_CLOSE:
 		return "TOKEN_CURLY_CLOSE"
+	case TOKEN_SQUARE_OPEN:
+		return "TOKEN_SQUARE_OPEN"
+	case TOKEN_SQUARE_CLOSE:
+		return "TOKEN_SQARE_CLOSE"
 	case TOKEN_SEMICOLON:
 		return "TOKEN_SEMICOLON"
 	case TOKEN_EOF:

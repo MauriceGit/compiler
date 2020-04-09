@@ -108,11 +108,16 @@ func main() {
 
 //printInt(sum(10))
 
+fun abc(  list []int  ) int {
+	return list[2]
+}
+
 //list  = [](int, 5)
 list2 = [1, 2, 3, 4, 5]
+//list[2] = list2[3]
+//printInt(list[2])
 
-
-printInt(list2[3])
+printInt(abc(list2))
 
 
 

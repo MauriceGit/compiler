@@ -31,15 +31,15 @@ func (s *SymbolTable) getLocalVars() (keys []string) {
 	return
 }
 
-func (s *SymbolTable) setVar(v string, t, arrayType Type, isIndexed bool) {
-	s.varTable[v] = SymbolVarEntry{t, "", 0, isIndexed, arrayType}
+func (s *SymbolTable) setVar(v string, t ComplexType, isIndexed bool) {
+	s.varTable[v] = SymbolVarEntry{t, "", 0, isIndexed}
 }
 
 //func (s *SymbolTable) setIndexedVar(v string, t Type) {
 //	s.varTable[v] = SymbolVarEntry{TYPE_ARRAY, "", 0, true, t}
 //}
 
-func (s *SymbolTable) setFun(name string, argTypes, returnTypes []Type) {
+func (s *SymbolTable) setFun(name string, argTypes, returnTypes []ComplexType) {
 	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, "", "", 0}
 }
 
@@ -168,24 +168,22 @@ func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, erro
 
 	switch unaryOp.operator {
 	case OP_NEGATIVE:
-		if t != TYPE_FLOAT && t != TYPE_INT {
+		if t.t != TYPE_FLOAT && t.t != TYPE_INT {
 			return nil, fmt.Errorf("%w[%v:%v] - Unary '-' expression must be float or int, but is: %v", ErrCritical, unaryOp.line, unaryOp.column, unaryOp)
 		}
 		unaryOp.opType = t
 		return unaryOp, nil
 	case OP_NOT:
-		if t != TYPE_BOOL {
+		if t.t != TYPE_BOOL {
 			return nil, fmt.Errorf("%w[%v:%v] - Unary '!' expression must be bool, but is: %v", ErrCritical, unaryOp.line, unaryOp.column, unaryOp)
 		}
-		unaryOp.opType = TYPE_BOOL
+		unaryOp.opType = ComplexType{TYPE_BOOL, nil}
 		return unaryOp, nil
 	}
 	return nil, fmt.Errorf("%w[%v:%v] - Unknown unary expression: %v", ErrCritical, unaryOp.line, unaryOp.column, unaryOp)
 }
 
 func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, error) {
-
-	fmt.Println(binaryOp.leftExpr.getExpressionTypes(), binaryOp.rightExpr.getExpressionTypes())
 
 	// Re-order expression, if the expression is not fixed and the priority is of the operator is not according to the priority
 	// The priority of an operator must be equal or higher in (right) sub-trees (as they are evaluated first).
@@ -232,9 +230,9 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	// that are not considered yet!
 	switch binaryOp.operator {
 	case OP_AND, OP_OR:
-		binaryOp.opType = TYPE_BOOL
+		binaryOp.opType = ComplexType{TYPE_BOOL, nil}
 		// We know left and right are the same type, so only compare left here.
-		if tLeft != TYPE_BOOL {
+		if tLeft.t != TYPE_BOOL {
 			return binaryOp, fmt.Errorf(
 				"%w[%v:%v] - BinaryOp '%v' needs bool, got: '%v'",
 				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
@@ -242,8 +240,8 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		}
 		//return binaryOp, TYPE_BOOL, nil
 	case OP_MOD:
-		binaryOp.opType = TYPE_INT
-		if tLeft != TYPE_INT {
+		binaryOp.opType = ComplexType{TYPE_INT, nil}
+		if tLeft.t != TYPE_INT {
 			return binaryOp, fmt.Errorf(
 				"%w[%v:%v] - BinaryOp '%v' only works for int",
 				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator,
@@ -251,12 +249,12 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		}
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
 
-		if tLeft == TYPE_FLOAT {
-			binaryOp.opType = TYPE_FLOAT
+		if tLeft.t == TYPE_FLOAT {
+			binaryOp.opType = ComplexType{TYPE_FLOAT, nil}
 		} else {
-			binaryOp.opType = TYPE_INT
+			binaryOp.opType = ComplexType{TYPE_INT, nil}
 		}
-		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT {
+		if tLeft.t != TYPE_FLOAT && tLeft.t != TYPE_INT {
 			return binaryOp, fmt.Errorf(
 				"%w[%v:%v] - BinaryOp '%v' needs int/float, got: '%v'",
 				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
@@ -264,8 +262,8 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		}
 		//return binaryOp, tLeft, nil
 	case OP_LE, OP_GE, OP_LESS, OP_GREATER:
-		binaryOp.opType = TYPE_BOOL
-		if tLeft != TYPE_FLOAT && tLeft != TYPE_INT && tLeft != TYPE_STRING {
+		binaryOp.opType.t = TYPE_BOOL
+		if tLeft.t != TYPE_FLOAT && tLeft.t != TYPE_INT && tLeft.t != TYPE_STRING {
 			return binaryOp, fmt.Errorf(
 				"%w[%v:%v] - BinaryOp '%v' needs int/float/string, got: '%v'",
 				ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft,
@@ -273,7 +271,7 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		}
 		//return binaryOp, TYPE_BOOL, nil
 	case OP_EQ, OP_NE:
-		binaryOp.opType = TYPE_BOOL
+		binaryOp.opType = ComplexType{TYPE_BOOL, nil}
 		// We can actually compare all data types. So there will be no missmatch in general!
 	default:
 		return binaryOp, fmt.Errorf(
@@ -294,7 +292,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	fun.retTypes = funEntry.returnTypes
 
 	// Basically unpacking expression list before providing it to the function
-	expressionTypes := []Type{}
+	expressionTypes := []ComplexType{}
 	for i, e := range fun.args {
 		newE, parseErr := analyzeExpression(e, symbolTable)
 		if parseErr != nil {
@@ -312,7 +310,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	}
 
 	for i, t := range expressionTypes {
-		if t != funEntry.paramTypes[i] {
+		if !equalType(t, funEntry.paramTypes[i]) {
 			return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' got type %v as %v. parameter, but needs %v",
 				ErrCritical, fun.line, fun.column, fun.funName, t, i+1, funEntry.paramTypes[i],
 			)
@@ -324,7 +322,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 
 func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 
-	var arrayType Type = TYPE_UNKNOWN
+	var arrayType ComplexType = ComplexType{TYPE_UNKNOWN, nil}
 	arraySize := 0
 	for i, e := range a.aExpressions {
 		newE, err := analyzeExpression(e, symbolTable)
@@ -347,7 +345,11 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 	if a.aCount == 0 && arraySize > 0 {
 		a.aCount = arraySize
 	}
-	a.aType = arrayType
+
+	// For an empty array declaration, the type is set explicitely!
+	if a.aType.t == TYPE_UNKNOWN {
+		a.aType = arrayType
+	}
 
 	return a, nil
 }
@@ -358,7 +360,7 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 		e.vType = vTable.sType
 
 		// Type is not array, if it is indexed, but the type of the element itself.
-		if e.vType == TYPE_ARRAY && e.vIsIndexedArray {
+		if e.vType.t == TYPE_ARRAY && e.vIsIndexedArray {
 
 			indexExpression, tmpE := analyzeExpression(e.vIndexExpression, symbolTable)
 			if tmpE != nil {
@@ -368,13 +370,16 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 			if len(indexExpression.getExpressionTypes()) != 1 {
 				return e, fmt.Errorf("%w[%v:%v] - Index expression can only have one value", ErrCritical, e.line, e.column)
 			}
-			if indexExpression.getExpressionTypes()[0] != TYPE_INT {
+			if indexExpression.getExpressionTypes()[0].t != TYPE_INT {
 				return e, fmt.Errorf("%w[%v:%v] - Index expression must be int", ErrCritical, e.line, e.column)
 			}
 
 			e.vIndexExpression = indexExpression
-			e.vArrayType = vTable.arrayType
-			e.vType = vTable.arrayType
+
+			// We already set the vType, which includes references to array types.
+			//			e.vArrayType = vTable.arrayType
+			//			e.vType = vTable.arrayType
+
 		}
 
 	} else {
@@ -409,10 +414,9 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 // All new variables (and shadow ones) are updated/written to the symbol varTable
 func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignment, error) {
 
-	expressionTypes := make([]Type, 0)
+	expressionTypes := make([]ComplexType, 0)
 	// We need this temporary array to hold information about sub-types for arrays, so we can
 	// pass this information on for later usage in indexed variables!
-	arrayExpressionTypes := make([]Type, 0)
 	for i, e := range assignment.expressions {
 		expression, err := analyzeExpression(e, symbolTable)
 		if err != nil {
@@ -422,15 +426,6 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 		tmpTypes := expression.getExpressionTypes()
 		expressionTypes = append(expressionTypes, tmpTypes...)
 		assignment.expressions[i] = expression
-
-		if len(tmpTypes) == 1 && tmpTypes[0] == TYPE_ARRAY {
-			// Should not fail!
-			tmpA, _ := expression.(Array)
-			arrayExpressionTypes = append(arrayExpressionTypes, tmpA.aType)
-		} else {
-			// Doesn't matter what we write here. We only need the same index as expressionTypes
-			arrayExpressionTypes = append(arrayExpressionTypes, tmpTypes...)
-		}
 
 	}
 
@@ -463,7 +458,13 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 		// Only, if the variable already exists and we're not trying to shadow it!
 		if vTable, ok := symbolTable.getVar(v.vName); ok {
 			if !v.vShadow {
-				if vTable.sType != expressionType {
+
+				var variableType ComplexType = vTable.sType
+				if v.vIsIndexedArray {
+					variableType = *vTable.sType.subType
+				}
+
+				if !equalType(variableType, expressionType) {
 					return assignment, fmt.Errorf(
 						"%w[%v:%v] - Assignment type missmatch between variable %v and expression %v",
 						ErrCritical, v.line, v.column, v, expressionType,
@@ -476,15 +477,13 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 					)
 				}
 
-				symbolTable.setVar(v.vName, expressionType, arrayExpressionTypes[i], false)
+				symbolTable.setVar(v.vName, expressionType, false)
 			}
 		} else {
-			symbolTable.setVar(v.vName, expressionType, arrayExpressionTypes[i], v.vIsIndexedArray)
+			symbolTable.setVar(v.vName, expressionType, v.vIsIndexedArray)
 		}
 
-		assignment.variables[i].vArrayType = arrayExpressionTypes[i]
 		assignment.variables[i].vType = expressionType
-
 	}
 	return assignment, nil
 }
@@ -504,7 +503,7 @@ func analyzeCondition(condition Condition, symbolTable *SymbolTable) (Condition,
 		)
 	}
 	t := e.getExpressionTypes()[0]
-	if t != TYPE_BOOL {
+	if t.t != TYPE_BOOL {
 		row, col := e.startPos()
 		return condition, fmt.Errorf(
 			"%w[%v:%v] - If expression expected boolean, got: %v --> <<%v>>",
@@ -551,7 +550,7 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 		}
 
 		for _, t := range expression.getExpressionTypes() {
-			if t != TYPE_BOOL {
+			if t.t != TYPE_BOOL {
 				row, col := expression.startPos()
 				return loop, fmt.Errorf(
 					"%w[%v:%v] - Loop expression expected boolean, got: %v (%v)",
@@ -590,22 +589,23 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	}
 
 	for _, v := range fun.parameters {
-		if v.vType == TYPE_UNKNOWN {
+		if v.vType.t == TYPE_UNKNOWN {
 			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v has invalid type", ErrCritical, v.line, v.column, v)
 		}
 		if _, ok := functionSymbolTable.getVar(v.vName); ok {
 			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v already exists", ErrCritical, v.line, v.column, v)
 		}
-		functionSymbolTable.setVar(v.vName, v.vType, v.vType, false)
+		functionSymbolTable.setVar(v.vName, v.vType, false)
 	}
 
 	if symbolTable.isLocalFun(fun.fName) {
 		return fun, fmt.Errorf("%w[%v:%v] - Function with the same name already exists in this scope", ErrCritical, fun.line, fun.column)
 	}
-	var paramTypes []Type
+	var paramTypes []ComplexType
 	for _, v := range fun.parameters {
 		paramTypes = append(paramTypes, v.vType)
 	}
+
 	symbolTable.setFun(fun.fName, paramTypes, fun.returnTypes)
 
 	newBlock, err := analyzeBlock(fun.block, symbolTable, &functionSymbolTable)
@@ -712,8 +712,8 @@ func semanticAnalysis(ast AST) (AST, error) {
 		nil,
 	}
 
-	ast.globalSymbolTable.setFun("printInt", []Type{TYPE_INT}, []Type{TYPE_INT})
-	ast.globalSymbolTable.setFun("printFloat", []Type{TYPE_FLOAT}, []Type{TYPE_INT})
+	ast.globalSymbolTable.setFun("printInt", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
+	ast.globalSymbolTable.setFun("printFloat", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 
 	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
 	if err != nil {
