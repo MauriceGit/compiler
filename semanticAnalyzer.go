@@ -283,6 +283,29 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	return binaryOp, nil
 }
 
+func analyzeIndexedAccess(indexExpression Expression, symbolTable *SymbolTable) (Expression, error) {
+
+	newIndexExpression, tmpE := analyzeExpression(indexExpression, symbolTable)
+	if tmpE != nil {
+		return indexExpression, tmpE
+	}
+
+	if len(newIndexExpression.getExpressionTypes()) != 1 {
+		row, col := indexExpression.startPos()
+		return indexExpression, fmt.Errorf("%w[%v:%v] - Index expression can only have one value",
+			ErrCritical, row, col,
+		)
+	}
+	if newIndexExpression.getExpressionTypes()[0].t != TYPE_INT {
+		row, col := indexExpression.startPos()
+		return indexExpression, fmt.Errorf("%w[%v:%v] - Index expression must be int",
+			ErrCritical, row, col,
+		)
+	}
+
+	return newIndexExpression, nil
+}
+
 func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 
 	funEntry, ok := symbolTable.getFun(fun.funName)
@@ -314,6 +337,24 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 				ErrCritical, fun.line, fun.column, fun.funName, t, i+1, funEntry.paramTypes[i],
 			)
 		}
+	}
+
+	if fun.isIndexedArray {
+		if fun.getResultCount() != 1 {
+			return fun, fmt.Errorf("%w[%v:%v] - Indexing is only allowed for single return functions",
+				ErrCritical, fun.line, fun.column,
+			)
+		}
+		if fun.retTypes[0].t != TYPE_ARRAY {
+			return fun, fmt.Errorf("%w[%v:%v] - Function return is not an array (can not be indexed)",
+				ErrCritical, fun.line, fun.column,
+			)
+		}
+		newIndexExpression, err := analyzeIndexedAccess(fun.indexExpression, symbolTable)
+		if err != nil {
+			return fun, err
+		}
+		fun.indexExpression = newIndexExpression
 	}
 
 	return fun, nil
@@ -350,6 +391,14 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 		a.aType = arrayType
 	}
 
+	if a.isIndexedArray {
+		newIndexExpression, err := analyzeIndexedAccess(a.indexExpression, symbolTable)
+		if err != nil {
+			return a, err
+		}
+		a.indexExpression = newIndexExpression
+	}
+
 	return a, nil
 }
 
@@ -358,27 +407,21 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 	if vTable, ok := symbolTable.getVar(e.vName); ok {
 		e.vType = vTable.sType
 
-		// Final type is not array, if indexed, but the type of the element itself.
-		if e.vType.t == TYPE_ARRAY && e.isIndexedArray {
-
-			indexExpression, tmpE := analyzeExpression(e.indexExpression, symbolTable)
-			if tmpE != nil {
-				return e, tmpE
+		if e.isIndexedArray {
+			if e.vType.t != TYPE_ARRAY {
+				return e, fmt.Errorf("%w[%v:%v] - Only an array can be indexed", ErrCritical, e.line, e.column)
 			}
-
-			if len(indexExpression.getExpressionTypes()) != 1 {
-				return e, fmt.Errorf("%w[%v:%v] - Index expression can only have one value", ErrCritical, e.line, e.column)
+			newIndexExpression, err := analyzeIndexedAccess(e.indexExpression, symbolTable)
+			if err != nil {
+				return e, err
 			}
-			if indexExpression.getExpressionTypes()[0].t != TYPE_INT {
-				return e, fmt.Errorf("%w[%v:%v] - Index expression must be int", ErrCritical, e.line, e.column)
-			}
-
-			e.indexExpression = indexExpression
+			e.indexExpression = newIndexExpression
 		}
 
 	} else {
 		return e, fmt.Errorf("%w[%v:%v] - Variable '%v' referenced before declaration", ErrCritical, e.line, e.column, e.vName)
 	}
+
 	// Always access the very last entry for variables!
 	return e, nil
 }
