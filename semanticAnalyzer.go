@@ -299,7 +299,6 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 			return fun, parseErr
 		}
 		fun.args[i] = newE
-
 		expressionTypes = append(expressionTypes, newE.getExpressionTypes()...)
 	}
 

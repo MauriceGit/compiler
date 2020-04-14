@@ -248,7 +248,7 @@ func (e Constant) getExpressionTypes() []ComplexType {
 }
 func (e Array) getExpressionTypes() []ComplexType {
 	if e.isIndexedArray {
-		return []ComplexType{*e.aType.subType}
+		return []ComplexType{e.aType}
 	}
 	return []ComplexType{ComplexType{TYPE_ARRAY, &e.aType}}
 }

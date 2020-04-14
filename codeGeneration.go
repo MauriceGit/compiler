@@ -211,6 +211,18 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 
 }
 
+// We don't know where we were before and what expression needs to be indexed.
+// All we care about, is that the array pointer is in rax and the resulting value will also be in rax!
+func generateArrayAccessCode(indexExpression Expression, asm *ASM, s *SymbolTable) {
+
+	index, address := getRegister(TYPE_INT)
+	// address = rax
+	asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
+	indexExpression.generateCode(asm, s)
+	asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
+	asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8]", getReturnRegister(TYPE_INT), address, index))
+}
+
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 	if symbol, ok := s.getVar(v.vName); ok {
@@ -220,33 +232,19 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 			sign = ""
 		}
 
+		switch v.vType.t {
+		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", getReturnRegister(TYPE_INT), sign, symbol.offset))
+		case TYPE_FLOAT:
+			register, _ := getRegister(TYPE_INT)
+			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", register, sign, symbol.offset))
+			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), register))
+		}
+
 		if v.isIndexedArray {
-
-			index, address := getRegister(TYPE_INT)
-
-			v.indexExpression.generateCode(asm, s)
-			asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
-
-			sign := "+"
-			if symbol.offset < 0 {
-				sign = ""
-			}
-			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", address, sign, symbol.offset))
-
-			asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8]", getReturnRegister(TYPE_INT), address, index))
-
+			generateArrayAccessCode(v.indexExpression, asm, s)
 			if v.vType.subType.t == TYPE_FLOAT {
 				asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
-			}
-
-		} else {
-			switch v.vType.t {
-			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
-				asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", getReturnRegister(TYPE_INT), sign, symbol.offset))
-			case TYPE_FLOAT:
-				register, _ := getRegister(TYPE_INT)
-				asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", register, sign, symbol.offset))
-				asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), register))
 			}
 		}
 
@@ -453,6 +451,14 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	asm.addLine("mov", ret+", rsi")
+
+	if a.isIndexedArray {
+		generateArrayAccessCode(a.indexExpression, asm, s)
+		if a.getExpressionTypes()[0].t == TYPE_FLOAT {
+			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
+		}
+	}
+
 }
 
 func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
@@ -555,6 +561,14 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 	} else {
 		panic("Code generation error: Unknown function called")
 	}
+
+	if f.isIndexedArray {
+		generateArrayAccessCode(f.indexExpression, asm, s)
+		if f.retTypes[0].subType.t == TYPE_FLOAT {
+			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
+		}
+	}
+
 }
 
 func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {

@@ -118,6 +118,10 @@ fun sumArray(list []int) int {
 	return s
 }
 
+fun abcd(list []int) []int {
+	return list
+}
+
 list = [1, 2, 3, 4, 5]
 l1 = [](int, 5)
 
@@ -129,6 +133,8 @@ printInt(test[3])
 printInt(sum(10))
 printInt(abc(list))
 printInt(sumArray(list))
+
+printInt(abcd(list)[2])
 
 `)
 
