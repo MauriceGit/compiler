@@ -929,12 +929,14 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 		panic("Code generation error. Function not in symbol table.")
 	}
 
-	// Special case here: If there is just one return, there is no need to push/pop and handle
-	// everything. It is already in rax/xmm0, so we are good!
-	if len(entry.returnTypes) <= 1 {
+	switch len(entry.returnTypes) {
+	case 0:
+		// Explicitely do nothing :)
+	case 1:
+		// Special case here: If there is just one return, there is no need to push/pop and handle
+		// everything. It is already in rax/xmm0, so we are good!
 		r.expressions[0].generateCode(asm, s)
-	} else {
-
+	default:
 		for i := len(r.expressions) - 1; i >= 0; i-- {
 			e := r.expressions[i]
 
@@ -965,7 +967,6 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 			asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", stackPointerReg, offset, tmpR))
 			offset += 8
 		}
-
 	}
 
 	asm.addLine("jmp", entry.epilogueLabel)

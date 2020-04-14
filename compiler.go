@@ -136,6 +136,12 @@ printInt(sumArray(list))
 
 printInt(abcd(list)[2])
 
+fun test() {
+	return
+}
+
+printInt(555)
+
 `)
 
 	tokenChan := make(chan Token, 1)

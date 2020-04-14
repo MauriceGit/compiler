@@ -34,6 +34,12 @@ func tokenParenOpen() Token {
 func tokenParenClose() Token {
 	return Token{TOKEN_PARENTHESIS_CLOSE, ")", 0, 0}
 }
+func tokenSquareOpen() Token {
+	return Token{TOKEN_SQUARE_OPEN, "[", 0, 0}
+}
+func tokenSquareClose() Token {
+	return Token{TOKEN_SQUARE_CLOSE, "]", 0, 0}
+}
 func tokenSeparator() Token {
 	return Token{TOKEN_SEPARATOR, ",", 0, 0}
 }
@@ -257,6 +263,43 @@ func TestLexerFunction3(t *testing.T) {
 		tokenSeparator(), tokenKeyword("float"), tokenSeparator(), tokenKeyword("bool"), tokenCurlyOpen(), tokenIdentifier("a"),
 		tokenAssignment(), tokenConstant("1"), tokenKeyword("return"), tokenIdentifier("a"), tokenSeparator(), tokenConstant("3.5"),
 		tokenSeparator(), tokenConstant("true"), tokenCurlyClose(), tokenEOF(),
+	}
+
+	testTokens(code, expect, t)
+}
+
+func TestLexerArray1(t *testing.T) {
+
+	var code []byte = []byte(`
+	a = [1, 2, 3]
+	b = [](int, 3)
+	`)
+
+	expect := []Token{tokenIdentifier("a"), tokenAssignment(), tokenSquareOpen(), tokenConstant("1"), tokenSeparator(),
+		tokenConstant("2"), tokenSeparator(), tokenConstant("3"), tokenSquareClose(),
+		tokenIdentifier("b"), tokenAssignment(), tokenSquareOpen(), tokenSquareClose(), tokenParenOpen(), tokenKeyword("int"),
+		tokenSeparator(), tokenConstant("3"), tokenParenClose(),
+		tokenEOF(),
+	}
+
+	testTokens(code, expect, t)
+}
+
+func TestLexerArray2(t *testing.T) {
+
+	var code []byte = []byte(`
+	a = [1, 2, 3]
+	b = [](int, 3)
+	b[1] = a[2]
+	`)
+
+	expect := []Token{tokenIdentifier("a"), tokenAssignment(), tokenSquareOpen(), tokenConstant("1"), tokenSeparator(),
+		tokenConstant("2"), tokenSeparator(), tokenConstant("3"), tokenSquareClose(),
+		tokenIdentifier("b"), tokenAssignment(), tokenSquareOpen(), tokenSquareClose(), tokenParenOpen(), tokenKeyword("int"),
+		tokenSeparator(), tokenConstant("3"), tokenParenClose(),
+		tokenIdentifier("b"), tokenSquareOpen(), tokenConstant("1"), tokenSquareClose(), tokenAssignment(), tokenIdentifier("a"),
+		tokenSquareOpen(), tokenConstant("2"), tokenSquareClose(),
+		tokenEOF(),
 	}
 
 	testTokens(code, expect, t)

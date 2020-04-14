@@ -8,8 +8,24 @@ import (
 func (e Constant) eq(e2 Constant) bool {
 	return e.cType == e2.cType && e.cValue == e2.cValue
 }
-func (e Variable) eq(e2 Variable) bool {
-	return e.vName == e2.vName && e.vShadow == e2.vShadow && e.vType == e2.vType
+
+func compareIndexExpression(e1, e2 Expression) (bool, string) {
+	if e1.isIndexedExpression() != e2.isIndexedExpression() {
+		return false, "Only one expression is accessed with index"
+	}
+	if e1.isIndexedExpression() {
+		if ok, err := compareExpression(e1.getIndexExpression(), e2.getIndexExpression()); !ok {
+			return false, err
+		}
+	}
+	return true, ""
+}
+
+func compareVariable(v1, v2 Variable) (bool, string) {
+	ok1 := v1.vName == v2.vName && v1.vShadow == v2.vShadow && v1.vType == v2.vType
+	err1 := fmt.Sprintf("Variables are different: %v != %v", v1, v2)
+	ok2, err2 := compareIndexExpression(v1, v2)
+	return ok1 && ok2, err1 + err2
 }
 
 func compareFunCall(v1, v2 FunCall) (bool, string) {
@@ -19,6 +35,20 @@ func compareFunCall(v1, v2 FunCall) (bool, string) {
 	}
 	ok1, err1 := compareExpressions(v1.args, v2.args)
 	ok2, err2 := compareTypes(v1.retTypes, v2.retTypes)
+	ok3, err3 := compareIndexExpression(v1, v2)
+	return ok1 && ok2 && ok3, err1 + err2 + err3
+}
+
+func compareArray(v1, v2 Array) (bool, string) {
+	if !equalType(v1.aType, v2.aType) {
+		return false, fmt.Sprintf("Arrays have different types: %v != %v", v1.aType, v2.aType)
+	}
+	if v1.aCount != v2.aCount {
+		return false, fmt.Sprintf("Arrays have different lengths: %v != %v", v1.aCount, v2.aCount)
+	}
+
+	ok1, err1 := compareExpressions(v1.aExpressions, v2.aExpressions)
+	ok2, err2 := compareIndexExpression(v1, v2)
 	return ok1 && ok2, err1 + err2
 }
 
@@ -31,8 +61,8 @@ func compareExpression(e1, e2 Expression) (bool, string) {
 		}
 		return false, fmt.Sprintf("%v != %v (Constant)", e1, e2)
 	case Variable:
-		if v2, ok := e2.(Variable); ok && v1.eq(v2) {
-			return true, ""
+		if v2, ok := e2.(Variable); ok {
+			return compareVariable(v1, v2)
 		}
 		return false, fmt.Sprintf("%v != %v (Variable)", e1, e2)
 	case BinaryOp:
@@ -52,6 +82,10 @@ func compareExpression(e1, e2 Expression) (bool, string) {
 	case FunCall:
 		if v2, ok := e2.(FunCall); ok {
 			return compareFunCall(v1, v2)
+		}
+	case Array:
+		if v2, ok := e2.(Array); ok {
+			return compareArray(v1, v2)
 		}
 	}
 
@@ -76,8 +110,8 @@ func compareVariables(vv1, vv2 []Variable) (bool, string) {
 		return false, fmt.Sprintf("Different lengths: %v, %v", vv1, vv2)
 	}
 	for i, v1 := range vv1 {
-		if !v1.eq(vv2[i]) {
-			return false, fmt.Sprintf("Variables are different: %v != %v", v1, vv2[i])
+		if ok, err := compareVariable(v1, vv2[i]); !ok {
+			return false, err
 		}
 	}
 	return true, ""
@@ -162,6 +196,7 @@ func compareASTs(generated AST, expected AST) (bool, string) {
 }
 
 func testAST(code []byte, expected AST, t *testing.T) {
+
 	tokenChan := make(chan Token, 1)
 	lexerErr := make(chan error, 1)
 	go tokenize(code, tokenChan, lexerErr)
@@ -170,7 +205,7 @@ func testAST(code []byte, expected AST, t *testing.T) {
 
 	select {
 	case e := <-lexerErr:
-		t.Errorf("%v", e.Error())
+		t.Errorf("Lexer error: %v", e.Error())
 		return
 	default:
 	}
@@ -201,6 +236,9 @@ func newUnary(op Operator, e Expression) UnaryOp {
 func newBinary(op Operator, eLeft, eRight Expression, fixed bool) BinaryOp {
 	return BinaryOp{op, eLeft, eRight, ComplexType{TYPE_UNKNOWN, nil}, fixed, 0, 0}
 }
+func newArray(t ComplexType, count int, exprs []Expression) Array {
+	return Array{t, count, exprs, false, nil, 0, 0}
+}
 func newAssignment(variables []Variable, expressions []Expression) Assignment {
 	return Assignment{variables, expressions, 0, 0}
 }
@@ -217,7 +255,7 @@ func newReturn(expressions []Expression) Return {
 	return Return{expressions, 0, 0}
 }
 func newFunCall(name string, exprs []Expression) FunCall {
-	return FunCall{name, exprs, []ComplexType{}, 0, 0}
+	return FunCall{name, exprs, []ComplexType{}, false, nil, 0, 0}
 }
 func newBlock(statements []Statement) Block {
 	return Block{statements, SymbolTable{}, 0, 0}
@@ -230,6 +268,26 @@ func newSimpleTypeList(ts []Type) (tcs []ComplexType) {
 		tcs = append(tcs, ComplexType{t, nil})
 	}
 	return
+}
+
+func addIndexAccess(e, indexExpression Expression) Expression {
+	switch ne := e.(type) {
+	case Variable:
+		ne.isIndexedArray = true
+		ne.indexExpression = indexExpression
+		return ne
+	case Array:
+		ne.isIndexedArray = true
+		ne.indexExpression = indexExpression
+		return ne
+	case FunCall:
+		ne.isIndexedArray = true
+		ne.indexExpression = indexExpression
+		return ne
+	default:
+		fmt.Println("This expression can not have indexed access")
+	}
+	return e
 }
 
 func TestParserExpression1(t *testing.T) {
@@ -620,6 +678,64 @@ func TestParserFunCall(t *testing.T) {
 			)),
 			newAssignment([]Variable{newVar("a", false)}, []Expression{newFunCall("abc", nil)}),
 			newFunCall("abc", nil),
+		},
+	)
+
+	testAST(code, expected, t)
+}
+
+func TestParserArray1(t *testing.T) {
+
+	var code []byte = []byte(`
+	a = [1, 2, 3]
+	b = [](int, 3)
+	`)
+
+	expected := newAST(
+		[]Statement{
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newArray(ComplexType{TYPE_UNKNOWN, nil}, 0, []Expression{
+					newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3"),
+				})},
+			),
+			newAssignment(
+				[]Variable{newVar("b", false)},
+				[]Expression{newArray(ComplexType{TYPE_INT, nil}, 3, []Expression{})},
+			),
+		},
+	)
+
+	testAST(code, expected, t)
+}
+
+func TestParserArray2(t *testing.T) {
+
+	var code []byte = []byte(`
+	a = [1, 2, 3]
+	b = [](int, 3)
+	b[1] = a[2]
+	`)
+
+	b := addIndexAccess(newVar("b", false), newConst(TYPE_INT, "1")).(Variable)
+	a := addIndexAccess(newVar("a", false), newConst(TYPE_INT, "2"))
+
+	expected := newAST(
+		[]Statement{
+			newAssignment(
+				[]Variable{newVar("a", false)},
+				[]Expression{newArray(ComplexType{TYPE_UNKNOWN, nil}, 0, []Expression{
+					newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3"),
+				})},
+			),
+			newAssignment(
+				[]Variable{newVar("b", false)},
+				[]Expression{newArray(ComplexType{TYPE_INT, nil}, 3, []Expression{})},
+			),
+			newAssignment(
+				[]Variable{b},
+				[]Expression{a},
+			),
 		},
 	)
 

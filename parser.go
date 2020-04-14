@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 )
@@ -1343,7 +1342,6 @@ func parseType(tokens *TokenChannel) (t ComplexType, err error) {
 	if !ok {
 
 		if row, col, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); !ok {
-			os.Exit(0)
 			err = fmt.Errorf("%w[%v:%v] - Expected a type or '['", ErrCritical, row, col)
 			return
 		}
@@ -1385,12 +1383,6 @@ func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
 	i := 0
 	lastRow, lastCol, ok := 0, 0, false
 	for {
-		//		v, parseErr := parseVariable(tokens)
-		//		if errors.Is(parseErr, ErrCritical) {
-		//			err = parseErr
-		//			return
-		//		}
-
 		vName, row, col, vOK := tokens.expectType(TOKEN_IDENTIFIER)
 		if !vOK {
 
@@ -1432,6 +1424,7 @@ func parseTypeList(tokens *TokenChannel) (types []ComplexType, err error) {
 	i := 0
 	for {
 		t, parseErr := parseType(tokens)
+
 		if parseErr != nil {
 
 			// If we don't find any type, thats fine. Just don't end in ',', thats an error!
