@@ -333,7 +333,7 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 		if i == 0 {
 			arrayType = newE.getExpressionTypes()[0]
 		}
-		if newE.getExpressionTypes()[0] != arrayType {
+		if !equalType(newE.getExpressionTypes()[0], arrayType) {
 			return a, fmt.Errorf("%w[%v:%v] - Not all expressions in array declaration have the same type",
 				ErrCritical, a.line, a.column,
 			)
@@ -359,10 +359,10 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 	if vTable, ok := symbolTable.getVar(e.vName); ok {
 		e.vType = vTable.sType
 
-		// Type is not array, if it is indexed, but the type of the element itself.
-		if e.vType.t == TYPE_ARRAY && e.vIsIndexedArray {
+		// Final type is not array, if indexed, but the type of the element itself.
+		if e.vType.t == TYPE_ARRAY && e.isIndexedArray {
 
-			indexExpression, tmpE := analyzeExpression(e.vIndexExpression, symbolTable)
+			indexExpression, tmpE := analyzeExpression(e.indexExpression, symbolTable)
 			if tmpE != nil {
 				return e, tmpE
 			}
@@ -374,12 +374,7 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 				return e, fmt.Errorf("%w[%v:%v] - Index expression must be int", ErrCritical, e.line, e.column)
 			}
 
-			e.vIndexExpression = indexExpression
-
-			// We already set the vType, which includes references to array types.
-			//			e.vArrayType = vTable.arrayType
-			//			e.vType = vTable.arrayType
-
+			e.indexExpression = indexExpression
 		}
 
 	} else {
@@ -395,7 +390,11 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 	case Constant:
 		return e, nil
 	case Variable:
-		return analyzeVariable(e, symbolTable)
+		v, err := analyzeVariable(e, symbolTable)
+		if err == nil && v.vShadow {
+			err = fmt.Errorf("%w[%v:%v] - Variable used as expression can not use 'shadow' keyword", ErrCritical, v.line, v.column)
+		}
+		return v, err
 	case UnaryOp:
 		return analyzeUnaryOp(e, symbolTable)
 	case BinaryOp:
@@ -460,7 +459,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 			if !v.vShadow {
 
 				var variableType ComplexType = vTable.sType
-				if v.vIsIndexedArray {
+				if v.isIndexedArray {
 					variableType = *vTable.sType.subType
 				}
 
@@ -471,7 +470,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 					)
 				}
 			} else {
-				if v.vIsIndexedArray {
+				if v.isIndexedArray {
 					return assignment, fmt.Errorf("%w[%v:%v] - An indexed array write can not shadow its source",
 						ErrCritical, v.line, v.column,
 					)
@@ -480,7 +479,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 				symbolTable.setVar(v.vName, expressionType, false)
 			}
 		} else {
-			symbolTable.setVar(v.vName, expressionType, v.vIsIndexedArray)
+			symbolTable.setVar(v.vName, expressionType, v.isIndexedArray)
 		}
 
 		assignment.variables[i].vType = expressionType

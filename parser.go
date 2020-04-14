@@ -39,7 +39,8 @@ unop		::= '-' | '!'
 
 Operator priority (Descending priority!):
 
-1: 	'*', '/'
+0:	'-', '!'
+1: 	'*', '/', '%'
 2: 	'+', '-'
 3:	'==', '!=', '<=', '>=', '<', '>'
 4:	'&&', '||'
@@ -158,6 +159,8 @@ type Expression interface {
 	expression()
 	getExpressionTypes() []ComplexType
 	getResultCount() int
+	isIndexedExpression() bool
+	getIndexExpression() Expression
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -170,8 +173,8 @@ type Variable struct {
 	vShadow bool
 
 	// Lets try it this way first...
-	vIsIndexedArray  bool
-	vIndexExpression Expression
+	isIndexedArray  bool
+	indexExpression Expression
 	//vArrayType       ComplexType
 
 	line, column int
@@ -182,10 +185,12 @@ type Constant struct {
 	line, column int
 }
 type Array struct {
-	aType        ComplexType
-	aCount       int
-	aExpressions []Expression
-	line, column int
+	aType           ComplexType
+	aCount          int
+	aExpressions    []Expression
+	isIndexedArray  bool
+	indexExpression Expression
+	line, column    int
 }
 type BinaryOp struct {
 	operator  Operator
@@ -204,10 +209,12 @@ type UnaryOp struct {
 	line, column int
 }
 type FunCall struct {
-	funName      string
-	args         []Expression
-	retTypes     []ComplexType
-	line, column int
+	funName         string
+	args            []Expression
+	retTypes        []ComplexType
+	isIndexedArray  bool
+	indexExpression Expression
+	line, column    int
 }
 
 func (_ Variable) expression() {}
@@ -240,10 +247,13 @@ func (e Constant) getExpressionTypes() []ComplexType {
 	return []ComplexType{ComplexType{e.cType, nil}}
 }
 func (e Array) getExpressionTypes() []ComplexType {
+	if e.isIndexedArray {
+		return []ComplexType{*e.aType.subType}
+	}
 	return []ComplexType{ComplexType{TYPE_ARRAY, &e.aType}}
 }
 func (e Variable) getExpressionTypes() []ComplexType {
-	if e.vIsIndexedArray {
+	if e.isIndexedArray {
 		return []ComplexType{*e.vType.subType}
 	}
 	return []ComplexType{e.vType}
@@ -255,6 +265,9 @@ func (e BinaryOp) getExpressionTypes() []ComplexType {
 	return []ComplexType{e.opType}
 }
 func (e FunCall) getExpressionTypes() []ComplexType {
+	if len(e.retTypes) == 1 && e.isIndexedArray {
+		return []ComplexType{*e.retTypes[0].subType}
+	}
 	return e.retTypes
 }
 
@@ -275,6 +288,44 @@ func (e BinaryOp) getResultCount() int {
 }
 func (e FunCall) getResultCount() int {
 	return len(e.retTypes)
+}
+
+func (e Constant) isIndexedExpression() bool {
+	return false
+}
+func (e Array) isIndexedExpression() bool {
+	return e.isIndexedArray
+}
+func (e Variable) isIndexedExpression() bool {
+	return e.isIndexedArray
+}
+func (e UnaryOp) isIndexedExpression() bool {
+	return false
+}
+func (e BinaryOp) isIndexedExpression() bool {
+	return false
+}
+func (e FunCall) isIndexedExpression() bool {
+	return e.isIndexedArray
+}
+
+func (e Constant) getIndexExpression() Expression {
+	return nil
+}
+func (e Array) getIndexExpression() Expression {
+	return e.indexExpression
+}
+func (e Variable) getIndexExpression() Expression {
+	return e.indexExpression
+}
+func (e UnaryOp) getIndexExpression() Expression {
+	return nil
+}
+func (e BinaryOp) getIndexExpression() Expression {
+	return nil
+}
+func (e FunCall) getIndexExpression() Expression {
+	return e.indexExpression
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -411,15 +462,14 @@ func (c ComplexType) String() string {
 }
 
 func (v Variable) String() string {
-	if !v.vIsIndexedArray {
+	if !v.isIndexedArray {
 		shadowString := ""
 		if v.vShadow {
 			shadowString = "shadow "
 		}
 		return fmt.Sprintf("%v%v(%v)", shadowString, v.vType.t, v.vName)
 	}
-
-	return fmt.Sprintf("%v(%v[%v])", v.vType.subType, v.vName, v.vIndexExpression)
+	return fmt.Sprintf("%v(%v[%v])", v.vType.subType, v.vName, v.indexExpression)
 }
 func (c Constant) String() string {
 	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
@@ -658,6 +708,30 @@ func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, boo
 	return t.line, t.column, true
 }
 
+func parseIndexAccess(tokens *TokenChannel) (isIndexedArray bool, indexExpression Expression, err error) {
+
+	// Parse indexed expressions ...[..]
+	if _, _, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); ok {
+
+		e, parseErr := parseExpression(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+
+		if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
+			err = fmt.Errorf("%w[%v:%v] - Expected ']' after array index expression",
+				ErrCritical, row, col,
+			)
+			return
+		}
+
+		isIndexedArray = true
+		indexExpression = e
+	}
+	return
+}
+
 func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 
 	severity := ErrNormal
@@ -672,24 +746,13 @@ func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 		return
 	}
 
-	if _, _, ok = tokens.expect(TOKEN_SQUARE_OPEN, "["); ok {
-
-		indexExpression, parseErr := parseExpression(tokens)
-		if errors.Is(parseErr, ErrCritical) {
-			err = parseErr
-			return
-		}
-
-		if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
-			err = fmt.Errorf("%w[%v:%v] - Expected ']' after array index expression",
-				ErrCritical, row, col,
-			)
-			return
-		}
-
-		variable.vIsIndexedArray = true
-		variable.vIndexExpression = indexExpression
+	isIndexed, indexExpression, parseErr := parseIndexAccess(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = parseErr
+		return
 	}
+	variable.isIndexedArray = isIndexed
+	variable.indexExpression = indexExpression
 
 	variable.vType = ComplexType{TYPE_UNKNOWN, nil}
 	variable.vName = vName
@@ -798,26 +861,6 @@ func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 	return
 }
 
-func parseVariableExpression(tokens *TokenChannel) (variable Variable, err error) {
-
-	v, parseErr := parseVariable(tokens)
-	if parseErr != nil {
-		// This also handles errCritical.
-		err = parseErr
-		return
-	}
-	// Variables used in an expression can NOT have a shadowing keyword. Wouldn't make any sense semantically...
-	if v.vShadow {
-		err = fmt.Errorf("%w[%v:%v] - Variables used in expressions can not use 'shadow' keyword",
-			ErrCritical, v.line, v.column,
-		)
-		return
-	}
-
-	variable = v
-	return
-}
-
 func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 
 	startRow, startCol, ok := tokens.expect(TOKEN_SQUARE_OPEN, "[")
@@ -907,7 +950,7 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 		return
 	}
 
-	tmpV, parseErr := parseVariableExpression(tokens)
+	tmpV, parseErr := parseVariable(tokens)
 	switch {
 	case parseErr == nil:
 		expression = tmpV
@@ -1016,6 +1059,32 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 		row, col = expression.startPos()
 		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, ComplexType{TYPE_UNKNOWN, nil}, false, row, col}
 		expression = finalExpression
+	}
+
+	isIndexed, indexExpression, parseErr := parseIndexAccess(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = parseErr
+		return
+	}
+	if parseErr == nil && isIndexed {
+		switch e := expression.(type) {
+		case Variable:
+			e.isIndexedArray = true
+			e.indexExpression = indexExpression
+			expression = e
+		case Array:
+			e.isIndexedArray = true
+			e.indexExpression = indexExpression
+			expression = e
+		case FunCall:
+			e.isIndexedArray = true
+			e.indexExpression = indexExpression
+			expression = e
+		default:
+			row, col := expression.startPos()
+			err = fmt.Errorf("%w[%v:%v] - Expression can not be indexed", ErrCritical, row, col)
+			return
+		}
 	}
 
 	// We just return the simpleExpression or unaryExpression and are happy

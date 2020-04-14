@@ -220,11 +220,11 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 			sign = ""
 		}
 
-		if v.vIsIndexedArray {
+		if v.isIndexedArray {
 
 			index, address := getRegister(TYPE_INT)
 
-			v.vIndexExpression.generateCode(asm, s)
+			v.indexExpression.generateCode(asm, s)
 			asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
 
 			sign := "+"
@@ -589,13 +589,13 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 			sign = ""
 		}
 
-		if v.vIsIndexedArray {
+		if v.isIndexedArray {
 			// Manually save the register to rsi for now...
 			asm.addLine("mov", "rsi, "+register)
 
 			index, address := getRegister(TYPE_INT)
 
-			v.vIndexExpression.generateCode(asm, s)
+			v.indexExpression.generateCode(asm, s)
 			asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
 
 			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", address, sign, entry.offset))
