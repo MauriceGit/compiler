@@ -40,7 +40,7 @@ func compareFunCall(v1, v2 FunCall) (bool, string) {
 }
 
 func compareArray(v1, v2 Array) (bool, string) {
-	if !equalType(v1.aType, v2.aType) {
+	if !equalType(v1.aType, v2.aType, true) {
 		return false, fmt.Sprintf("Arrays have different types: %v != %v", v1.aType, v2.aType)
 	}
 	if v1.aCount != v2.aCount {
@@ -122,7 +122,7 @@ func compareTypes(tt1, tt2 []ComplexType) (bool, string) {
 		return false, fmt.Sprintf("Different lengths: %v, %v", tt1, tt2)
 	}
 	for i, t := range tt1 {
-		if !equalType(t, tt2[i]) {
+		if !equalType(t, tt2[i], true) {
 			return false, fmt.Sprintf("Type comparison: %v != %v", t, tt2[i])
 		}
 	}

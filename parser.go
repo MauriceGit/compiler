@@ -616,14 +616,16 @@ func (tc *TokenChannel) pushBack(t Token) {
 // PARSER IMPLEMENTATION
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-func equalType(c1, c2 ComplexType) bool {
+// Sometimes, we are OK with non strict equality, i.e. if we only need an array and don't care about
+// the actual type.
+func equalType(c1, c2 ComplexType, strict bool) bool {
 	if c1.t != c2.t {
 		return false
 	}
 	if c1.subType != nil && c2.subType != nil {
-		return equalType(*c1.subType, *c2.subType)
+		return equalType(*c1.subType, *c2.subType, strict)
 	}
-	return c1.subType == nil && c2.subType == nil
+	return !strict || c1.subType == nil && c2.subType == nil
 }
 
 // Operator priority (Descending priority!):
@@ -888,8 +890,8 @@ func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 
 		c, ok := parseConstant(tokens)
 		cValue, tmpE := strconv.ParseInt(c.cValue, 10, 64)
-		if !ok || tmpE != nil || c.cType != TYPE_INT || cValue <= 0 {
-			err = fmt.Errorf("%w[%v:%v] - Invalid size for array literal. Must be a constant int > 0", ErrCritical, c.line, c.column)
+		if !ok || tmpE != nil || c.cType != TYPE_INT || cValue < 0 {
+			err = fmt.Errorf("%w[%v:%v] - Invalid size for array literal. Must be a constant int >= 0", ErrCritical, c.line, c.column)
 			return
 		}
 

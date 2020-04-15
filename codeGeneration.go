@@ -220,7 +220,7 @@ func generateArrayAccessCode(indexExpression Expression, asm *ASM, s *SymbolTabl
 	asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
 	indexExpression.generateCode(asm, s)
 	asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
-	asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8]", getReturnRegister(TYPE_INT), address, index))
+	asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+8]", getReturnRegister(TYPE_INT), address, index))
 }
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
@@ -401,7 +401,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	// can extend memory dynamically or free it (by setting it to [rax+0])
 
 	// lea rdi, [rax+n]
-	asm.addLine("lea", fmt.Sprintf("%v, [%v+%v]", arg0, ret, a.aCount*8))
+	asm.addLine("lea", fmt.Sprintf("%v, [%v+%v]", arg0, ret, a.aCount*8+8))
 	asm.addLine("mov", "rax, 12    ; sys_brk")
 	asm.addLine("syscall", "")
 
@@ -416,7 +416,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		// rdi now points to the last available qword
 		asm.addLine("sub", arg0+", 8")
 		// Number of qwords allocated. Not really sure, why we use rcx here though.
-		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount))
+		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount+1))
 
 		// rax == What to write into memory (default). So we fill it up with 0s
 		asm.addLine("xor", "rax, rax")
@@ -447,9 +447,14 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		register, _ := getRegister(TYPE_INT)
 		for i := 0; i < a.aCount; i++ {
 			asm.addLine("pop", register)
-			asm.addLine("mov", fmt.Sprintf("[rsi+%v], %v", i*8, register))
+			asm.addLine("mov", fmt.Sprintf("[rsi+%v], %v", i*8+8, register))
 		}
 	}
+
+	// Write length at first position in array!
+	register, _ := getRegister(TYPE_INT)
+	asm.addLine("mov", fmt.Sprintf("%v, %v", register, a.aCount))
+	asm.addLine("mov", fmt.Sprintf("[rsi], %v", register))
 
 	asm.addLine("mov", ret+", rsi")
 
@@ -615,7 +620,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 
 			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", address, sign, entry.offset))
 
-			asm.addLine("mov", fmt.Sprintf("[%v+%v*8], rsi", address, index))
+			asm.addLine("mov", fmt.Sprintf("[%v+%v*8+8], rsi", address, index))
 
 		} else {
 			asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, register))
@@ -1126,6 +1131,23 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	asm.program = savedProgram
 }
 
+func (ast AST) addArrayLenFunction(asm *ASM) {
+	ast.globalSymbolTable.setFunAsmName("len", "len")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("len")
+	// Reads the actual first entry manually, which is the length of the following array
+	asm.addLine("mov", "rax, [rdi]")
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
 func (ast AST) generateCode() ASM {
 
 	asm := ASM{}
@@ -1143,6 +1165,7 @@ func (ast AST) generateCode() ASM {
 	ast.addPrintCharFunction(&asm)
 	ast.addPrintIntFunction(&asm)
 	ast.addPrintFloatFunction(&asm)
+	ast.addArrayLenFunction(&asm)
 
 	asm.addFun("_start")
 

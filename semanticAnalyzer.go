@@ -332,7 +332,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	}
 
 	for i, t := range expressionTypes {
-		if !equalType(t, funEntry.paramTypes[i]) {
+		if !equalType(t, funEntry.paramTypes[i], false) {
 			return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' got type %v as %v. parameter, but needs %v",
 				ErrCritical, fun.line, fun.column, fun.funName, t, i+1, funEntry.paramTypes[i],
 			)
@@ -373,7 +373,7 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 		if i == 0 {
 			arrayType = newE.getExpressionTypes()[0]
 		}
-		if !equalType(newE.getExpressionTypes()[0], arrayType) {
+		if !equalType(newE.getExpressionTypes()[0], arrayType, true) {
 			return a, fmt.Errorf("%w[%v:%v] - Not all expressions in array declaration have the same type",
 				ErrCritical, a.line, a.column,
 			)
@@ -505,7 +505,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 					variableType = *vTable.sType.subType
 				}
 
-				if !equalType(variableType, expressionType) {
+				if !equalType(variableType, expressionType, true) {
 					return assignment, fmt.Errorf(
 						"%w[%v:%v] - Assignment type missmatch between variable %v and expression %v",
 						ErrCritical, v.line, v.column, v, expressionType,
@@ -682,7 +682,7 @@ func analyzeReturn(ret Return, symbolTable *SymbolTable) (Return, error) {
 				)
 			}
 
-			if !equalType(t, symbolTable.activeFunctionReturn[typeIndex]) {
+			if !equalType(t, symbolTable.activeFunctionReturn[typeIndex], true) {
 				return ret, fmt.Errorf("%w[%v:%v] - Function return type does not match definition. Expected %v, got %v",
 					ErrCritical, row, col, symbolTable.activeFunctionReturn[typeIndex], t)
 			}
@@ -756,6 +756,7 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("printChar", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{})
 	ast.globalSymbolTable.setFun("printInt", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 	ast.globalSymbolTable.setFun("printFloat", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
+	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 
 	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
 	if err != nil {

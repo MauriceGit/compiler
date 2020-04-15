@@ -83,6 +83,21 @@ func ExampleArray3() {
 	// 3
 }
 
+// ExampleArrayLen checks, that the internal len() function works correctly on both array definition formats
+func ExampleArrayLen() {
+	var program []byte = []byte(`
+		printInt(len([1,2,3,4,5,6,7,8]))
+		printInt(len([](float, 134)))
+		printInt(len([](int, 0)))`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 8
+	// 134
+	// 0
+}
+
 // ExampleMultiAssignment checks, that multi-value assignments and automatic unpacking works correctly
 func ExampleMultiAssignment() {
 	var program []byte = []byte(`

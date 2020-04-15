@@ -136,49 +136,7 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-//fun sum(i int) int {
-//	if i == 0 {
-//		return 0
-//	}
-//	return i+sum(i-1)
-//}
-
-//fun abc(list []int) int {
-//	return list[2]
-//}
-
-//fun sumArray(list []int) int {
-//	s = 0
-//	for i = 0; i < 5; i++ {
-//		s += list[i]
-//	}
-//	return s
-//}
-
-//fun abcd(list []int) []int {
-//	return list
-//}
-
-//list = [1, 2, 3, 4, 5]
-//l1 = [](int, 5)
-
-//l1[3] = 4555
-//l2 = [list, l1]
-//test = l2[1]
-//printInt(test[3])
-
-//printInt(sum(10))
-//printInt(abc(list))
-//printInt(sumArray(list))
-
-//printInt(abcd(list)[2])
-
-//fun test() {
-//	return
-//}
-
-printInt(5553)
-
+printInt(len([1, 2, 3, 4, 5, 6, 7]))
 `)
 
 	if !compile(program, "source.asm", "executable") {
