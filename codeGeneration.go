@@ -312,12 +312,13 @@ func binaryOperationNumber(op Operator, t Type, rLeft, rRight string, asm *ASM) 
 	// add, sub, mul, div, mod...
 	default:
 		command := getCommand(t, op)
-
+		if op == OP_DIV || op == OP_MOD {
+			// Clear rdx! Needed for at least div and mod.
+			asm.addLine("xor", "rdx, rdx")
+		}
 		// idiv calculates both the integer division, as well as the remainder.
 		// The reminder will be written to rdx. So move back to rax.
 		if op == OP_MOD {
-			// Clear rdx!
-			asm.addLine("mov", "rdx, 0")
 			asm.addLine(command, fmt.Sprintf("%v, %v", rLeft, rRight))
 			asm.addLine("mov", fmt.Sprintf("%v, rdx", rLeft))
 		} else {
@@ -972,7 +973,7 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("jmp", entry.epilogueLabel)
 }
 
-func (ast AST) addPrintIntFunction(asm *ASM) {
+func (ast AST) addOldPrintIntFunction(asm *ASM) {
 
 	ast.globalSymbolTable.setFunAsmName("printInt", "printInt")
 
@@ -1029,6 +1030,102 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 
 }
 
+func (ast AST) addPrintCharFunction(asm *ASM) {
+
+	ast.globalSymbolTable.setFunAsmName("printChar", "printChar")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("printChar")
+	addFunctionPrologue(asm, 0)
+
+	// Message length
+	asm.addLine("mov", "rdx, 1")
+	// We create a pointer to the message given in rdi, by pushing to the stack and referencing the value
+	asm.addLine("push", getFunctionRegisters(TYPE_INT)[0])
+	asm.addLine("lea", "rsi, [rsp]")
+	// File handle
+	asm.addLine("mov", "rdi, 1")
+	// System call number
+	asm.addLine("mov", "rax, 1")
+	asm.addLine("syscall", "")
+	asm.addLine("pop", "rdi")
+
+	addFunctionEpilogue(asm)
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addPrintIntFunction(asm *ASM) {
+
+	ast.globalSymbolTable.setFunAsmName("printInt", "printInt")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("printInt")
+	addFunctionPrologue(asm, 0)
+
+	continueLabel := asm.nextLabelName()
+
+	asm.addLine("mov", "rax, "+getFunctionRegisters(TYPE_INT)[0])
+	// rsi with the number of digits to print
+	asm.addLine("xor", "rsi, rsi")
+
+	// Handle negative values
+	asm.addLine("cmp", "rax, 0")
+	asm.addLine("jge", continueLabel)
+	// "-"
+	asm.addLine("mov", "rdi, 0x2D")
+	// Save rax before calling
+	asm.addLine("push", "rax")
+	asm.addLine("call", "printChar")
+	asm.addLine("pop", "rax")
+	asm.addLabel(continueLabel)
+
+	// Push digits to stack as printable chars
+	loop1Label := asm.nextLabelName()
+	asm.addLabel(loop1Label)
+	asm.addLine("xor", "rdx, rdx")
+	asm.addLine("inc", "rsi")
+	asm.addLine("mov", "r10, 10")
+	asm.addLine("idiv", "rax, r10")
+	// Make it an ascii printable char
+	asm.addLine("add", "rdx, 0x30")
+	asm.addLine("push", "rdx")
+	asm.addLine("cmp", "rax, 0")
+	asm.addLine("jne", loop1Label)
+
+	// Print all characters we pushed to the stack
+	checkLabel := asm.nextLabelName()
+	loop2Label := asm.nextLabelName()
+	asm.addLine("jmp", checkLabel)
+	asm.addLabel(loop2Label)
+	asm.addLine("pop", "rdi")
+	asm.addLine("call", "printChar")
+	asm.addLine("dec", "rsi")
+	asm.addLabel(checkLabel)
+	asm.addLine("cmp", "rsi, 0")
+	asm.addLine("jne", loop2Label)
+
+	// Print newline at the end
+	asm.addLine("mov", "rdi, 0xA")
+	asm.addLine("call", "printChar")
+
+	addFunctionEpilogue(asm)
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
 func (ast AST) generateCode() ASM {
 
 	asm := ASM{}
@@ -1043,6 +1140,7 @@ func (ast AST) generateCode() ASM {
 
 	asm.sectionText = append(asm.sectionText, "section .text")
 
+	ast.addPrintCharFunction(&asm)
 	ast.addPrintIntFunction(&asm)
 	ast.addPrintFloatFunction(&asm)
 

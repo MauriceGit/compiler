@@ -753,6 +753,7 @@ func semanticAnalysis(ast AST) (AST, error) {
 		nil,
 	}
 
+	ast.globalSymbolTable.setFun("printChar", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{})
 	ast.globalSymbolTable.setFun("printInt", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 	ast.globalSymbolTable.setFun("printFloat", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 

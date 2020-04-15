@@ -96,54 +96,7 @@ func assemble(asm ASM, source, executable string) (err error) {
 	return
 }
 
-func main() {
-	var program []byte = []byte(`
-
-fun sum(i int) int {
-	if i == 0 {
-		return 0
-	}
-	return i+sum(i-1)
-}
-
-fun abc(list []int) int {
-	return list[2]
-}
-
-fun sumArray(list []int) int {
-	s = 0
-	for i = 0; i < 5; i++ {
-		s += list[i]
-	}
-	return s
-}
-
-fun abcd(list []int) []int {
-	return list
-}
-
-list = [1, 2, 3, 4, 5]
-l1 = [](int, 5)
-
-l1[3] = 4555
-l2 = [list, l1]
-test = l2[1]
-printInt(test[3])
-
-printInt(sum(10))
-printInt(abc(list))
-printInt(sumArray(list))
-
-printInt(abcd(list)[2])
-
-fun test() {
-	return
-}
-
-printInt(555)
-
-`)
-
+func compile(program []byte, sourceFile, binFile string) bool {
 	tokenChan := make(chan Token, 1)
 	lexerErr := make(chan error, 1)
 	go tokenize(program, tokenChan, lexerErr)
@@ -156,25 +109,79 @@ printInt(555)
 	select {
 	case e := <-lexerErr:
 		fmt.Println(e)
-		os.Exit(1)
+		return false
 	default:
 	}
 
 	if parseErr != nil {
 		fmt.Println(parseErr)
-		os.Exit(1)
+		return false
 	}
 
 	ast, semanticErr := semanticAnalysis(ast)
 	if semanticErr != nil {
 		fmt.Println(semanticErr)
-		os.Exit(1)
+		return false
 	}
 
 	asm := ast.generateCode()
 
-	if asmErr := assemble(asm, "source.asm", "executable"); asmErr != nil {
+	if asmErr := assemble(asm, sourceFile, binFile); asmErr != nil {
 		fmt.Println(asmErr)
+		return false
+	}
+	return true
+}
+
+func main() {
+	var program []byte = []byte(`
+
+//fun sum(i int) int {
+//	if i == 0 {
+//		return 0
+//	}
+//	return i+sum(i-1)
+//}
+
+//fun abc(list []int) int {
+//	return list[2]
+//}
+
+//fun sumArray(list []int) int {
+//	s = 0
+//	for i = 0; i < 5; i++ {
+//		s += list[i]
+//	}
+//	return s
+//}
+
+//fun abcd(list []int) []int {
+//	return list
+//}
+
+//list = [1, 2, 3, 4, 5]
+//l1 = [](int, 5)
+
+//l1[3] = 4555
+//l2 = [list, l1]
+//test = l2[1]
+//printInt(test[3])
+
+//printInt(sum(10))
+//printInt(abc(list))
+//printInt(sumArray(list))
+
+//printInt(abcd(list)[2])
+
+//fun test() {
+//	return
+//}
+
+printInt(5553)
+
+`)
+
+	if !compile(program, "source.asm", "executable") {
 		os.Exit(1)
 	}
 }
