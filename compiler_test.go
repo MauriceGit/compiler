@@ -1,0 +1,150 @@
+package main
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+)
+
+func compileAndRun(program []byte) {
+	if !compile(program, "", "executable") {
+		return
+	}
+	absPath, _ := filepath.Abs("./executable")
+	cmd := exec.Command(absPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Run()
+}
+
+// ExampleRecursion checks, that function stacks and recursion works as expected
+func ExampleRecursion() {
+	var program []byte = []byte(`
+		fun sum(i int) int {
+			if i == 0 {
+				return 0
+			}
+			return i+sum(i-1)
+		}
+		printInt(sum(10))`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 55
+}
+
+// ExampleArray1 checks, that handling arrays as parameters into functions works correctly
+func ExampleArray1() {
+	var program []byte = []byte(`
+		fun sumArray(list []int) int {
+			s = 0
+			for i = 0; i < 5; i++ {
+				s += list[i]
+			}
+			return s
+		}
+		list = [1, 2, 3, 4, 5]
+		printInt(sumArray(list))`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 15
+}
+
+// ExampleArray2 checks, that moving arrays, assigning them into other arrays and reading them out again is working correctly
+func ExampleArray2() {
+	var program []byte = []byte(`
+		l1 = [1, 2, 3, 4, 5]
+		l2 = [](int, 5)
+		l2[3] = 4555
+		l3 = [l1, l2]
+		l4 = l3[1]
+		printInt(l4[3])`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 4555
+}
+
+// ExampleArray3 checks, that arrays are passed correctly through a function (in and out)
+func ExampleArray3() {
+	var program []byte = []byte(`
+		fun abc(list []int) []int {
+			return list
+		}
+		printInt(abc([1,2,3,4,5])[2])`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 3
+}
+
+// ExampleMultiAssignment checks, that multi-value assignments and automatic unpacking works correctly
+func ExampleMultiAssignment() {
+	var program []byte = []byte(`
+		fun abc(v1 int, v2 int, v3 int) int, int, int {
+			return v3, v2, v1
+		}
+		a,b,c,d,e = 0, abc(1,2,3), 4
+		printInt(a)
+		printInt(b)
+		printInt(c)
+		printInt(d)
+		printInt(e)`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 0
+	// 3
+	// 2
+	// 1
+	// 4
+}
+
+// ExampleMultiParameter checks, that given > 6 parameters, they will be passed to the function correctly.
+// This is important, as with > 6 parameters, we need to pass them on the stack instead of registers, so
+// there is some special case handling here
+func ExampleMultiParameter() {
+	var program []byte = []byte(`
+		fun sum(a int, b int, c int, d int, e int, f int, g int, h int) int {
+			return a+b+c+d+e+f+g+h
+		}
+		printInt(sum(1,2,3,4,5,6,7,8))`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 36
+}
+
+// ExampleMultiReturn checks, that returning multiple values works correctly. This is important, as
+// we need to make space on the stack before calling the function and have special handling with the
+// stack pointer, as the calling conventions do not cover multi-return functions.
+func ExampleMultiReturn() {
+	var program []byte = []byte(`
+		fun abc() int, int, int, int, int, int {
+			return 1,2,3,4,5,6
+		}
+		a,b,c,d,e,f = abc()
+		printInt(a)
+		printInt(b)
+		printInt(c)
+		printInt(d)
+		printInt(e)
+		printInt(f)`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 1
+	// 2
+	// 3
+	// 4
+	// 5
+	// 6
+}
