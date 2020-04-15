@@ -14,9 +14,20 @@ func compareIndexExpression(e1, e2 Expression) (bool, string) {
 		return false, "Only one expression is accessed with index"
 	}
 	if e1.isIndexedExpression() {
-		if ok, err := compareExpression(e1.getIndexExpression(), e2.getIndexExpression()); !ok {
-			return false, err
+		e1IndexExpresssions := e1.getIndexExpressions()
+		e2IndexExpresssions := e2.getIndexExpressions()
+		if len(e1IndexExpresssions) != len(e2IndexExpresssions) {
+			return false, fmt.Sprintf("Expressions are indexed different times: %v != %v",
+				len(e1IndexExpresssions), len(e2IndexExpresssions),
+			)
 		}
+
+		for i, indexExpression := range e1IndexExpresssions {
+			if ok, err := compareExpression(indexExpression, e2IndexExpresssions[i]); !ok {
+				return false, err
+			}
+		}
+
 	}
 	return true, ""
 }
@@ -219,13 +230,13 @@ func testAST(code []byte, expected AST, t *testing.T) {
 }
 
 func newVar(value string, shadow bool) Variable {
-	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, shadow, false, nil, 0, 0}
+	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, shadow, nil, 0, 0}
 }
-func newIndexedVar(value string, e Expression) Variable {
-	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, false, true, e, 0, 0}
+func newIndexedVar(value string, e []Expression) Variable {
+	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, false, e, 0, 0}
 }
 func newParam(t ComplexType, value string) Variable {
-	return Variable{t, value, true, false, nil, 0, 0}
+	return Variable{t, value, true, nil, 0, 0}
 }
 func newConst(t Type, value string) Constant {
 	return Constant{t, value, 0, 0}
@@ -237,7 +248,7 @@ func newBinary(op Operator, eLeft, eRight Expression, fixed bool) BinaryOp {
 	return BinaryOp{op, eLeft, eRight, ComplexType{TYPE_UNKNOWN, nil}, fixed, 0, 0}
 }
 func newArray(t ComplexType, count int, exprs []Expression) Array {
-	return Array{t, count, exprs, false, nil, 0, 0}
+	return Array{t, count, exprs, nil, 0, 0}
 }
 func newAssignment(variables []Variable, expressions []Expression) Assignment {
 	return Assignment{variables, expressions, 0, 0}
@@ -255,7 +266,7 @@ func newReturn(expressions []Expression) Return {
 	return Return{expressions, 0, 0}
 }
 func newFunCall(name string, exprs []Expression) FunCall {
-	return FunCall{name, exprs, []ComplexType{}, false, nil, 0, 0}
+	return FunCall{name, exprs, []ComplexType{}, nil, 0, 0}
 }
 func newBlock(statements []Statement) Block {
 	return Block{statements, SymbolTable{}, 0, 0}
@@ -273,16 +284,13 @@ func newSimpleTypeList(ts []Type) (tcs []ComplexType) {
 func addIndexAccess(e, indexExpression Expression) Expression {
 	switch ne := e.(type) {
 	case Variable:
-		ne.isIndexedArray = true
-		ne.indexExpression = indexExpression
+		ne.indexExpressions = append(ne.indexExpressions, indexExpression)
 		return ne
 	case Array:
-		ne.isIndexedArray = true
-		ne.indexExpression = indexExpression
+		ne.indexExpressions = append(ne.indexExpressions, indexExpression)
 		return ne
 	case FunCall:
-		ne.isIndexedArray = true
-		ne.indexExpression = indexExpression
+		ne.indexExpressions = append(ne.indexExpressions, indexExpression)
 		return ne
 	default:
 		fmt.Println("This expression can not have indexed access")
@@ -701,7 +709,7 @@ func TestParserArray1(t *testing.T) {
 			),
 			newAssignment(
 				[]Variable{newVar("b", false)},
-				[]Expression{newArray(ComplexType{TYPE_INT, nil}, 3, []Expression{})},
+				[]Expression{newArray(ComplexType{TYPE_ARRAY, &ComplexType{TYPE_INT, nil}}, 3, []Expression{})},
 			),
 		},
 	)
@@ -730,7 +738,7 @@ func TestParserArray2(t *testing.T) {
 			),
 			newAssignment(
 				[]Variable{newVar("b", false)},
-				[]Expression{newArray(ComplexType{TYPE_INT, nil}, 3, []Expression{})},
+				[]Expression{newArray(ComplexType{TYPE_ARRAY, &ComplexType{TYPE_INT, nil}}, 3, []Expression{})},
 			),
 			newAssignment(
 				[]Variable{b},

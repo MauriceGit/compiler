@@ -60,8 +60,7 @@ func ExampleArray2() {
 		l2 = [](int, 5)
 		l2[3] = 4555
 		l3 = [l1, l2]
-		l4 = l3[1]
-		printInt(l4[3])`,
+		printInt(l3[1][3])`,
 	)
 	compileAndRun(program)
 

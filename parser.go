@@ -159,7 +159,7 @@ type Expression interface {
 	getExpressionTypes() []ComplexType
 	getResultCount() int
 	isIndexedExpression() bool
-	getIndexExpression() Expression
+	getIndexExpressions() []Expression
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -172,9 +172,8 @@ type Variable struct {
 	vShadow bool
 
 	// Lets try it this way first...
-	isIndexedArray  bool
-	indexExpression Expression
-	//vArrayType       ComplexType
+	//isIndexedArray  bool
+	indexExpressions []Expression
 
 	line, column int
 }
@@ -184,12 +183,12 @@ type Constant struct {
 	line, column int
 }
 type Array struct {
-	aType           ComplexType
-	aCount          int
-	aExpressions    []Expression
-	isIndexedArray  bool
-	indexExpression Expression
-	line, column    int
+	aType        ComplexType
+	aCount       int
+	aExpressions []Expression
+	//isIndexedArray  bool
+	indexExpressions []Expression
+	line, column     int
 }
 type BinaryOp struct {
 	operator  Operator
@@ -208,12 +207,12 @@ type UnaryOp struct {
 	line, column int
 }
 type FunCall struct {
-	funName         string
-	args            []Expression
-	retTypes        []ComplexType
-	isIndexedArray  bool
-	indexExpression Expression
-	line, column    int
+	funName  string
+	args     []Expression
+	retTypes []ComplexType
+	//isIndexedArray  bool
+	indexExpressions []Expression
+	line, column     int
 }
 
 func (_ Variable) expression() {}
@@ -246,16 +245,18 @@ func (e Constant) getExpressionTypes() []ComplexType {
 	return []ComplexType{ComplexType{e.cType, nil}}
 }
 func (e Array) getExpressionTypes() []ComplexType {
-	if e.isIndexedArray {
-		return []ComplexType{e.aType}
+	t := e.aType
+	for _ = range e.indexExpressions {
+		t = *t.subType
 	}
-	return []ComplexType{ComplexType{TYPE_ARRAY, &e.aType}}
+	return []ComplexType{t}
 }
 func (e Variable) getExpressionTypes() []ComplexType {
-	if e.isIndexedArray {
-		return []ComplexType{*e.vType.subType}
+	t := e.vType
+	for _ = range e.indexExpressions {
+		t = *t.subType
 	}
-	return []ComplexType{e.vType}
+	return []ComplexType{t}
 }
 func (e UnaryOp) getExpressionTypes() []ComplexType {
 	return []ComplexType{e.opType}
@@ -264,10 +265,16 @@ func (e BinaryOp) getExpressionTypes() []ComplexType {
 	return []ComplexType{e.opType}
 }
 func (e FunCall) getExpressionTypes() []ComplexType {
-	if len(e.retTypes) == 1 && e.isIndexedArray {
-		return []ComplexType{*e.retTypes[0].subType}
+
+	if len(e.retTypes) != 1 {
+		return e.retTypes
 	}
-	return e.retTypes
+
+	t := e.retTypes[0]
+	for _ = range e.indexExpressions {
+		t = *t.subType
+	}
+	return []ComplexType{t}
 }
 
 func (e Constant) getResultCount() int {
@@ -293,10 +300,10 @@ func (e Constant) isIndexedExpression() bool {
 	return false
 }
 func (e Array) isIndexedExpression() bool {
-	return e.isIndexedArray
+	return len(e.indexExpressions) > 0
 }
 func (e Variable) isIndexedExpression() bool {
-	return e.isIndexedArray
+	return len(e.indexExpressions) > 0
 }
 func (e UnaryOp) isIndexedExpression() bool {
 	return false
@@ -305,26 +312,26 @@ func (e BinaryOp) isIndexedExpression() bool {
 	return false
 }
 func (e FunCall) isIndexedExpression() bool {
-	return e.isIndexedArray
+	return len(e.indexExpressions) > 0
 }
 
-func (e Constant) getIndexExpression() Expression {
+func (e Constant) getIndexExpressions() []Expression {
 	return nil
 }
-func (e Array) getIndexExpression() Expression {
-	return e.indexExpression
+func (e Array) getIndexExpressions() []Expression {
+	return e.indexExpressions
 }
-func (e Variable) getIndexExpression() Expression {
-	return e.indexExpression
+func (e Variable) getIndexExpressions() []Expression {
+	return e.indexExpressions
 }
-func (e UnaryOp) getIndexExpression() Expression {
+func (e UnaryOp) getIndexExpressions() []Expression {
 	return nil
 }
-func (e BinaryOp) getIndexExpression() Expression {
+func (e BinaryOp) getIndexExpressions() []Expression {
 	return nil
 }
-func (e FunCall) getIndexExpression() Expression {
-	return e.indexExpression
+func (e FunCall) getIndexExpressions() []Expression {
+	return e.indexExpressions
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -461,14 +468,14 @@ func (c ComplexType) String() string {
 }
 
 func (v Variable) String() string {
-	if !v.isIndexedArray {
+	if !v.isIndexedExpression() {
 		shadowString := ""
 		if v.vShadow {
 			shadowString = "shadow "
 		}
 		return fmt.Sprintf("%v%v(%v)", shadowString, v.vType.t, v.vName)
 	}
-	return fmt.Sprintf("%v(%v[%v])", v.vType.subType, v.vName, v.indexExpression)
+	return fmt.Sprintf("%v(%v[%v])", v.vType.subType, v.vName, v.indexExpressions)
 }
 func (c Constant) String() string {
 	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
@@ -709,26 +716,30 @@ func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, boo
 	return t.line, t.column, true
 }
 
-func parseIndexAccess(tokens *TokenChannel) (isIndexedArray bool, indexExpression Expression, err error) {
+func parseIndexAccess(tokens *TokenChannel) (indexExpressions []Expression, err error) {
 
-	// Parse indexed expressions ...[..]
-	if _, _, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); ok {
+	// If it comes to it, we parse infinite [] expressions :)
+	for {
+		// Parse indexed expressions ...[..]
+		if _, _, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); ok {
 
-		e, parseErr := parseExpression(tokens)
-		if errors.Is(parseErr, ErrCritical) {
-			err = parseErr
-			return
+			e, parseErr := parseExpression(tokens)
+			if errors.Is(parseErr, ErrCritical) {
+				err = parseErr
+				return
+			}
+
+			if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
+				err = fmt.Errorf("%w[%v:%v] - Expected ']' after array index expression",
+					ErrCritical, row, col,
+				)
+				return
+			}
+
+			indexExpressions = append(indexExpressions, e)
+		} else {
+			break
 		}
-
-		if row, col, ok := tokens.expect(TOKEN_SQUARE_CLOSE, "]"); !ok {
-			err = fmt.Errorf("%w[%v:%v] - Expected ']' after array index expression",
-				ErrCritical, row, col,
-			)
-			return
-		}
-
-		isIndexedArray = true
-		indexExpression = e
 	}
 	return
 }
@@ -747,13 +758,12 @@ func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 		return
 	}
 
-	isIndexed, indexExpression, parseErr := parseIndexAccess(tokens)
+	indexExpressions, parseErr := parseIndexAccess(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return
 	}
-	variable.isIndexedArray = isIndexed
-	variable.indexExpression = indexExpression
+	variable.indexExpressions = indexExpressions
 
 	variable.vType = ComplexType{TYPE_UNKNOWN, nil}
 	variable.vName = vName
@@ -900,7 +910,7 @@ func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 			return
 		}
 
-		array.aType = t
+		array.aType = ComplexType{TYPE_ARRAY, &t}
 		array.aCount = int(cValue)
 		array.aExpressions = []Expression{}
 		array.line = startRow
@@ -1062,24 +1072,22 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 		expression = finalExpression
 	}
 
-	isIndexed, indexExpression, parseErr := parseIndexAccess(tokens)
+	indexExpressions, parseErr := parseIndexAccess(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return
 	}
-	if parseErr == nil && isIndexed {
+
+	if parseErr == nil && len(indexExpressions) > 0 {
 		switch e := expression.(type) {
 		case Variable:
-			e.isIndexedArray = true
-			e.indexExpression = indexExpression
+			e.indexExpressions = indexExpressions
 			expression = e
 		case Array:
-			e.isIndexedArray = true
-			e.indexExpression = indexExpression
+			e.indexExpressions = indexExpressions
 			expression = e
 		case FunCall:
-			e.isIndexedArray = true
-			e.indexExpression = indexExpression
+			e.indexExpressions = indexExpressions
 			expression = e
 		default:
 			row, col := expression.startPos()
@@ -1399,7 +1407,7 @@ func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
 			variables = nil
 			return
 		}
-		v := Variable{ComplexType{TYPE_UNKNOWN, nil}, vName, false, false, nil, row, col}
+		v := Variable{ComplexType{TYPE_UNKNOWN, nil}, vName, false, nil, row, col}
 
 		t, parseErr := parseType(tokens)
 		if parseErr != nil {

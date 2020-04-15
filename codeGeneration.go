@@ -213,14 +213,20 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 
 // We don't know where we were before and what expression needs to be indexed.
 // All we care about, is that the array pointer is in rax and the resulting value will also be in rax!
-func generateArrayAccessCode(indexExpression Expression, asm *ASM, s *SymbolTable) {
+func generateArrayAccessCode(indexExpressions []Expression, asm *ASM, s *SymbolTable) {
 
-	index, address := getRegister(TYPE_INT)
-	// address = rax
-	asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
-	indexExpression.generateCode(asm, s)
-	asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
-	asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+8]", getReturnRegister(TYPE_INT), address, index))
+	for _, indexExpression := range indexExpressions {
+		index, address := getRegister(TYPE_INT)
+		// address = rax
+		asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
+		// Save the address
+		asm.addLine("push", address)
+		indexExpression.generateCode(asm, s)
+		asm.addLine("pop", address)
+		// TODO: Check, if this following mov can entirely be removed, by just using rax as index directly!
+		asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
+		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+8]", getReturnRegister(TYPE_INT), address, index))
+	}
 }
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
@@ -241,8 +247,8 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), register))
 		}
 
-		if v.isIndexedArray {
-			generateArrayAccessCode(v.indexExpression, asm, s)
+		if len(v.indexExpressions) > 0 {
+			generateArrayAccessCode(v.indexExpressions, asm, s)
 			if v.vType.subType.t == TYPE_FLOAT {
 				asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 			}
@@ -458,8 +464,8 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
 	asm.addLine("mov", ret+", rsi")
 
-	if a.isIndexedArray {
-		generateArrayAccessCode(a.indexExpression, asm, s)
+	if len(a.indexExpressions) > 0 {
+		generateArrayAccessCode(a.indexExpressions, asm, s)
 		if a.getExpressionTypes()[0].t == TYPE_FLOAT {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 		}
@@ -568,8 +574,8 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		panic("Code generation error: Unknown function called")
 	}
 
-	if f.isIndexedArray {
-		generateArrayAccessCode(f.indexExpression, asm, s)
+	if len(f.indexExpressions) > 0 {
+		generateArrayAccessCode(f.indexExpressions, asm, s)
 		if f.retTypes[0].subType.t == TYPE_FLOAT {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 		}
@@ -597,9 +603,9 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	// Just to get it from the stack into the variable.
-	register, _ := getRegister(TYPE_INT)
+	valueRegister, _ := getRegister(TYPE_INT)
 	for _, v := range a.variables {
-		asm.addLine("pop", register)
+		asm.addLine("pop", valueRegister)
 
 		// This can not/should not fail!
 		entry, _ := s.getVar(v.vName)
@@ -609,21 +615,30 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 			sign = ""
 		}
 
-		if v.isIndexedArray {
-			// Manually save the register to rsi for now...
-			asm.addLine("mov", "rsi, "+register)
-
+		if len(v.indexExpressions) > 0 {
 			index, address := getRegister(TYPE_INT)
 
-			v.indexExpression.generateCode(asm, s)
-			asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
-
 			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", address, sign, entry.offset))
+			asm.addLine("push", valueRegister)
 
-			asm.addLine("mov", fmt.Sprintf("[%v+%v*8+8], rsi", address, index))
+			// We go through the indexing to determine the last index and address to write to!
+			for _, indexExpression := range v.indexExpressions {
+
+				asm.addLine("push", address)
+				indexExpression.generateCode(asm, s)
+				asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
+				asm.addLine("pop", address)
+
+				// Go one level down.
+				asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+8]", address, address, index))
+				//asm.addLine("mov", fmt.Sprintf("%v, [%v]", address, address))
+			}
+
+			asm.addLine("pop", valueRegister)
+			asm.addLine("mov", fmt.Sprintf("[%v], %v", address, valueRegister))
 
 		} else {
-			asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, register))
+			asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, valueRegister))
 		}
 
 	}

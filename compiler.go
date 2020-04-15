@@ -136,8 +136,16 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-printInt(len([1, 2, 3, 4, 5, 6, 7]))
-`)
+		fun abc(v1 int, v2 int, v3 int) int, int, int {
+			return v3, v2, v1
+		}
+		a,b,c,d,e = 0, abc(1,2,3), 4
+		printInt(a)
+		printInt(b)
+		printInt(c)
+		printInt(d)
+		printInt(e)
+	`)
 
 	if !compile(program, "source.asm", "executable") {
 		os.Exit(1)

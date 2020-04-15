@@ -283,27 +283,48 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	return binaryOp, nil
 }
 
-func analyzeIndexedAccess(indexExpression Expression, symbolTable *SymbolTable) (Expression, error) {
+func analyzeIndexedAccess(t ComplexType, indexExpressions []Expression, symbolTable *SymbolTable) ([]Expression, error) {
 
-	newIndexExpression, tmpE := analyzeExpression(indexExpression, symbolTable)
-	if tmpE != nil {
-		return indexExpression, tmpE
+	for i, indexExpression := range indexExpressions {
+
+		if t.t != TYPE_ARRAY {
+			row, col := indexExpression.startPos()
+			return nil, fmt.Errorf("%w[%v:%v] - Indexing only works on arrays, ... got %v",
+				ErrCritical, row, col, t.t,
+			)
+		}
+
+		if t.subType == nil {
+			row, col := indexExpression.startPos()
+			return nil, fmt.Errorf("%w[%v:%v] - Indexing only works on arrays, got %v",
+				ErrCritical, row, col, t.t,
+			)
+		}
+
+		newIndexExpression, tmpE := analyzeExpression(indexExpression, symbolTable)
+		if tmpE != nil {
+			return nil, tmpE
+		}
+		indexExpressions[i] = newIndexExpression
+
+		if len(newIndexExpression.getExpressionTypes()) != 1 {
+			row, col := indexExpression.startPos()
+			return nil, fmt.Errorf("%w[%v:%v] - Index expression can only have one value",
+				ErrCritical, row, col,
+			)
+		}
+
+		if newIndexExpression.getExpressionTypes()[0].t != TYPE_INT {
+			row, col := indexExpression.startPos()
+			return nil, fmt.Errorf("%w[%v:%v] - Index expression must be int",
+				ErrCritical, row, col,
+			)
+		}
+
+		t = *t.subType
 	}
 
-	if len(newIndexExpression.getExpressionTypes()) != 1 {
-		row, col := indexExpression.startPos()
-		return indexExpression, fmt.Errorf("%w[%v:%v] - Index expression can only have one value",
-			ErrCritical, row, col,
-		)
-	}
-	if newIndexExpression.getExpressionTypes()[0].t != TYPE_INT {
-		row, col := indexExpression.startPos()
-		return indexExpression, fmt.Errorf("%w[%v:%v] - Index expression must be int",
-			ErrCritical, row, col,
-		)
-	}
-
-	return newIndexExpression, nil
+	return indexExpressions, nil
 }
 
 func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
@@ -332,6 +353,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	}
 
 	for i, t := range expressionTypes {
+
 		if !equalType(t, funEntry.paramTypes[i], false) {
 			return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' got type %v as %v. parameter, but needs %v",
 				ErrCritical, fun.line, fun.column, fun.funName, t, i+1, funEntry.paramTypes[i],
@@ -339,22 +361,17 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 		}
 	}
 
-	if fun.isIndexedArray {
+	if len(fun.indexExpressions) > 0 {
 		if fun.getResultCount() != 1 {
 			return fun, fmt.Errorf("%w[%v:%v] - Indexing is only allowed for single return functions",
 				ErrCritical, fun.line, fun.column,
 			)
 		}
-		if fun.retTypes[0].t != TYPE_ARRAY {
-			return fun, fmt.Errorf("%w[%v:%v] - Function return is not an array (can not be indexed)",
-				ErrCritical, fun.line, fun.column,
-			)
-		}
-		newIndexExpression, err := analyzeIndexedAccess(fun.indexExpression, symbolTable)
+		newIndexExpressions, err := analyzeIndexedAccess(fun.retTypes[0], fun.indexExpressions, symbolTable)
 		if err != nil {
 			return fun, err
 		}
-		fun.indexExpression = newIndexExpression
+		fun.indexExpressions = newIndexExpressions
 	}
 
 	return fun, nil
@@ -370,10 +387,10 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 			return a, err
 		}
 		a.aExpressions[i] = newE
-		if i == 0 {
-			arrayType = newE.getExpressionTypes()[0]
+		if i == 0 && a.aType.t == TYPE_UNKNOWN {
+			arrayType = ComplexType{TYPE_ARRAY, &newE.getExpressionTypes()[0]}
 		}
-		if !equalType(newE.getExpressionTypes()[0], arrayType, true) {
+		if !equalType(newE.getExpressionTypes()[0], *arrayType.subType, true) {
 			return a, fmt.Errorf("%w[%v:%v] - Not all expressions in array declaration have the same type",
 				ErrCritical, a.line, a.column,
 			)
@@ -391,12 +408,12 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 		a.aType = arrayType
 	}
 
-	if a.isIndexedArray {
-		newIndexExpression, err := analyzeIndexedAccess(a.indexExpression, symbolTable)
+	if a.isIndexedExpression() {
+		newIndexExpressions, err := analyzeIndexedAccess(a.aType, a.indexExpressions, symbolTable)
 		if err != nil {
 			return a, err
 		}
-		a.indexExpression = newIndexExpression
+		a.indexExpressions = newIndexExpressions
 	}
 
 	return a, nil
@@ -407,15 +424,12 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 	if vTable, ok := symbolTable.getVar(e.vName); ok {
 		e.vType = vTable.sType
 
-		if e.isIndexedArray {
-			if e.vType.t != TYPE_ARRAY {
-				return e, fmt.Errorf("%w[%v:%v] - Only an array can be indexed", ErrCritical, e.line, e.column)
-			}
-			newIndexExpression, err := analyzeIndexedAccess(e.indexExpression, symbolTable)
+		if e.isIndexedExpression() {
+			newIndexExpressions, err := analyzeIndexedAccess(e.vType, e.indexExpressions, symbolTable)
 			if err != nil {
 				return e, err
 			}
-			e.indexExpression = newIndexExpression
+			e.indexExpressions = newIndexExpressions
 		}
 
 	} else {
@@ -501,8 +515,14 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 			if !v.vShadow {
 
 				var variableType ComplexType = vTable.sType
-				if v.isIndexedArray {
-					variableType = *vTable.sType.subType
+				for _ = range v.indexExpressions {
+					if variableType.t != TYPE_ARRAY {
+						return assignment, fmt.Errorf(
+							"%w[%v:%v] - Variable %v is not an array and can not be indexed",
+							ErrCritical, v.line, v.column, v.vName,
+						)
+					}
+					variableType = *variableType.subType
 				}
 
 				if !equalType(variableType, expressionType, true) {
@@ -512,7 +532,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 					)
 				}
 			} else {
-				if v.isIndexedArray {
+				if v.isIndexedExpression() {
 					return assignment, fmt.Errorf("%w[%v:%v] - An indexed array write can not shadow its source",
 						ErrCritical, v.line, v.column,
 					)
@@ -521,7 +541,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 				symbolTable.setVar(v.vName, expressionType, false)
 			}
 		} else {
-			symbolTable.setVar(v.vName, expressionType, v.isIndexedArray)
+			symbolTable.setVar(v.vName, expressionType, v.isIndexedExpression())
 		}
 
 		assignment.variables[i].vType = expressionType
