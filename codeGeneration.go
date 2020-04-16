@@ -1121,7 +1121,6 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 	asm.program = make([][3]string, 0)
 
 	asm.addFun(asmName)
-	//addFunctionPrologue(asm, 0)
 
 	asm.addLine("push", "rdi")
 
@@ -1132,7 +1131,6 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
 	asm.addLine("pop", "rdi")
 
-	//addFunctionEpilogue(asm)
 	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
@@ -1161,7 +1159,6 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	asm.program = make([][3]string, 0)
 
 	asm.addFun(asmName)
-	//addFunctionPrologue(asm, 0)
 
 	asm.addLine("push", "rdi")
 
@@ -1194,13 +1191,8 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	asm.addLine("cvttsd2si", "rdi, xmm0")
 	asm.addLine("call", printIntName)
 
-	// Print newline at the end
-	//asm.addLine("mov", "rdi, 0xA")
-	//asm.addLine("call", "printChar")
-
 	asm.addLine("pop", "rdi")
 
-	//addFunctionEpilogue(asm)
 	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
