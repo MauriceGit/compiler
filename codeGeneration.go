@@ -473,6 +473,14 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
 }
 
+func expressionsToTypes(expressions []Expression) []ComplexType {
+	var types []ComplexType
+	for _, e := range expressions {
+		types = append(types, e.getExpressionTypes()...)
+	}
+	return types
+}
+
 func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 
 	intRegisters := getFunctionRegisters(TYPE_INT)
@@ -553,7 +561,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	}
 
-	if entry, ok := s.getFun(f.funName); ok {
+	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args)); ok {
 
 		asm.addLine("call", entry.jumpLabel)
 
@@ -874,6 +882,14 @@ func (b Block) assignVariableStackOffset(parameters []Variable, isMultiReturn bo
 	return -(localVarOffset + 16)
 }
 
+func variablesToTypes(variables []Variable) []ComplexType {
+	var types []ComplexType
+	for _, v := range variables {
+		types = append(types, v.vType)
+	}
+	return types
+}
+
 func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	// As function declarations can not be nesting in assembler, we save the current program slice,
@@ -882,11 +898,11 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	asm.program = make([][3]string, 0)
 
 	asmName := asm.nextFunctionName()
-	s.setFunAsmName(f.fName, asmName)
+	s.setFunAsmName(f.fName, asmName, variablesToTypes(f.parameters), true)
 	asm.addFun(asmName)
 
 	epilogueLabel := asm.nextLabelName()
-	s.setFunEpilogueLabel(f.fName, epilogueLabel)
+	s.setFunEpilogueLabel(f.fName, epilogueLabel, variablesToTypes(f.parameters))
 
 	localVarOffset := f.block.assignVariableStackOffset(f.parameters, len(f.returnTypes) > 1)
 
@@ -902,7 +918,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	if len(f.returnTypes) > 1 {
 		asm.addLine("mov", fmt.Sprintf("[rbp%v], %v", -16, intRegisters[intRegIndex]))
 		intRegIndex++
-		s.setFunReturnStackPointer(f.fName, -16)
+		s.setFunReturnStackPointer(f.fName, -16, variablesToTypes(f.parameters))
 	}
 
 	// Create local variables for all function parameters
@@ -945,7 +961,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 
-	entry, ok := s.getFun(s.activeFunctionName)
+	entry, ok := s.getFun(s.activeFunctionName, s.activeFunctionParams)
 	if !ok {
 		panic("Code generation error. Function not in symbol table.")
 	}
@@ -996,7 +1012,8 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 func (ast AST) addPrintCharFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	ast.globalSymbolTable.setFunAsmName("printChar", asmName)
+	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	ast.globalSymbolTable.setFunAsmName("printChar", asmName, params, true)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
@@ -1031,14 +1048,14 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 func (ast AST) addPrintIntFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-
-	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	entry, ok := ast.globalSymbolTable.getFun("printChar", params)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
 
-	ast.globalSymbolTable.setFunAsmName("printInt", asmName)
+	ast.globalSymbolTable.setFunAsmName("print", asmName, params, true)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
@@ -1104,16 +1121,17 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	ast.globalSymbolTable.setFunAsmName("printIntLn", asmName)
+	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	ast.globalSymbolTable.setFunAsmName("println", asmName, params, true)
 
-	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	entry, ok := ast.globalSymbolTable.getFun("printChar", params)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
-	entry, ok = ast.globalSymbolTable.getFun("printInt")
+	entry, ok = ast.globalSymbolTable.getFun("print", params)
 	if !ok {
-		fmt.Println("Code generation error. printInt can not be found")
+		fmt.Println("Code generation error. print can not be found")
 	}
 	printIntName := entry.jumpLabel
 
@@ -1142,16 +1160,18 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 func (ast AST) addPrintFloatFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	ast.globalSymbolTable.setFunAsmName("printFloat", asmName)
+	paramsI := []ComplexType{ComplexType{TYPE_INT, nil}}
+	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+	ast.globalSymbolTable.setFunAsmName("print", asmName, paramsF, true)
 
-	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
-	entry, ok = ast.globalSymbolTable.getFun("printInt")
+	entry, ok = ast.globalSymbolTable.getFun("print", paramsI)
 	if !ok {
-		fmt.Println("Code generation error. printInt can not be found")
+		fmt.Println("Code generation error. print can not be found")
 	}
 	printIntName := entry.jumpLabel
 
@@ -1204,16 +1224,18 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	ast.globalSymbolTable.setFunAsmName("printFloatLn", asmName)
+	paramsI := []ComplexType{ComplexType{TYPE_INT, nil}}
+	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+	ast.globalSymbolTable.setFunAsmName("println", asmName, paramsF, true)
 
-	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
-	entry, ok = ast.globalSymbolTable.getFun("printFloat")
+	entry, ok = ast.globalSymbolTable.getFun("print", paramsF)
 	if !ok {
-		fmt.Println("Code generation error. printFloat can not be found")
+		fmt.Println("Code generation error. print can not be found")
 	}
 	printFloatName := entry.jumpLabel
 
@@ -1243,7 +1265,8 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
 func (ast AST) addArrayLenFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	ast.globalSymbolTable.setFunAsmName("len", asmName)
+	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	ast.globalSymbolTable.setFunAsmName("len", asmName, params, false)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)

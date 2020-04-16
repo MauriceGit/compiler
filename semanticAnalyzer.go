@@ -35,30 +35,46 @@ func (s *SymbolTable) setVar(v string, t ComplexType, isIndexed bool) {
 	s.varTable[v] = SymbolVarEntry{t, "", 0, isIndexed}
 }
 
-//func (s *SymbolTable) setIndexedVar(v string, t Type) {
-//	s.varTable[v] = SymbolVarEntry{TYPE_ARRAY, "", 0, true, t}
-//}
-
 func (s *SymbolTable) setFun(name string, argTypes, returnTypes []ComplexType) {
-	s.funTable[name] = SymbolFunEntry{argTypes, returnTypes, "", "", 0}
+	l := s.funTable[name]
+	l = append(l, SymbolFunEntry{argTypes, returnTypes, "", "", 0})
+	s.funTable[name] = l
 }
 
-func (s *SymbolTable) isLocalFun(name string) bool {
-	if s == nil {
-		return false
-	}
-	_, ok := s.funTable[name]
-	return ok
-}
+func (s *SymbolTable) getLocalFun(name string, paramTypes []ComplexType) (SymbolFunEntry, bool) {
 
-func (s *SymbolTable) getFun(name string) (SymbolFunEntry, bool) {
 	if s == nil {
 		return SymbolFunEntry{}, false
 	}
-	if fun, ok := s.funTable[name]; ok {
-		return fun, true
+	l, ok := s.funTable[name]
+	if !ok {
+		return SymbolFunEntry{}, false
 	}
-	return s.parent.getFun(name)
+
+	for _, le := range l {
+		if equalTypes(le.paramTypes, paramTypes, true) {
+			return le, true
+		}
+	}
+	return SymbolFunEntry{}, false
+}
+
+func (s *SymbolTable) isLocalFun(name string, paramTypes []ComplexType) bool {
+	_, ok := s.getLocalFun(name, paramTypes)
+	return ok
+}
+
+func (s *SymbolTable) getFun(name string, paramTypes []ComplexType) (SymbolFunEntry, bool) {
+
+	if s == nil {
+		return SymbolFunEntry{}, false
+	}
+
+	if localFun, ok := s.getLocalFun(name, paramTypes); ok {
+		return localFun, true
+	}
+
+	return s.parent.getFun(name, paramTypes)
 }
 
 func (s *SymbolTable) setVarAsmName(v string, asmName string) {
@@ -89,46 +105,71 @@ func (s *SymbolTable) setVarAsmOffset(v string, offset int) {
 	s.parent.setVarAsmOffset(v, offset)
 }
 
-func (s *SymbolTable) setFunAsmName(v string, asmName string) {
+func (s *SymbolTable) setFunAsmName(v string, asmName string, paramTypes []ComplexType, strict bool) {
 	if s == nil {
 		panic("Could not set asm function name in symbol table!")
-		return
 	}
-	if _, ok := s.funTable[v]; ok {
-		tmp := s.funTable[v]
-		tmp.jumpLabel = asmName
-		s.funTable[v] = tmp
-		return
+
+	l, ok := s.funTable[v]
+	if !ok {
+		panic("No such function in funTable. Can not set asm name.")
 	}
-	s.parent.setFunAsmName(v, asmName)
+	for i, le := range l {
+		if equalTypes(le.paramTypes, paramTypes, strict) {
+			le.jumpLabel = asmName
+			l[i] = le
+			s.funTable[v] = l
+			return
+		}
+	}
+
+	s.parent.setFunAsmName(v, asmName, paramTypes, strict)
 }
 
-func (s *SymbolTable) setFunEpilogueLabel(v string, label string) {
+func (s *SymbolTable) setFunEpilogueLabel(v string, label string, paramTypes []ComplexType) {
 	if s == nil {
 		panic("Could not set asm epilogue label in symbol table!")
 		return
 	}
-	if _, ok := s.funTable[v]; ok {
-		tmp := s.funTable[v]
-		tmp.epilogueLabel = label
-		s.funTable[v] = tmp
-		return
+
+	l, ok := s.funTable[v]
+	if !ok {
+		panic("No such function in funTable. Can not set epilogue label.")
 	}
-	s.parent.setFunEpilogueLabel(v, label)
+	for i, le := range l {
+		if equalTypes(le.paramTypes, paramTypes, true) {
+			le.epilogueLabel = label
+			l[i] = le
+			s.funTable[v] = l
+			return
+		}
+
+	}
+
+	s.parent.setFunEpilogueLabel(v, label, paramTypes)
 }
 
-func (s *SymbolTable) setFunReturnStackPointer(v string, offset int) {
+func (s *SymbolTable) setFunReturnStackPointer(v string, offset int, paramTypes []ComplexType) {
 	if s == nil {
 		panic("Could not set asm return stack pointer in symbol table!")
 		return
 	}
-	if _, ok := s.funTable[v]; ok {
-		tmp := s.funTable[v]
-		tmp.returnStackPointerOffset = offset
-		s.funTable[v] = tmp
-		return
+
+	l, ok := s.funTable[v]
+	if !ok {
+		panic("No such function in funTable. Can not set return stack pointer.")
 	}
-	s.parent.setFunReturnStackPointer(v, offset)
+	for i, le := range l {
+		if equalTypes(le.paramTypes, paramTypes, true) {
+			le.returnStackPointerOffset = offset
+			l[i] = le
+			s.funTable[v] = l
+			return
+		}
+
+	}
+
+	s.parent.setFunReturnStackPointer(v, offset, paramTypes)
 }
 
 func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, error) {
@@ -329,12 +370,8 @@ func analyzeIndexedAccess(t ComplexType, indexExpressions []Expression, symbolTa
 
 func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 
-	funEntry, ok := symbolTable.getFun(fun.funName)
-	if !ok {
-		return fun, fmt.Errorf("%w[%v:%v] - Function '%v' called before declaration", ErrCritical, fun.line, fun.column, fun.funName)
-	}
-	fun.retTypes = funEntry.returnTypes
-
+	// The parameters must be analyzed before we query the symbol table for the actual
+	// function because the argument types must be analyzed/determined by then!
 	// Basically unpacking expression list before providing it to the function
 	expressionTypes := []ComplexType{}
 	for i, e := range fun.args {
@@ -345,6 +382,12 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 		fun.args[i] = newE
 		expressionTypes = append(expressionTypes, newE.getExpressionTypes()...)
 	}
+
+	funEntry, ok := symbolTable.getFun(fun.funName, expressionsToTypes(fun.args))
+	if !ok {
+		return fun, fmt.Errorf("%w[%v:%v] - Function '%v' called before declaration", ErrCritical, fun.line, fun.column, fun.funName)
+	}
+	fun.retTypes = funEntry.returnTypes
 
 	if len(expressionTypes) != len(funEntry.paramTypes) {
 		return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' has %v parameters, but needs %v",
@@ -592,8 +635,9 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 
 	nextSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
-		make(map[string]SymbolFunEntry, 0),
+		make(map[string][]SymbolFunEntry, 0),
 		symbolTable.activeFunctionName,
+		symbolTable.activeFunctionParams,
 		symbolTable.activeFunctionReturn,
 		symbolTable,
 	}
@@ -643,8 +687,9 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 
 	functionSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
-		make(map[string]SymbolFunEntry, 0),
+		make(map[string][]SymbolFunEntry, 0),
 		fun.fName,
+		variablesToTypes(fun.parameters),
 		fun.returnTypes,
 		symbolTable,
 	}
@@ -659,15 +704,11 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 		functionSymbolTable.setVar(v.vName, v.vType, false)
 	}
 
-	if symbolTable.isLocalFun(fun.fName) {
+	if symbolTable.isLocalFun(fun.fName, variablesToTypes(fun.parameters)) {
 		return fun, fmt.Errorf("%w[%v:%v] - Function with the same name already exists in this scope", ErrCritical, fun.line, fun.column)
 	}
-	var paramTypes []ComplexType
-	for _, v := range fun.parameters {
-		paramTypes = append(paramTypes, v.vType)
-	}
 
-	symbolTable.setFun(fun.fName, paramTypes, fun.returnTypes)
+	symbolTable.setFun(fun.fName, variablesToTypes(fun.parameters), fun.returnTypes)
 
 	newBlock, err := analyzeBlock(fun.block, symbolTable, &functionSymbolTable)
 	if err != nil {
@@ -743,8 +784,9 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 	} else {
 		block.symbolTable = SymbolTable{
 			make(map[string]SymbolVarEntry, 0),
-			make(map[string]SymbolFunEntry, 0),
+			make(map[string][]SymbolFunEntry, 0),
 			symbolTable.activeFunctionName,
+			symbolTable.activeFunctionParams,
 			symbolTable.activeFunctionReturn,
 			symbolTable,
 		}
@@ -767,18 +809,19 @@ func semanticAnalysis(ast AST) (AST, error) {
 
 	ast.globalSymbolTable = SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
-		make(map[string]SymbolFunEntry, 0),
+		make(map[string][]SymbolFunEntry, 0),
 		"",
+		nil,
 		nil,
 		nil,
 	}
 
 	ast.globalSymbolTable.setFun("printChar", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{})
-	ast.globalSymbolTable.setFun("printInt", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
-	ast.globalSymbolTable.setFun("printIntLn", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
-	ast.globalSymbolTable.setFun("printFloat", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
-	ast.globalSymbolTable.setFun("printFloatLn", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
-	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}})
+	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{})
+	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{})
+	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{})
+	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{})
+	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 
 	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
 	if err != nil {

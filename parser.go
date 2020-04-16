@@ -51,13 +51,16 @@ Operator priority (Descending priority!):
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 const (
-	TYPE_INT = iota
+	TYPE_UNKNOWN = iota
+	TYPE_INT
 	TYPE_STRING
 	TYPE_FLOAT
 	TYPE_BOOL
 	// TYPE_FUNCTION ?
 	TYPE_ARRAY
-	TYPE_UNKNOWN
+	// This type will always be considered equal to any other type when compared!
+	// Used for variadic functions.
+	TYPE_WHATEVER
 )
 const (
 	OP_PLUS = iota
@@ -117,10 +120,11 @@ type SymbolFunEntry struct {
 
 type SymbolTable struct {
 	varTable map[string]SymbolVarEntry
-	funTable map[string]SymbolFunEntry
+	funTable map[string][]SymbolFunEntry
 	// activeFunctionReturn references the function return types, if we are within a function, otherwise nil
 	// This is required to check validity and code generation of return statements
 	activeFunctionName   string
+	activeFunctionParams []ComplexType
 	activeFunctionReturn []ComplexType
 	parent               *SymbolTable
 }
@@ -464,7 +468,7 @@ func (c ComplexType) String() string {
 	if c.t == TYPE_ARRAY {
 		return fmt.Sprintf("array[%v]", c.subType)
 	}
-	return fmt.Sprintf("%v", c.t)
+	return fmt.Sprintf("%v", c.t.String())
 }
 
 func (v Variable) String() string {
@@ -511,6 +515,29 @@ func (v Type) String() string {
 		return "array"
 	}
 	return "?"
+}
+
+func (s SymbolFunEntry) String() string {
+
+	st := "SymbolFunEntry: ("
+
+	st += fmt.Sprintf("params: [")
+	for i, p := range s.paramTypes {
+		st += p.String()
+		if i < len(s.paramTypes)-1 {
+			st += " "
+		}
+	}
+	st += fmt.Sprintf("], returns: [")
+	for i, p := range s.returnTypes {
+		st += p.String()
+		if i < len(s.returnTypes)-1 {
+			st += " "
+		}
+	}
+	st += "])"
+
+	return st
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -626,13 +653,24 @@ func (tc *TokenChannel) pushBack(t Token) {
 // Sometimes, we are OK with non strict equality, i.e. if we only need an array and don't care about
 // the actual type.
 func equalType(c1, c2 ComplexType, strict bool) bool {
-	if c1.t != c2.t {
+	if c1.t != TYPE_WHATEVER && c2.t != TYPE_WHATEVER && c1.t != c2.t {
 		return false
 	}
 	if c1.subType != nil && c2.subType != nil {
 		return equalType(*c1.subType, *c2.subType, strict)
 	}
 	return !strict || c1.subType == nil && c2.subType == nil
+}
+func equalTypes(l1, l2 []ComplexType, strict bool) bool {
+	if len(l1) != len(l2) {
+		return false
+	}
+	for i, c1 := range l1 {
+		if !equalType(c1, l2[i], strict) {
+			return false
+		}
+	}
+	return true
 }
 
 // Operator priority (Descending priority!):

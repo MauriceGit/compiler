@@ -136,7 +136,13 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		printFloatLn(555.666)
+//		print(555)
+//		println(555)
+//		print(555.666)
+//		println(555.666)
+
+		println(len([1,2,3]))
+
 	`)
 
 	if !compile(program, "source.asm", "executable") {
