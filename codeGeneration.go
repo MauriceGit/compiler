@@ -1287,11 +1287,8 @@ func (ast AST) generateCode() ASM {
 	asm := ASM{}
 	asm.constants = make(map[string]string, 0)
 
-	asm.header = append(asm.header, "extern printf  ; C function we need for debugging")
 	asm.header = append(asm.header, "section .data")
 
-	asm.variables = append(asm.variables, [3]string{"fmti", "db", "\"%i\", 10, 0"})
-	asm.variables = append(asm.variables, [3]string{"fmtf", "db", "\"%.2f\", 10, 0"})
 	asm.variables = append(asm.variables, [3]string{"negOneF", "dq", "-1.0"})
 
 	asm.sectionText = append(asm.sectionText, "section .text")

@@ -67,7 +67,7 @@ func assemble(asm ASM, source, executable string) (err error) {
 	// Assemble
 	yasmCmd := &exec.Cmd{
 		Path:   yasm,
-		Args:   []string{yasm, "-Worphan-labels", "-g", "dwarf2", "-f", "elf64", srcFile.Name(), "-o", objectFile.Name()},
+		Args:   []string{yasm, "-f", "elf64", srcFile.Name(), "-o", objectFile.Name()},
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}
@@ -85,7 +85,7 @@ func assemble(asm ASM, source, executable string) (err error) {
 	// Link
 	ldCmd := &exec.Cmd{
 		Path:   ld,
-		Args:   []string{ld, "-dynamic-linker", "/lib64/ld-linux-x86-64.so.2", "-o", executable, objectFile.Name(), "-lc"},
+		Args:   []string{ld, "-o", executable, objectFile.Name()},
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}
@@ -136,10 +136,8 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-//		print(555)
-//		println(555)
-//		print(555.666)
-//		println(555.666)
+		println(555)
+		println(555.666)
 
 		println(len([1,2,3]))
 
