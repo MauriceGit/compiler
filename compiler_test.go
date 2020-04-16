@@ -162,3 +162,38 @@ func ExampleMultiReturn() {
 	// 5
 	// 6
 }
+
+// ExampleFunctionOverload checks, if overloaded function names work as expected. Both for the compiler
+// println functions and the new abc() functions
+func ExampleFunctionOverload() {
+	var program []byte = []byte(`
+		fun abc(i int) {
+			println(i)
+		}
+		fun abc(i int, j int) {
+			println(i)
+			println(j)
+		}
+		fun abc(i float) {
+			println(i)
+		}
+		fun abc(i float, j float) {
+			println(i)
+			println(j)
+		}
+		abc(5)
+		abc(6, 7)
+		abc(5.5)
+		abc(5.5, 6.5)
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 5
+	// 6
+	// 7
+	// 5.500
+	// 5.500
+	// 6.500
+}
