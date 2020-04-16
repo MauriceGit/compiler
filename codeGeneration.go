@@ -993,71 +993,15 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("jmp", entry.epilogueLabel)
 }
 
-func (ast AST) addOldPrintIntFunction(asm *ASM) {
-
-	ast.globalSymbolTable.setFunAsmName("printInt", "printInt")
-
-	savedProgram := asm.program
-	asm.program = make([][3]string, 0)
-
-	asm.addFun("printInt")
-
-	addFunctionPrologue(asm, 0)
-
-	// We cheat us the format parameter into the function, so we have to shift the integer once.
-	// It will be written to rdi as first parameter, so we move it to rsi instead.
-	asm.addLine("  mov", "rsi, rdi")
-	asm.addLine("  mov", "rdi, fmti")
-	asm.addLine("  mov", "rax, 0")
-	asm.addLine("  call", "printf")
-
-	addFunctionEpilogue(asm)
-
-	asm.addLine("ret", "")
-
-	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
-	}
-	asm.program = savedProgram
-}
-
-func (ast AST) addOldPrintFloatFunction(asm *ASM) {
-
-	ast.globalSymbolTable.setFunAsmName("printFloat", "printFloat")
-
-	savedProgram := asm.program
-	asm.program = make([][3]string, 0)
-
-	asm.addFun("printFloat")
-
-	addFunctionPrologue(asm, 0)
-
-	// We cheat us the format parameter into the function, so we have to shift the integer once.
-	// It will be written to rdi as first parameter, so we move it to rsi instead.
-	asm.addLine("movq", "rsi, xmm0")
-	asm.addLine("mov", "rdi, fmtf")
-	asm.addLine("mov", "rax, 1")
-	asm.addLine("call", "printf")
-
-	addFunctionEpilogue(asm)
-
-	asm.addLine("ret", "")
-
-	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
-	}
-	asm.program = savedProgram
-
-}
-
 func (ast AST) addPrintCharFunction(asm *ASM) {
 
-	ast.globalSymbolTable.setFunAsmName("printChar", "printChar")
+	asmName := asm.nextFunctionName()
+	ast.globalSymbolTable.setFunAsmName("printChar", asmName)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addFun("printChar")
+	asm.addFun(asmName)
 
 	asm.addLine("push", "rsi")
 	asm.addLine("push", "rdi")
@@ -1086,20 +1030,27 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 
 func (ast AST) addPrintIntFunction(asm *ASM) {
 
-	ast.globalSymbolTable.setFunAsmName("printInt", "printInt")
+	asmName := asm.nextFunctionName()
+
+	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	if !ok {
+		fmt.Println("Code generation error. printChar can not be found")
+	}
+	printCharName := entry.jumpLabel
+
+	ast.globalSymbolTable.setFunAsmName("printInt", asmName)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addFun("printInt")
-	//addFunctionPrologue(asm, 0)
+	asm.addFun(asmName)
 
 	asm.addLine("push", "rdi")
 	asm.addLine("push", "rsi")
 
 	continueLabel := asm.nextLabelName()
 
-	asm.addLine("mov", "rax, "+getFunctionRegisters(TYPE_INT)[0])
+	asm.addLine("mov", "rax, rdi")
 	// rsi with the number of digits to print
 	asm.addLine("xor", "rsi, rsi")
 
@@ -1110,7 +1061,7 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	asm.addLine("mov", "rdi, 0x2D")
 	// Save rax before calling
 	asm.addLine("push", "rax")
-	asm.addLine("call", "printChar")
+	asm.addLine("call", printCharName)
 	asm.addLine("pop", "rax")
 	asm.addLabel(continueLabel)
 
@@ -1133,20 +1084,15 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	asm.addLine("jmp", checkLabel)
 	asm.addLabel(loop2Label)
 	asm.addLine("pop", "rdi")
-	asm.addLine("call", "printChar")
+	asm.addLine("call", printCharName)
 	asm.addLine("dec", "rsi")
 	asm.addLabel(checkLabel)
 	asm.addLine("cmp", "rsi, 0")
 	asm.addLine("jne", loop2Label)
 
-	// Print newline at the end
-	//asm.addLine("mov", "rdi, 0xA")
-	//asm.addLine("call", "printChar")
-
 	asm.addLine("pop", "rsi")
 	asm.addLine("pop", "rdi")
 
-	//addFunctionEpilogue(asm)
 	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
@@ -1157,20 +1103,32 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 
 func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
-	ast.globalSymbolTable.setFunAsmName("printIntLn", "printIntLn")
+	asmName := asm.nextFunctionName()
+	ast.globalSymbolTable.setFunAsmName("printIntLn", asmName)
+
+	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	if !ok {
+		fmt.Println("Code generation error. printChar can not be found")
+	}
+	printCharName := entry.jumpLabel
+	entry, ok = ast.globalSymbolTable.getFun("printInt")
+	if !ok {
+		fmt.Println("Code generation error. printInt can not be found")
+	}
+	printIntName := entry.jumpLabel
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addFun("printIntLn")
+	asm.addFun(asmName)
 	//addFunctionPrologue(asm, 0)
 
 	asm.addLine("push", "rdi")
 
-	asm.addLine("call", "printInt")
+	asm.addLine("call", printIntName)
 	// Print newline at the end
 	asm.addLine("mov", "rdi, 0xA")
-	asm.addLine("call", "printChar")
+	asm.addLine("call", printCharName)
 
 	asm.addLine("pop", "rdi")
 
@@ -1185,12 +1143,24 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
 func (ast AST) addPrintFloatFunction(asm *ASM) {
 
-	ast.globalSymbolTable.setFunAsmName("printFloat", "printFloat")
+	asmName := asm.nextFunctionName()
+	ast.globalSymbolTable.setFunAsmName("printFloat", asmName)
+
+	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	if !ok {
+		fmt.Println("Code generation error. printChar can not be found")
+	}
+	printCharName := entry.jumpLabel
+	entry, ok = ast.globalSymbolTable.getFun("printInt")
+	if !ok {
+		fmt.Println("Code generation error. printInt can not be found")
+	}
+	printIntName := entry.jumpLabel
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addFun("printFloat")
+	asm.addFun(asmName)
 	//addFunctionPrologue(asm, 0)
 
 	asm.addLine("push", "rdi")
@@ -1202,17 +1172,17 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	asm.addLine("jge", okLabel)
 
 	asm.addLine("mov", "rdi, 0x2D")
-	asm.addLine("call", "printChar")
+	asm.addLine("call", printCharName)
 	asm.addLine("mulsd", "xmm0, qword [negOneF]")
 
 	asm.addLabel(okLabel)
 	// Integer part
 	asm.addLine("cvttsd2si", "rdi, xmm0")
 	asm.addLine("push", "rdi")
-	asm.addLine("call", "printInt")
+	asm.addLine("call", printIntName)
 	// Decimal .
 	asm.addLine("mov", "rdi, 0x2E")
-	asm.addLine("call", "printChar")
+	asm.addLine("call", printCharName)
 	asm.addLine("pop", "r10")
 	asm.addLine("cvtsi2sd", "xmm1, r10")
 	// Digits after decimal point
@@ -1222,7 +1192,7 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	asm.addLine("movq", "xmm1, r10")
 	asm.addLine("mulsd", "xmm0, xmm1")
 	asm.addLine("cvttsd2si", "rdi, xmm0")
-	asm.addLine("call", "printInt")
+	asm.addLine("call", printIntName)
 
 	// Print newline at the end
 	//asm.addLine("mov", "rdi, 0xA")
@@ -1241,20 +1211,32 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 
 func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
-	ast.globalSymbolTable.setFunAsmName("printFloatLn", "printFloatLn")
+	asmName := asm.nextFunctionName()
+	ast.globalSymbolTable.setFunAsmName("printFloatLn", asmName)
+
+	entry, ok := ast.globalSymbolTable.getFun("printChar")
+	if !ok {
+		fmt.Println("Code generation error. printChar can not be found")
+	}
+	printCharName := entry.jumpLabel
+	entry, ok = ast.globalSymbolTable.getFun("printFloat")
+	if !ok {
+		fmt.Println("Code generation error. printFloat can not be found")
+	}
+	printFloatName := entry.jumpLabel
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addFun("printFloatLn")
+	asm.addFun(asmName)
 	//addFunctionPrologue(asm, 0)
 
 	asm.addLine("push", "rdi")
 
-	asm.addLine("call", "printFloat")
+	asm.addLine("call", printFloatName)
 	// Print newline at the end
 	asm.addLine("mov", "rdi, 0xA")
-	asm.addLine("call", "printChar")
+	asm.addLine("call", printCharName)
 
 	asm.addLine("pop", "rdi")
 
@@ -1268,12 +1250,13 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 }
 
 func (ast AST) addArrayLenFunction(asm *ASM) {
-	ast.globalSymbolTable.setFunAsmName("len", "len")
+	asmName := asm.nextFunctionName()
+	ast.globalSymbolTable.setFunAsmName("len", asmName)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addFun("len")
+	asm.addFun(asmName)
 	// Reads the actual first entry manually, which is the length of the following array
 	asm.addLine("mov", "rax, [rdi]")
 	asm.addLine("ret", "")
