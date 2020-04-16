@@ -26,7 +26,7 @@ func ExampleRecursion() {
 			}
 			return i+sum(i-1)
 		}
-		printInt(sum(10))`,
+		printIntLn(sum(10))`,
 	)
 	compileAndRun(program)
 
@@ -45,7 +45,7 @@ func ExampleArray1() {
 			return s
 		}
 		list = [1, 2, 3, 4, 5]
-		printInt(sumArray(list))`,
+		printIntLn(sumArray(list))`,
 	)
 	compileAndRun(program)
 
@@ -60,7 +60,7 @@ func ExampleArray2() {
 		l2 = [](int, 5)
 		l2[3] = 4555
 		l3 = [l1, l2]
-		printInt(l3[1][3])`,
+		printIntLn(l3[1][3])`,
 	)
 	compileAndRun(program)
 
@@ -74,7 +74,7 @@ func ExampleArray3() {
 		fun abc(list []int) []int {
 			return list
 		}
-		printInt(abc([1,2,3,4,5])[2])`,
+		printIntLn(abc([1,2,3,4,5])[2])`,
 	)
 	compileAndRun(program)
 
@@ -85,9 +85,9 @@ func ExampleArray3() {
 // ExampleArrayLen checks, that the internal len() function works correctly on both array definition formats
 func ExampleArrayLen() {
 	var program []byte = []byte(`
-		printInt(len([1,2,3,4,5,6,7,8]))
-		printInt(len([](float, 134)))
-		printInt(len([](int, 0)))`,
+		printIntLn(len([1,2,3,4,5,6,7,8]))
+		printIntLn(len([](float, 134)))
+		printIntLn(len([](int, 0)))`,
 	)
 	compileAndRun(program)
 
@@ -104,11 +104,11 @@ func ExampleMultiAssignment() {
 			return v3, v2, v1
 		}
 		a,b,c,d,e = 0, abc(1,2,3), 4
-		printInt(a)
-		printInt(b)
-		printInt(c)
-		printInt(d)
-		printInt(e)`,
+		printIntLn(a)
+		printIntLn(b)
+		printIntLn(c)
+		printIntLn(d)
+		printIntLn(e)`,
 	)
 	compileAndRun(program)
 
@@ -128,7 +128,7 @@ func ExampleMultiParameter() {
 		fun sum(a int, b int, c int, d int, e int, f int, g int, h int) int {
 			return a+b+c+d+e+f+g+h
 		}
-		printInt(sum(1,2,3,4,5,6,7,8))`,
+		printIntLn(sum(1,2,3,4,5,6,7,8))`,
 	)
 	compileAndRun(program)
 
@@ -145,12 +145,12 @@ func ExampleMultiReturn() {
 			return 1,2,3,4,5,6
 		}
 		a,b,c,d,e,f = abc()
-		printInt(a)
-		printInt(b)
-		printInt(c)
-		printInt(d)
-		printInt(e)
-		printInt(f)`,
+		printIntLn(a)
+		printIntLn(b)
+		printIntLn(c)
+		printIntLn(d)
+		printIntLn(e)
+		printIntLn(f)`,
 	)
 	compileAndRun(program)
 

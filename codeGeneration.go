@@ -1021,7 +1021,7 @@ func (ast AST) addOldPrintIntFunction(asm *ASM) {
 	asm.program = savedProgram
 }
 
-func (ast AST) addPrintFloatFunction(asm *ASM) {
+func (ast AST) addOldPrintFloatFunction(asm *ASM) {
 
 	ast.globalSymbolTable.setFunAsmName("printFloat", "printFloat")
 
@@ -1058,21 +1058,24 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 	asm.program = make([][3]string, 0)
 
 	asm.addFun("printChar")
-	addFunctionPrologue(asm, 0)
+
+	asm.addLine("push", "rsi")
+	asm.addLine("push", "rdi")
 
 	// Message length
 	asm.addLine("mov", "rdx, 1")
 	// We create a pointer to the message given in rdi, by pushing to the stack and referencing the value
-	asm.addLine("push", getFunctionRegisters(TYPE_INT)[0])
+
 	asm.addLine("lea", "rsi, [rsp]")
 	// File handle
 	asm.addLine("mov", "rdi, 1")
 	// System call number
 	asm.addLine("mov", "rax, 1")
 	asm.addLine("syscall", "")
-	asm.addLine("pop", "rdi")
 
-	addFunctionEpilogue(asm)
+	asm.addLine("pop", "rdi")
+	asm.addLine("pop", "rsi")
+
 	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
@@ -1089,7 +1092,10 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	asm.program = make([][3]string, 0)
 
 	asm.addFun("printInt")
-	addFunctionPrologue(asm, 0)
+	//addFunctionPrologue(asm, 0)
+
+	asm.addLine("push", "rdi")
+	asm.addLine("push", "rsi")
 
 	continueLabel := asm.nextLabelName()
 
@@ -1134,10 +1140,125 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	asm.addLine("jne", loop2Label)
 
 	// Print newline at the end
+	//asm.addLine("mov", "rdi, 0xA")
+	//asm.addLine("call", "printChar")
+
+	asm.addLine("pop", "rsi")
+	asm.addLine("pop", "rdi")
+
+	//addFunctionEpilogue(asm)
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addPrintIntLnFunction(asm *ASM) {
+
+	ast.globalSymbolTable.setFunAsmName("printIntLn", "printIntLn")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("printIntLn")
+	//addFunctionPrologue(asm, 0)
+
+	asm.addLine("push", "rdi")
+
+	asm.addLine("call", "printInt")
+	// Print newline at the end
 	asm.addLine("mov", "rdi, 0xA")
 	asm.addLine("call", "printChar")
 
-	addFunctionEpilogue(asm)
+	asm.addLine("pop", "rdi")
+
+	//addFunctionEpilogue(asm)
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addPrintFloatFunction(asm *ASM) {
+
+	ast.globalSymbolTable.setFunAsmName("printFloat", "printFloat")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("printFloat")
+	//addFunctionPrologue(asm, 0)
+
+	asm.addLine("push", "rdi")
+
+	okLabel := asm.nextLabelName()
+	// Handle negative Floats
+	asm.addLine("movq", "r10, xmm0")
+	asm.addLine("cmp", "r10, 0")
+	asm.addLine("jge", okLabel)
+
+	asm.addLine("mov", "rdi, 0x2D")
+	asm.addLine("call", "printChar")
+	asm.addLine("mulsd", "xmm0, qword [negOneF]")
+
+	asm.addLabel(okLabel)
+	// Integer part
+	asm.addLine("cvttsd2si", "rdi, xmm0")
+	asm.addLine("push", "rdi")
+	asm.addLine("call", "printInt")
+	// Decimal .
+	asm.addLine("mov", "rdi, 0x2E")
+	asm.addLine("call", "printChar")
+	asm.addLine("pop", "r10")
+	asm.addLine("cvtsi2sd", "xmm1, r10")
+	// Digits after decimal point
+	asm.addLine("subsd", "xmm0, xmm1")
+	// Number of digits to print (power of 10)
+	asm.addLine("mov", "r10, 1000.0")
+	asm.addLine("movq", "xmm1, r10")
+	asm.addLine("mulsd", "xmm0, xmm1")
+	asm.addLine("cvttsd2si", "rdi, xmm0")
+	asm.addLine("call", "printInt")
+
+	// Print newline at the end
+	//asm.addLine("mov", "rdi, 0xA")
+	//asm.addLine("call", "printChar")
+
+	asm.addLine("pop", "rdi")
+
+	//addFunctionEpilogue(asm)
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addPrintFloatLnFunction(asm *ASM) {
+
+	ast.globalSymbolTable.setFunAsmName("printFloatLn", "printFloatLn")
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addFun("printFloatLn")
+	//addFunctionPrologue(asm, 0)
+
+	asm.addLine("push", "rdi")
+
+	asm.addLine("call", "printFloat")
+	// Print newline at the end
+	asm.addLine("mov", "rdi, 0xA")
+	asm.addLine("call", "printChar")
+
+	asm.addLine("pop", "rdi")
+
+	//addFunctionEpilogue(asm)
 	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
@@ -1178,8 +1299,13 @@ func (ast AST) generateCode() ASM {
 	asm.sectionText = append(asm.sectionText, "section .text")
 
 	ast.addPrintCharFunction(&asm)
+
 	ast.addPrintIntFunction(&asm)
+	ast.addPrintIntLnFunction(&asm)
+
 	ast.addPrintFloatFunction(&asm)
+	ast.addPrintFloatLnFunction(&asm)
+
 	ast.addArrayLenFunction(&asm)
 
 	asm.addFun("_start")
