@@ -33,6 +33,12 @@ func (asm *ASM) addConstant(value string) string {
 
 	return name
 }
+func (asm *ASM) addNamedConstant(name, value string) {
+	if _, ok := asm.constants[value]; ok {
+		panic(fmt.Sprintf("Code generation error. Name %v already registered in Constants", name))
+	}
+	asm.constants[value] = name
+}
 
 func (asm *ASM) nextLabelName() string {
 	asm.labelName += 1
@@ -225,7 +231,7 @@ func generateArrayAccessCode(indexExpressions []Expression, asm *ASM, s *SymbolT
 		asm.addLine("pop", address)
 		// TODO: Check, if this following mov can entirely be removed, by just using rax as index directly!
 		asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
-		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+8]", getReturnRegister(TYPE_INT), address, index))
+		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+16]", getReturnRegister(TYPE_INT), address, index))
 	}
 }
 
@@ -388,51 +394,42 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
-	arg0 := getFunctionRegisters(TYPE_INT)[0]
-	ret := getReturnRegister(TYPE_INT)
-
-	// determine the first memory location by allocating zero byte.
-	asm.addLine("mov", "rax, 12    ; sys_brk")
-	asm.addLine("mov", arg0+", 0")
+	asm.addLine("mov", "rax, sys_mmap")
+	// Null pointer
+	asm.addLine("mov", "rdi, 0x00")
+	asm.addLine("mov", fmt.Sprintf("rsi, %v", a.aCount*8+16))
+	// PROT_READ | PROT_WRITE
+	asm.addLine("mov", "rdx, 0x03")
+	// MAP_PRIVATE | MAP_ANONYMOUS
+	asm.addLine("mov", "r10, 0x22")
+	// OFFSET == 0
+	asm.addLine("mov", "r9, 0x00")
 	asm.addLine("syscall", "")
 
 	// Save our first memory register!
 	// We use rsi manually here as a register that is Caller-saved and will not be
 	// altered by anything that happens while creating/allocating/filling the array (well, only by myself)
-	asm.addLine("mov", "rsi, "+ret)
-
-	// n bytes is what we want to allocate here!
-	// rax is the pointer to the first memory with 0 byte space
-	// So we use the pointer rax and extend our memory. This is also, how we
-	// can extend memory dynamically or free it (by setting it to [rax+0])
-
-	// lea rdi, [rax+n]
-	asm.addLine("lea", fmt.Sprintf("%v, [%v+%v]", arg0, ret, a.aCount*8+8))
-	asm.addLine("mov", "rax, 12    ; sys_brk")
-	asm.addLine("syscall", "")
+	asm.addLine("mov", "rsi, rax")
 
 	// Check memory error
 	asm.addLine("cmp", "rax, 0")
 	asm.addLine("jl", "exit")
 
+	dataLength := 0
+
 	// Initialize array with 0s, if they are not initialized.
 	if len(a.aExpressions) == 0 {
 		// rdi is now the highest available address
-		asm.addLine("mov", fmt.Sprintf("%v, %v", arg0, ret))
-		// rdi now points to the last available qword
-		asm.addLine("sub", arg0+", 8")
-		// Number of qwords allocated. Not really sure, why we use rcx here though.
-		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount+1))
+		asm.addLine("mov", "rdi, rax")
+		// Number of memory blocks we want to clear
+		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount+2))
 
 		// rax == What to write into memory (default). So we fill it up with 0s
 		asm.addLine("xor", "rax, rax")
-		// go backwards in memory
-		asm.addLine("std", "")
-		// store the value of rax into rcx at every position!
+		// store the value of rax into what rdi points to at every position and decrement rcx.
 		asm.addLine("rep", "stosq")
-		// clear the flag set by 'std'
-		asm.addLine("cld", "")
 	} else {
+		dataLength = a.aCount
 		for i := len(a.aExpressions) - 1; i >= 0; i-- {
 			e := a.aExpressions[i]
 			// Calculate expression
@@ -453,16 +450,20 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		register, _ := getRegister(TYPE_INT)
 		for i := 0; i < a.aCount; i++ {
 			asm.addLine("pop", register)
-			asm.addLine("mov", fmt.Sprintf("[rsi+%v], %v", i*8+8, register))
+			asm.addLine("mov", fmt.Sprintf("[rsi+%v], %v", i*8+16, register))
 		}
 	}
 
-	// Write length at first position in array!
+	// Write capacity into first position in array
 	register, _ := getRegister(TYPE_INT)
 	asm.addLine("mov", fmt.Sprintf("%v, %v", register, a.aCount))
 	asm.addLine("mov", fmt.Sprintf("[rsi], %v", register))
 
-	asm.addLine("mov", ret+", rsi")
+	// Currently used memory into second position
+	asm.addLine("mov", fmt.Sprintf("%v, %v", register, dataLength))
+	asm.addLine("mov", fmt.Sprintf("[rsi+8], %v", register))
+
+	asm.addLine("mov", "rax, rsi")
 
 	if len(a.indexExpressions) > 0 {
 		generateArrayAccessCode(a.indexExpressions, asm, s)
@@ -638,8 +639,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 				asm.addLine("pop", address)
 
 				// Go one level down.
-				asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+8]", address, address, index))
-				//asm.addLine("mov", fmt.Sprintf("%v, [%v]", address, address))
+				asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+16]", address, address, index))
 			}
 
 			asm.addLine("pop", valueRegister)
@@ -1018,6 +1018,7 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
+	asm.addLabel("; printChar")
 	asm.addFun(asmName)
 
 	asm.addLine("push", "rsi")
@@ -1031,7 +1032,7 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 	// File handle
 	asm.addLine("mov", "rdi, 1")
 	// System call number
-	asm.addLine("mov", "rax, 1")
+	asm.addLine("mov", "rax, sys_write")
 	asm.addLine("syscall", "")
 
 	asm.addLine("pop", "rdi")
@@ -1060,6 +1061,7 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
+	asm.addLabel("; printInt")
 	asm.addFun(asmName)
 
 	asm.addLine("push", "rdi")
@@ -1138,6 +1140,7 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
+	asm.addLabel("; printIntLn")
 	asm.addFun(asmName)
 
 	asm.addLine("push", "rdi")
@@ -1178,6 +1181,7 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
+	asm.addLabel("; printFloat")
 	asm.addFun(asmName)
 
 	asm.addLine("push", "rdi")
@@ -1242,6 +1246,7 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
+	asm.addLabel("; printFloatLn")
 	asm.addFun(asmName)
 	//addFunctionPrologue(asm, 0)
 
@@ -1271,6 +1276,27 @@ func (ast AST) addArrayLenFunction(asm *ASM) {
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
+	asm.addLabel("; len")
+	asm.addFun(asmName)
+	// Reads the actual first entry manually, which is the length of the following array
+	asm.addLine("mov", "rax, [rdi+8]")
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addArrayCapFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	ast.globalSymbolTable.setFunAsmName("cap", asmName, params, false)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; cap")
 	asm.addFun(asmName)
 	// Reads the actual first entry manually, which is the length of the following array
 	asm.addLine("mov", "rax, [rdi]")
@@ -1293,6 +1319,11 @@ func (ast AST) generateCode() ASM {
 
 	asm.sectionText = append(asm.sectionText, "section .text")
 
+	asm.addNamedConstant("sys_write", "1")
+	asm.addNamedConstant("sys_mmap", "9")
+	asm.addNamedConstant("sys_brk", "12")
+	asm.addNamedConstant("sys_exit", "60")
+
 	ast.addPrintCharFunction(&asm)
 
 	ast.addPrintIntFunction(&asm)
@@ -1301,6 +1332,7 @@ func (ast AST) generateCode() ASM {
 	ast.addPrintFloatFunction(&asm)
 	ast.addPrintFloatLnFunction(&asm)
 
+	ast.addArrayCapFunction(&asm)
 	ast.addArrayLenFunction(&asm)
 
 	asm.addFun("_start")
@@ -1317,10 +1349,9 @@ func (ast AST) generateCode() ASM {
 
 	addFunctionEpilogue(&asm)
 
-	asm.addLine("; Exit the program nicely", "")
 	asm.addLabel("exit")
-	asm.addLine("mov", "rax, 60  ; sys_exit")
-	asm.addLine("mov", "rdi, 0   ; exit code")
+	asm.addLine("mov", "rax, sys_exit")
+	asm.addLine("mov", "rdi, 0")
 	asm.addLine("syscall", "")
 
 	return asm

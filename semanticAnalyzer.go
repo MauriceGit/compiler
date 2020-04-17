@@ -823,6 +823,7 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{})
 	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{})
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{})
+	ast.globalSymbolTable.setFun("cap", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 
 	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)

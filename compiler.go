@@ -136,10 +136,9 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		println(555)
-		println(555.666)
-
-		println(len([1,2,3]))
+		println(len([1,2,3,4,5,6,7,8]))
+		println(cap([](float, 10000000)))
+		println(cap([](int, 0)))
 
 	`)
 

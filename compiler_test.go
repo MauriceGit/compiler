@@ -93,6 +93,21 @@ func ExampleArrayLen() {
 
 	// Output:
 	// 8
+	// 0
+	// 0
+}
+
+// ExampleArrayCap checks, that the internal cap() function works correctly on both array definition formats
+func ExampleArrayCap() {
+	var program []byte = []byte(`
+		println(cap([1,2,3,4,5,6,7,8]))
+		println(cap([](float, 134)))
+		println(cap([](int, 0)))`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 8
 	// 134
 	// 0
 }
