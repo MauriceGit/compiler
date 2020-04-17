@@ -112,6 +112,120 @@ func ExampleArrayCap() {
 	// 0
 }
 
+// ExampleArrayFree runs the internal free() function on some arrays and prints something afterwards to verify, that
+// nothing crashed.
+func ExampleArrayFree() {
+	var program []byte = []byte(`
+
+		a = [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+		b = [](int, 1234565)
+		c = [](float, 1234565)
+		d = [](bool, 1234565)
+
+		free(a)
+		free(b)
+		free(c)
+		free(d)
+
+		println(555.666)
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 555.666
+}
+
+// ExampleArrayReset runs the internal reset() function and checks, if the length has been reset.
+func ExampleArrayReset() {
+	var program []byte = []byte(`
+		a = [1,2,3,4,5]
+		println(len(a))
+		println(cap(a))
+		println(a[2])
+		reset(a)
+		println(a[2])
+		println(len(a))
+		println(cap(a))
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 5
+	// 5
+	// 3
+	// 3
+	// 0
+	// 5
+}
+
+// ExampleArrayClear runs the internal clear() function and checks, if the memory has been cleared.
+func ExampleArrayClear() {
+	var program []byte = []byte(`
+		a = [1,2,3,4,5]
+		println(len(a))
+		println(cap(a))
+		println(a[2])
+		clear(a)
+		println(a[2])
+		println(len(a))
+		println(cap(a))
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 5
+	// 5
+	// 3
+	// 0
+	// 0
+	// 5
+}
+
+// ExampleArrayAppend tests the internal append() function and checks the length of the resulting arrays
+// for both floats and ints
+func ExampleArrayAppend() {
+	var program []byte = []byte(`
+		a = [1]
+		b = [7,8,9]
+
+		c = [1.5, 2.5]
+		d = [3.5, 4.5]
+
+		a = append(a, b)
+		c = append(c, d)
+
+		println(a[0])
+		println(a[1])
+		println(a[2])
+		println(a[3])
+
+		println(c[0])
+		println(c[1])
+		println(c[2])
+		println(c[3])
+
+		println(len(a))
+		println(len(c))
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 1
+	// 7
+	// 8
+	// 9
+	// 1.500
+	// 2.500
+	// 3.500
+	// 4.500
+	// 4
+	// 4
+}
+
 // ExampleMultiAssignment checks, that multi-value assignments and automatic unpacking works correctly
 func ExampleMultiAssignment() {
 	var program []byte = []byte(`

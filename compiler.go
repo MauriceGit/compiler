@@ -44,6 +44,9 @@ func assemble(asm ASM, source, executable string) (err error) {
 	for k, v := range asm.constants {
 		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v, "equ", k)
 	}
+	for k, v := range asm.sysConstants {
+		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v, "equ", k)
+	}
 	for _, v := range asm.variables {
 		fmt.Fprintf(srcFile, "%-12v%-10v%-15v\n", v[0], v[1], v[2])
 	}
@@ -136,9 +139,20 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		println(len([1,2,3,4,5,6,7,8]))
-		println(cap([](float, 10000000)))
-		println(cap([](int, 0)))
+		a = [1]
+		b = [7,8,9]
+		c = [1.5, 2.5]
+		d = [3.5, 4.5]
+		a = append(a, b)
+		e = append(c, d)
+
+		println(e[0])
+		println(e[1])
+		println(e[2])
+		println(e[3])
+
+		println(cap(a))
+		println(len(a))
 
 	`)
 

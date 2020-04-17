@@ -513,6 +513,8 @@ func (v Type) String() string {
 		return "bool"
 	case TYPE_ARRAY:
 		return "array"
+	case TYPE_WHATEVER:
+		return "anything"
 	}
 	return "?"
 }
@@ -671,6 +673,16 @@ func equalTypes(l1, l2 []ComplexType, strict bool) bool {
 		}
 	}
 	return true
+}
+
+func typeIsGeneric(c ComplexType) bool {
+	if c.t == TYPE_WHATEVER {
+		return true
+	}
+	if c.subType == nil {
+		return false
+	}
+	return typeIsGeneric(*c.subType)
 }
 
 // Operator priority (Descending priority!):

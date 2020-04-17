@@ -9,7 +9,8 @@ type ASM struct {
 	//constants [][2]string
 
 	// value -> name
-	constants map[string]string
+	constants    map[string]string
+	sysConstants map[string]string
 
 	variables   [][3]string
 	sectionText []string
@@ -33,11 +34,11 @@ func (asm *ASM) addConstant(value string) string {
 
 	return name
 }
-func (asm *ASM) addNamedConstant(name, value string) {
-	if _, ok := asm.constants[value]; ok {
+func (asm *ASM) addSysConstant(name, value string) {
+	if _, ok := asm.sysConstants[value]; ok {
 		panic(fmt.Sprintf("Code generation error. Name %v already registered in Constants", name))
 	}
-	asm.constants[value] = name
+	asm.sysConstants[value] = name
 }
 
 func (asm *ASM) nextLabelName() string {
@@ -404,6 +405,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("mov", "r10, 0x22")
 	// OFFSET == 0
 	asm.addLine("mov", "r9, 0x00")
+	asm.addLine("mov", "r8, -1")
 	asm.addLine("syscall", "")
 
 	// Save our first memory register!
@@ -1298,8 +1300,179 @@ func (ast AST) addArrayCapFunction(asm *ASM) {
 
 	asm.addLabel("; cap")
 	asm.addFun(asmName)
-	// Reads the actual first entry manually, which is the length of the following array
+	// Reads the actual first entry manually, which is the capacity of the following array
 	asm.addLine("mov", "rax, [rdi]")
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addArrayFreeFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	ast.globalSymbolTable.setFunAsmName("free", asmName, params, false)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; free")
+	asm.addFun(asmName)
+
+	asm.addLine("push", "rsi")
+
+	asm.addLine("mov", "rax, sys_munmap")
+	asm.addLine("mov", "rsi, [rdi]")
+	// Include both len and cap mem fields
+	asm.addLine("add", "rsi, 2")
+	// TODO: Replace 8 by the element size later. We might have to save the element size at the beginning as well...
+	asm.addLine("imul", "rsi, 8")
+	asm.addLine("syscall", "")
+
+	asm.addLine("pop", "rsi")
+
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addArrayResetFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	ast.globalSymbolTable.setFunAsmName("reset", asmName, params, false)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; reset")
+	asm.addFun(asmName)
+
+	// Set len to 0.
+	tmpR, _ := getRegister(TYPE_INT)
+	asm.addLine("mov", tmpR+", 0")
+	asm.addLine("mov", "[rdi+8], "+tmpR)
+
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addArrayClearFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	ast.globalSymbolTable.setFunAsmName("clear", asmName, params, false)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; clear")
+	asm.addFun(asmName)
+
+	asm.addLine("mov", "rcx, [rdi+8]")
+
+	// Set len to 0.
+	tmpR, _ := getRegister(TYPE_INT)
+	asm.addLine("mov", tmpR+", 0")
+	asm.addLine("mov", "[rdi+8], "+tmpR)
+	// Skip the cap and len parts
+	asm.addLine("add", "rdi, 16")
+	// rax == What to write into memory (default). So we fill it up with 0s
+	asm.addLine("xor", "rax, rax")
+	// store the value of rax into what rdi points to at every position and decrement rcx.
+	asm.addLine("rep", "stosq")
+
+	asm.addLine("ret", "")
+
+	for _, line := range asm.program {
+		asm.functions = append(asm.functions, line)
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addArrayAppendFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{
+		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+	}
+	ast.globalSymbolTable.setFunAsmName("append", asmName, params, false)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; append")
+	asm.addFun(asmName)
+
+	// TODO: Check, if the current memory is enough for both, then don't create new heap memory!
+
+	// Determine size of the new memory block. len1 + len2
+	asm.addLine("mov", "r9, [rdi+8]")
+	asm.addLine("add", "r9, [rsi+8]")
+	asm.addLine("push", "r9")
+	asm.addLine("push", "rsi")
+	asm.addLine("push", "rdi")
+
+	asm.addLine("mov", "r10, r9")
+
+	asm.addLine("add", "r10, 2")
+	asm.addLine("imul", "r10, 8")
+
+	// Create new memory block
+	asm.addLine("mov", "rax, sys_mmap")
+	asm.addLine("mov", "rdi, 0x00")
+	asm.addLine("mov", "rsi, r10")
+	asm.addLine("mov", "rdx, 0x03")
+	asm.addLine("mov", "r10, 0x22")
+	asm.addLine("mov", "r9, 0x00")
+	asm.addLine("mov", "r8, -1")
+	asm.addLine("syscall", "")
+
+	// mem check
+	asm.addLine("cmp", "rax, 0")
+	asm.addLine("jl", "exit")
+
+	// Copy memory from array 1 over to new array
+	// Old array 1
+	asm.addLine("pop", "r11")
+
+	// len of array 1
+	asm.addLine("mov", "r8, [r11+8]")
+	// So we can use r8 later without having to re-calculate
+	asm.addLine("mov", "rcx, r8")
+	// Destination address (after cap+len)
+	asm.addLine("lea", "rdi, [rax+16]")
+	// Source address (after cap+len)
+	asm.addLine("lea", "rsi, [r11+16]")
+	// Copy data over
+	asm.addLine("rep", "movsq")
+
+	// Copy memory from array 2 over to new array
+	// Old array 2
+	asm.addLine("pop", "r11")
+
+	// len of array 2
+	asm.addLine("mov", "rcx, [r11+8]")
+	asm.addLine("imul", "r8, 8")
+	// Destination address (after array1+cap+len)
+	asm.addLine("lea", "rdi, [rax+r8+16]")
+	// Source address (after cap+len)
+	asm.addLine("lea", "rsi, [r11+16]")
+	// Copy data over
+	asm.addLine("rep", "movsq")
+
+	// Write new current capacity and length!
+	asm.addLine("pop", "r9")
+	asm.addLine("mov", "[rax], r9")
+	asm.addLine("mov", "[rax+8], r9")
+
 	asm.addLine("ret", "")
 
 	for _, line := range asm.program {
@@ -1312,6 +1485,7 @@ func (ast AST) generateCode() ASM {
 
 	asm := ASM{}
 	asm.constants = make(map[string]string, 0)
+	asm.sysConstants = make(map[string]string, 0)
 
 	asm.header = append(asm.header, "section .data")
 
@@ -1319,10 +1493,11 @@ func (ast AST) generateCode() ASM {
 
 	asm.sectionText = append(asm.sectionText, "section .text")
 
-	asm.addNamedConstant("sys_write", "1")
-	asm.addNamedConstant("sys_mmap", "9")
-	asm.addNamedConstant("sys_brk", "12")
-	asm.addNamedConstant("sys_exit", "60")
+	asm.addSysConstant("sys_write", "1")
+	asm.addSysConstant("sys_mmap", "9")
+	asm.addSysConstant("sys_munmap", "11")
+	asm.addSysConstant("sys_brk", "12")
+	asm.addSysConstant("sys_exit", "60")
 
 	ast.addPrintCharFunction(&asm)
 
@@ -1334,6 +1509,11 @@ func (ast AST) generateCode() ASM {
 
 	ast.addArrayCapFunction(&asm)
 	ast.addArrayLenFunction(&asm)
+	ast.addArrayFreeFunction(&asm)
+	ast.addArrayResetFunction(&asm)
+	ast.addArrayClearFunction(&asm)
+
+	ast.addArrayAppendFunction(&asm)
 
 	asm.addFun("_start")
 

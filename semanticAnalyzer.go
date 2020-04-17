@@ -368,6 +368,33 @@ func analyzeIndexedAccess(t ComplexType, indexExpressions []Expression, symbolTa
 	return indexExpressions, nil
 }
 
+// Sometimes we need a bit of special handling to work with system-side generic functions
+// like 'append()', to keep our type system going on the programmer and semantic side ...
+func analyzeFunCallReturnTypes(fun FunCall, args []ComplexType, symbolTable *SymbolTable) ([]ComplexType, error) {
+	funEntry, ok := symbolTable.getFun(fun.funName, args)
+	if !ok {
+		return nil, fmt.Errorf("%w[%v:%v] - Function '%v' called before declaration", ErrCritical, fun.line, fun.column, fun.funName)
+	}
+	types := funEntry.returnTypes
+
+	if len(types) == 1 && typeIsGeneric(types[0]) {
+		switch fun.funName {
+		case "append":
+
+			// Additionally check, that both parameters to append are equal.
+			if len(args) != 2 || !equalType(args[0], args[1], true) {
+				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' can only be called with arrays of the same type",
+					ErrCritical, fun.line, fun.column, fun.funName,
+				)
+			}
+
+			// Whatever we dump into append, we get out again!
+			return []ComplexType{args[0]}, nil
+		}
+	}
+	return types, nil
+}
+
 func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 
 	// The parameters must be analyzed before we query the symbol table for the actual
@@ -387,7 +414,12 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	if !ok {
 		return fun, fmt.Errorf("%w[%v:%v] - Function '%v' called before declaration", ErrCritical, fun.line, fun.column, fun.funName)
 	}
-	fun.retTypes = funEntry.returnTypes
+
+	returnTypes, err := analyzeFunCallReturnTypes(fun, expressionsToTypes(fun.args), symbolTable)
+	if err != nil {
+		return fun, err
+	}
+	fun.retTypes = returnTypes
 
 	if len(expressionTypes) != len(funEntry.paramTypes) {
 		return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' has %v parameters, but needs %v",
@@ -825,6 +857,17 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{})
 	ast.globalSymbolTable.setFun("cap", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}})
 	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}})
+	ast.globalSymbolTable.setFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{})
+	ast.globalSymbolTable.setFun("reset", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{})
+	ast.globalSymbolTable.setFun("clear", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{})
+
+	ast.globalSymbolTable.setFun("append",
+		[]ComplexType{
+			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		},
+		[]ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}},
+	)
 
 	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
 	if err != nil {
