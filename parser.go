@@ -116,6 +116,8 @@ type SymbolFunEntry struct {
 	jumpLabel                string
 	epilogueLabel            string
 	returnStackPointerOffset int
+	inline                   bool
+	isUsed                   bool
 }
 
 type SymbolTable struct {

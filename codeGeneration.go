@@ -4,6 +4,12 @@ import (
 	"fmt"
 )
 
+type ASMFunction struct {
+	code   [][3]string
+	inline bool
+	used   bool
+}
+
 type ASM struct {
 	header []string
 	//constants [][2]string
@@ -14,8 +20,11 @@ type ASM struct {
 
 	variables   [][3]string
 	sectionText []string
-	functions   [][3]string
-	program     [][3]string
+	//functions   [][3]string
+
+	functions map[string]ASMFunction
+
+	program [][3]string
 
 	// Increasing number to generate unique const variable names
 	constName int
@@ -54,12 +63,33 @@ func (asm *ASM) nextFunctionName() string {
 func (asm *ASM) addLabel(label string) {
 	asm.program = append(asm.program, [3]string{"", label + ":", ""})
 }
-func (asm *ASM) addFun(name string) {
-	asm.program = append(asm.program, [3]string{"", "global " + name, ""})
-	asm.program = append(asm.program, [3]string{"", name + ":"})
+func (asm *ASM) addFun(name string, inline bool) {
+	asm.functions[name] = ASMFunction{make([][3]string, 0), inline, false}
+}
+func (asm *ASM) setFunIsUsed(name string, isUsed bool) {
+	if e, ok := asm.functions[name]; ok {
+		e.used = isUsed
+		asm.functions[name] = e
+		return
+	}
+	panic("Code generation error. setFunIsUsed - function not found to set flag to")
 }
 func (asm *ASM) addLine(command, args string) {
 	asm.program = append(asm.program, [3]string{"  ", command, args})
+}
+func (asm *ASM) addLines(commands [][3]string) {
+	asm.program = append(asm.program, commands...)
+}
+func (asm *ASM) addRawLine(command string) {
+	asm.program = append(asm.program, [3]string{"", command, ""})
+}
+
+func (asm *ASM) getFunctionCode(asmName string) [][3]string {
+	f, ok := asm.functions[asmName]
+	if !ok {
+		panic("Code generation error. Unknown function to get code from")
+	}
+	return f.code
 }
 
 func getJumpType(op Operator) string {
@@ -564,9 +594,16 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	}
 
-	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args)); ok {
+	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args), true); ok {
 
-		asm.addLine("call", entry.jumpLabel)
+		if !entry.inline {
+			asm.addLine("call", entry.jumpLabel)
+		} else {
+			// Instead of calling the function, copy its content directly into the source code!
+			asm.addLines(asm.getFunctionCode(entry.jumpLabel))
+		}
+
+		asm.setFunIsUsed(entry.jumpLabel, true)
 
 		paramCount := len(entry.paramTypes)
 		if len(f.retTypes) > 1 {
@@ -901,7 +938,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	asmName := asm.nextFunctionName()
 	s.setFunAsmName(f.fName, asmName, variablesToTypes(f.parameters), true)
-	asm.addFun(asmName)
+	asm.addFun(asmName, false)
 
 	epilogueLabel := asm.nextLabelName()
 	s.setFunEpilogueLabel(f.fName, epilogueLabel, variablesToTypes(f.parameters))
@@ -953,17 +990,21 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 
 	addFunctionEpilogue(asm)
 
-	asm.addLine("ret", "")
+	if !s.funIsInline(f.fName, variablesToTypes(f.parameters), true) {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
 
 func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 
-	entry, ok := s.getFun(s.activeFunctionName, s.activeFunctionParams)
+	entry, ok := s.getFun(s.activeFunctionName, s.activeFunctionParams, true)
 	if !ok {
 		panic("Code generation error. Function not in symbol table.")
 	}
@@ -1015,13 +1056,15 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_INT, nil}}
-	ast.globalSymbolTable.setFunAsmName("printChar", asmName, params, true)
+	functionName := "printChar"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; printChar")
-	asm.addFun(asmName)
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
 
 	asm.addLine("push", "rsi")
 	asm.addLine("push", "rdi")
@@ -1040,10 +1083,14 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 	asm.addLine("pop", "rdi")
 	asm.addLine("pop", "rsi")
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1052,19 +1099,24 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_INT, nil}}
-	entry, ok := ast.globalSymbolTable.getFun("printChar", params)
+	entry, ok := ast.globalSymbolTable.getFun("printChar", params, true)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
 
-	ast.globalSymbolTable.setFunAsmName("print", asmName, params, true)
+	// set is-used status based on, if this function is used.
+	asm.setFunIsUsed(printCharName, true)
+
+	functionName := "print"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
 	asm.addLabel("; printInt")
-	asm.addFun(asmName)
+	asm.addFun(asmName, isInline)
 
 	asm.addLine("push", "rdi")
 	asm.addLine("push", "rsi")
@@ -1114,10 +1166,14 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	asm.addLine("pop", "rsi")
 	asm.addLine("pop", "rdi")
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1126,24 +1182,29 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_INT, nil}}
-	ast.globalSymbolTable.setFunAsmName("println", asmName, params, true)
+	functionName := "println"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
 
-	entry, ok := ast.globalSymbolTable.getFun("printChar", params)
+	entry, ok := ast.globalSymbolTable.getFun("printChar", params, false)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
-	entry, ok = ast.globalSymbolTable.getFun("print", params)
+	entry, ok = ast.globalSymbolTable.getFun("print", params, false)
 	if !ok {
 		fmt.Println("Code generation error. print can not be found")
 	}
 	printIntName := entry.jumpLabel
 
+	asm.setFunIsUsed(printCharName, true)
+	asm.setFunIsUsed(printIntName, true)
+
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
 	asm.addLabel("; printIntLn")
-	asm.addFun(asmName)
+	asm.addFun(asmName, isInline)
 
 	asm.addLine("push", "rdi")
 
@@ -1154,10 +1215,14 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
 	asm.addLine("pop", "rdi")
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1167,24 +1232,29 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	paramsI := []ComplexType{ComplexType{TYPE_INT, nil}}
 	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
-	ast.globalSymbolTable.setFunAsmName("print", asmName, paramsF, true)
+	functionName := "print"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, paramsF, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, paramsF, true)
 
-	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI)
+	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI, false)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
-	entry, ok = ast.globalSymbolTable.getFun("print", paramsI)
+	entry, ok = ast.globalSymbolTable.getFun("print", paramsI, false)
 	if !ok {
 		fmt.Println("Code generation error. print can not be found")
 	}
 	printIntName := entry.jumpLabel
 
+	asm.setFunIsUsed(printCharName, true)
+	asm.setFunIsUsed(printIntName, true)
+
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
 	asm.addLabel("; printFloat")
-	asm.addFun(asmName)
+	asm.addFun(asmName, isInline)
 
 	asm.addLine("push", "rdi")
 
@@ -1219,10 +1289,14 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 
 	asm.addLine("pop", "rdi")
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1232,25 +1306,29 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	paramsI := []ComplexType{ComplexType{TYPE_INT, nil}}
 	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
-	ast.globalSymbolTable.setFunAsmName("println", asmName, paramsF, true)
+	functionName := "println"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, paramsF, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, paramsF, true)
 
-	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI)
+	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI, false)
 	if !ok {
 		fmt.Println("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
-	entry, ok = ast.globalSymbolTable.getFun("print", paramsF)
+	entry, ok = ast.globalSymbolTable.getFun("print", paramsF, false)
 	if !ok {
 		fmt.Println("Code generation error. print can not be found")
 	}
 	printFloatName := entry.jumpLabel
 
+	asm.setFunIsUsed(printCharName, true)
+	asm.setFunIsUsed(printFloatName, true)
+
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
 	asm.addLabel("; printFloatLn")
-	asm.addFun(asmName)
-	//addFunctionPrologue(asm, 0)
+	asm.addFun(asmName, isInline)
 
 	asm.addLine("push", "rdi")
 
@@ -1261,11 +1339,14 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
 	asm.addLine("pop", "rdi")
 
-	//addFunctionEpilogue(asm)
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1273,19 +1354,26 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 func (ast AST) addArrayLenFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
-	ast.globalSymbolTable.setFunAsmName("len", asmName, params, false)
+	functionName := "len"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; len")
-	asm.addFun(asmName)
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
 	// Reads the actual first entry manually, which is the length of the following array
 	asm.addLine("mov", "rax, [rdi+8]")
-	asm.addLine("ret", "")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1293,19 +1381,26 @@ func (ast AST) addArrayLenFunction(asm *ASM) {
 func (ast AST) addArrayCapFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
-	ast.globalSymbolTable.setFunAsmName("cap", asmName, params, false)
+	functionName := "cap"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; cap")
-	asm.addFun(asmName)
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
 	// Reads the actual first entry manually, which is the capacity of the following array
 	asm.addLine("mov", "rax, [rdi]")
-	asm.addLine("ret", "")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1313,13 +1408,15 @@ func (ast AST) addArrayCapFunction(asm *ASM) {
 func (ast AST) addArrayFreeFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
-	ast.globalSymbolTable.setFunAsmName("free", asmName, params, false)
+	functionName := "free"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; free")
-	asm.addFun(asmName)
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
 
 	asm.addLine("push", "rsi")
 
@@ -1333,10 +1430,14 @@ func (ast AST) addArrayFreeFunction(asm *ASM) {
 
 	asm.addLine("pop", "rsi")
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1344,23 +1445,29 @@ func (ast AST) addArrayFreeFunction(asm *ASM) {
 func (ast AST) addArrayResetFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
-	ast.globalSymbolTable.setFunAsmName("reset", asmName, params, false)
+	functionName := "reset"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; reset")
-	asm.addFun(asmName)
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
 
 	// Set len to 0.
 	tmpR, _ := getRegister(TYPE_INT)
 	asm.addLine("mov", tmpR+", 0")
 	asm.addLine("mov", "[rdi+8], "+tmpR)
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1368,13 +1475,15 @@ func (ast AST) addArrayResetFunction(asm *ASM) {
 func (ast AST) addArrayClearFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
-	ast.globalSymbolTable.setFunAsmName("clear", asmName, params, false)
+	functionName := "clear"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; clear")
-	asm.addFun(asmName)
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
 
 	asm.addLine("mov", "rcx, [rdi+8]")
 
@@ -1389,10 +1498,14 @@ func (ast AST) addArrayClearFunction(asm *ASM) {
 	// store the value of rax into what rdi points to at every position and decrement rcx.
 	asm.addLine("rep", "stosq")
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1403,13 +1516,15 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
 		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
 	}
-	ast.globalSymbolTable.setFunAsmName("append", asmName, params, false)
+	functionName := "append"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; append")
-	asm.addFun(asmName)
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
 
 	// TODO: Check, if the current memory is enough for both, then don't create new heap memory!
 
@@ -1473,10 +1588,14 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asm.addLine("mov", "[rax], r9")
 	asm.addLine("mov", "[rax+8], r9")
 
-	asm.addLine("ret", "")
+	if !isInline {
+		asm.addLine("ret", "")
+	}
 
 	for _, line := range asm.program {
-		asm.functions = append(asm.functions, line)
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
 	}
 	asm.program = savedProgram
 }
@@ -1486,6 +1605,7 @@ func (ast AST) generateCode() ASM {
 	asm := ASM{}
 	asm.constants = make(map[string]string, 0)
 	asm.sysConstants = make(map[string]string, 0)
+	asm.functions = make(map[string]ASMFunction, 0)
 
 	asm.header = append(asm.header, "section .data")
 
@@ -1515,7 +1635,9 @@ func (ast AST) generateCode() ASM {
 
 	ast.addArrayAppendFunction(&asm)
 
-	asm.addFun("_start")
+	//asm.addFun("_start")
+	asm.addRawLine("global _start")
+	asm.addRawLine("_start:")
 
 	stackOffset := ast.block.assignVariableStackOffset([]Variable{}, false)
 	// To make the stack later 16bit aligned. Not really sure if thats the issue, to be honest...

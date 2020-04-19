@@ -53,8 +53,15 @@ func assemble(asm ASM, source, executable string) (err error) {
 	for _, v := range asm.sectionText {
 		fmt.Fprintf(srcFile, "%v\n", v)
 	}
-	for _, v := range asm.functions {
-		fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
+	for k, f := range asm.functions {
+		if !f.inline && f.used {
+			fmt.Fprintf(srcFile, "global %v\n", k)
+			fmt.Fprintf(srcFile, "%v:\n", k)
+
+			for _, v := range f.code {
+				fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
+			}
+		}
 	}
 	for _, v := range asm.program {
 		fmt.Fprintf(srcFile, "%v%-10v%-10v\n", v[0], v[1], v[2])
@@ -139,20 +146,10 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		a = [1]
-		b = [7,8,9]
-		c = [1.5, 2.5]
-		d = [3.5, 4.5]
-		a = append(a, b)
-		e = append(c, d)
+		println(cap([1,2,3]))
 
-		println(e[0])
-		println(e[1])
-		println(e[2])
-		println(e[3])
-
-		println(cap(a))
-		println(len(a))
+		// for i,e : a {
+		// }
 
 	`)
 
