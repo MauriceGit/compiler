@@ -903,7 +903,7 @@ func semanticAnalysis(ast AST) (AST, error) {
 			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
 		},
 		[]ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}},
-		true,
+		false,
 	)
 
 	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
