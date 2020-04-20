@@ -146,19 +146,15 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		a = [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-		b = [](int, 1234565)
-		c = [](float, 1234565)
-		d = [](bool, 1234565)
+		a = [](int, 10)
+		b = [7,7,7,7,7,7,7]
 
-		free(a)
-		free(b)
-		free(c)
-		free(d)
+		a = append(a, b)
 
-		println(555.666)
+		println(cap(a))
+		println(len(a))
 
-		// for i,e : a {
+		// for i, e : a {
 		// }
 
 	`)

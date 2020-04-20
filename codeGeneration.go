@@ -447,7 +447,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("cmp", "rax, 0")
 	asm.addLine("jl", "exit")
 
-	dataLength := 0
+	//dataLength := 0
 
 	// Initialize array with 0s, if they are not initialized.
 	if len(a.aExpressions) == 0 {
@@ -461,7 +461,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		// store the value of rax into what rdi points to at every position and decrement rcx.
 		asm.addLine("rep", "stosq")
 	} else {
-		dataLength = a.aCount
+		//dataLength = a.aCount
 		for i := len(a.aExpressions) - 1; i >= 0; i-- {
 			e := a.aExpressions[i]
 			// Calculate expression
@@ -492,7 +492,6 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("mov", fmt.Sprintf("[rsi], %v", register))
 
 	// Currently used memory into second position
-	asm.addLine("mov", fmt.Sprintf("%v, %v", register, dataLength))
 	asm.addLine("mov", fmt.Sprintf("[rsi+8], %v", register))
 
 	asm.addLine("mov", "rax, rsi")
@@ -1350,7 +1349,7 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
 func (ast AST) addArrayLenFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
 	functionName := "len"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1377,7 +1376,7 @@ func (ast AST) addArrayLenFunction(asm *ASM) {
 
 func (ast AST) addArrayCapFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
 	functionName := "cap"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1404,7 +1403,7 @@ func (ast AST) addArrayCapFunction(asm *ASM) {
 
 func (ast AST) addArrayFreeFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
 	functionName := "free"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1414,6 +1413,9 @@ func (ast AST) addArrayFreeFunction(asm *ASM) {
 
 	asm.addLabel("; " + functionName)
 	asm.addFun(asmName, isInline)
+
+	// Set only for itself!
+	asm.setFunIsUsed(asmName, ast.globalSymbolTable.funIsUsed(functionName, params, true))
 
 	asm.addLine("push", "rsi")
 
@@ -1441,7 +1443,7 @@ func (ast AST) addArrayFreeFunction(asm *ASM) {
 
 func (ast AST) addArrayResetFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
 	functionName := "reset"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1471,7 +1473,7 @@ func (ast AST) addArrayResetFunction(asm *ASM) {
 
 func (ast AST) addArrayClearFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, nil}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
 	functionName := "clear"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1517,6 +1519,12 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
+	entry, ok := ast.globalSymbolTable.getFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, false)
+	if !ok {
+		fmt.Println("Code generation error. free can not be found")
+	}
+	freeAsmName := entry.jumpLabel
+
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
@@ -1530,11 +1538,24 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asm.addLine("add", "r9, [rsi+8]")
 	asm.addLine("push", "r9")
 	asm.addLine("push", "rsi")
+
+	// Compare capacity of array1 to the length we need
+	asm.addLine("cmp", "[rdi], r9")
+	noNewMemLabel := asm.nextLabelName()
+	memContinue := asm.nextLabelName()
+	asm.addLine("jge", noNewMemLabel)
+
 	asm.addLine("push", "rdi")
 
+	// Double the memory!
+	asm.addLine("imul", "r9, 2")
+
+	asm.addLine("push", "r9")
 	asm.addLine("mov", "r10, r9")
 
+	// Add space for cap and len
 	asm.addLine("add", "r10, 2")
+	// Multiply by size of array element.
 	asm.addLine("imul", "r10, 8")
 
 	// Create new memory block
@@ -1551,6 +1572,10 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asm.addLine("cmp", "rax, 0")
 	asm.addLine("jl", "exit")
 
+	// Write capacity of new array
+	asm.addLine("pop", "r9")
+	asm.addLine("mov", "[rax], r9")
+
 	// Copy memory from array 1 over to new array
 	// Old array 1
 	asm.addLine("pop", "r11")
@@ -1566,6 +1591,22 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	// Copy data over
 	asm.addLine("rep", "movsq")
 
+	// Free the original array1!
+	asm.addLine("push", "rax")
+	asm.addLine("mov", "rdi, r11")
+	asm.addLine("call", freeAsmName)
+	asm.addLine("pop", "rax")
+
+	asm.addLine("jmp", memContinue)
+
+	asm.addLabel(noNewMemLabel)
+	// Our current array1 is large enough
+	asm.addLine("mov", "rax, rdi")
+	// We use r8 later as length of array1. So we need to set it here as well.
+	asm.addLine("mov", "r8, [rdi+8]")
+
+	asm.addLabel(memContinue)
+
 	// Copy memory from array 2 over to new array
 	// Old array 2
 	asm.addLine("pop", "r11")
@@ -1580,9 +1621,9 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	// Copy data over
 	asm.addLine("rep", "movsq")
 
-	// Write new current capacity and length!
+	// Write new current length!
 	asm.addLine("pop", "r9")
-	asm.addLine("mov", "[rax], r9")
+	//asm.addLine("mov", "[rax], r9")
 	asm.addLine("mov", "[rax+8], r9")
 
 	if !isInline {

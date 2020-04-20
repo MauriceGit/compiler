@@ -879,6 +879,11 @@ func setSystemFunctionUsage(s *SymbolTable) {
 
 	iArg := []ComplexType{ComplexType{TYPE_INT, nil}}
 	fArg := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+	aArg := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	aaArg := []ComplexType{
+		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+	}
 
 	plnI := s.funIsUsed("println", iArg, true)
 	pI := s.funIsUsed("print", iArg, true)
@@ -891,6 +896,9 @@ func setSystemFunctionUsage(s *SymbolTable) {
 
 	// We need to re-query them because we just possibly changed their state.
 	s.setFunIsUsed("printChar", iArg, s.funIsUsed("print", iArg, true) || s.funIsUsed("print", fArg, true))
+
+	s.setFunIsUsed("free", aArg, s.funIsUsed("free", aArg, false) || s.funIsUsed("append", aaArg, false))
+
 }
 
 // analyzeTypes traverses the tree and analyzes variables with their corresponding type recursively from expressions!
@@ -913,7 +921,8 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("cap", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
 	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
-	ast.globalSymbolTable.setFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, true)
+	// free can not be set as inline, as we have to call it explicitely from assembly in append()
+	ast.globalSymbolTable.setFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("reset", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, true)
 	ast.globalSymbolTable.setFun("clear", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, true)
 

@@ -93,7 +93,7 @@ func ExampleArrayLen() {
 
 	// Output:
 	// 8
-	// 0
+	// 134
 	// 0
 }
 
@@ -224,6 +224,55 @@ func ExampleArrayAppend() {
 	// 4.500
 	// 4
 	// 4
+}
+
+// ExampleArrayAppend2 checks, if the capacity is adjusted as expected (factor 2 for new allocations) and if we re-use
+// existing memory, if it is available!
+func ExampleArrayAppend2() {
+	var program []byte = []byte(`
+		a = [](int, 10)
+		b = [](int, 5)
+
+		a = append(a, b)
+
+		println(len(a))
+		println(cap(a))
+
+		// Memory reuse. Len should be 5*len(b), capacity should stay the same, as it is large enough!
+		reset(a)
+		a = append(a, b)
+		a = append(a, b)
+		a = append(a, b)
+		a = append(a, b)
+		a = append(a, b)
+
+		println(len(a))
+		println(cap(a))
+
+		a = append(a, b)
+
+		println(len(a))
+		println(cap(a))
+
+		// We now exeed the internal capacity and re-allocate more memory!
+		a = append(a, b)
+
+		println(len(a))
+		println(cap(a))
+
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 15
+	// 30
+	// 25
+	// 30
+	// 30
+	// 30
+	// 35
+	// 70
 }
 
 // ExampleMultiAssignment checks, that multi-value assignments and automatic unpacking works correctly
