@@ -19,6 +19,7 @@ const (
 	TOKEN_SQUARE_OPEN
 	TOKEN_SQUARE_CLOSE
 	TOKEN_SEMICOLON
+	TOKEN_COLON
 	TOKEN_EOF
 	TOKEN_UNKNOWN
 )
@@ -60,6 +61,8 @@ func (t TokenType) String() string {
 		return "TOKEN_SQARE_CLOSE"
 	case TOKEN_SEMICOLON:
 		return "TOKEN_SEMICOLON"
+	case TOKEN_COLON:
+		return "TOKEN_COLON"
 	case TOKEN_EOF:
 		return "TOKEN_EOF"
 	}
@@ -77,6 +80,8 @@ func parseByte(program []byte) (TokenType, bool) {
 		return TOKEN_SEPARATOR, true
 	case ';':
 		return TOKEN_SEMICOLON, true
+	case ':':
+		return TOKEN_COLON, true
 	case '(':
 		return TOKEN_PARENTHESIS_OPEN, true
 	case ')':
