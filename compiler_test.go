@@ -184,9 +184,9 @@ func ExampleArrayClear() {
 	// 5
 }
 
-// ExampleArrayAppend tests the internal append() function and checks the length of the resulting arrays
+// ExampleArrayAppend tests the internal extend() function and checks the length of the resulting arrays
 // for both floats and ints
-func ExampleArrayAppend() {
+func ExampleArrayExtend() {
 	var program []byte = []byte(`
 		a = [1]
 		b = [7,8,9]
@@ -194,8 +194,8 @@ func ExampleArrayAppend() {
 		c = [1.5, 2.5]
 		d = [3.5, 4.5]
 
-		a = append(a, b)
-		c = append(c, d)
+		a = extend(a, b)
+		c = extend(c, d)
 
 		println(a[0])
 		println(a[1])
@@ -228,34 +228,34 @@ func ExampleArrayAppend() {
 
 // ExampleArrayAppend2 checks, if the capacity is adjusted as expected (factor 2 for new allocations) and if we re-use
 // existing memory, if it is available!
-func ExampleArrayAppend2() {
+func ExampleArrayExtend2() {
 	var program []byte = []byte(`
 		a = [](int, 10)
 		b = [](int, 5)
 
-		a = append(a, b)
+		a = extend(a, b)
 
 		println(len(a))
 		println(cap(a))
 
 		// Memory reuse. Len should be 5*len(b), capacity should stay the same, as it is large enough!
 		reset(a)
-		a = append(a, b)
-		a = append(a, b)
-		a = append(a, b)
-		a = append(a, b)
-		a = append(a, b)
+		a = extend(a, b)
+		a = extend(a, b)
+		a = extend(a, b)
+		a = extend(a, b)
+		a = extend(a, b)
 
 		println(len(a))
 		println(cap(a))
 
-		a = append(a, b)
+		a = extend(a, b)
 
 		println(len(a))
 		println(cap(a))
 
 		// We now exeed the internal capacity and re-allocate more memory!
-		a = append(a, b)
+		a = extend(a, b)
 
 		println(len(a))
 		println(cap(a))
@@ -273,6 +273,34 @@ func ExampleArrayAppend2() {
 	// 30
 	// 35
 	// 70
+}
+
+// ExampleArrayAppend2 checks, if the capacity is adjusted as expected (factor 2 for new allocations) and if we re-use
+// existing memory, if it is available!
+func ExampleArrayAppend() {
+	var program []byte = []byte(`
+		a = [](int, 10)
+
+		println(cap(a))
+		println(len(a))
+
+		a = append(a, 8)
+
+		println(cap(a))
+		println(len(a))
+
+		println(a[10])
+
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 10
+	// 10
+	// 22
+	// 11
+	// 8
 }
 
 // ExampleMultiAssignment checks, that multi-value assignments and automatic unpacking works correctly

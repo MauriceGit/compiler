@@ -413,18 +413,59 @@ func analyzeFunCallReturnTypes(fun FunCall, args []ComplexType, symbolTable *Sym
 	types := funEntry.returnTypes
 
 	if len(types) == 1 && typeIsGeneric(types[0]) {
-		switch fun.funName {
-		case "append":
 
-			// Additionally check, that both parameters to append are equal.
-			if len(args) != 2 || !equalType(args[0], args[1], true) {
-				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' can only be called with arrays of the same type",
+		arrayType := ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}
+
+		switch fun.funName {
+		case "extend":
+
+			if len(args) != 2 {
+				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' needs two parameters",
+					ErrCritical, fun.line, fun.column, fun.funName,
+				)
+			}
+
+			if !equalType(args[0], arrayType, false) {
+				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' needs array as first parameter",
+					ErrCritical, fun.line, fun.column, fun.funName,
+				)
+			}
+
+			// Both parameters to extend should be equal.
+			if !equalType(args[0], args[1], true) {
+				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' can only be called with arrays (of the same type)",
 					ErrCritical, fun.line, fun.column, fun.funName,
 				)
 			}
 
 			// Whatever we dump into append, we get out again!
 			return []ComplexType{args[0]}, nil
+		case "append":
+
+			if len(args) != 2 {
+				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' needs two parameters",
+					ErrCritical, fun.line, fun.column, fun.funName,
+				)
+			}
+
+			if !equalType(args[0], arrayType, false) {
+				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' needs array as first parameter",
+					ErrCritical, fun.line, fun.column, fun.funName,
+				)
+			}
+
+			// We expect the append element function
+			// The element must have the same type as the array.
+			if !equalType(*args[0].subType, args[1], true) {
+				return nil, fmt.Errorf("%w[%v:%v] - Function '%v' type mismatch between array type and given element to append",
+					ErrCritical, fun.line, fun.column, fun.funName,
+				)
+			}
+
+			// Whatever we dump into append, we get out again!
+			return []ComplexType{args[0]}, nil
+		default:
+			return nil, fmt.Errorf("%w[%v:%v] - Unknown generic function %v", ErrCritical, fun.line, fun.column, fun.funName)
 		}
 	}
 	return types, nil
@@ -880,9 +921,13 @@ func setSystemFunctionUsage(s *SymbolTable) {
 	iArg := []ComplexType{ComplexType{TYPE_INT, nil}}
 	fArg := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
 	aArg := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	aeArg := []ComplexType{
+		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+	}
 	aaArg := []ComplexType{
 		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
-		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		ComplexType{TYPE_WHATEVER, nil},
 	}
 
 	plnI := s.funIsUsed("println", iArg, true)
@@ -897,7 +942,11 @@ func setSystemFunctionUsage(s *SymbolTable) {
 	// We need to re-query them because we just possibly changed their state.
 	s.setFunIsUsed("printChar", iArg, s.funIsUsed("print", iArg, true) || s.funIsUsed("print", fArg, true))
 
-	s.setFunIsUsed("free", aArg, s.funIsUsed("free", aArg, false) || s.funIsUsed("append", aaArg, false))
+	s.setFunIsUsed("free", aArg,
+		s.funIsUsed("free", aArg, false) ||
+			s.funIsUsed("extend", aeArg, false) ||
+			s.funIsUsed("append", aaArg, false),
+	)
 
 }
 
@@ -926,10 +975,19 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("reset", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, true)
 	ast.globalSymbolTable.setFun("clear", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, true)
 
-	ast.globalSymbolTable.setFun("append",
+	ast.globalSymbolTable.setFun("extend",
 		[]ComplexType{
 			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
 			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		},
+		[]ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}},
+		false,
+	)
+
+	ast.globalSymbolTable.setFun("append",
+		[]ComplexType{
+			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+			ComplexType{TYPE_WHATEVER, nil},
 		},
 		[]ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}},
 		false,

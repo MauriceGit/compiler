@@ -149,10 +149,17 @@ func main() {
 		a = [](int, 10)
 		b = [7,7,7,7,7,7,7]
 
-		a = append(a, b)
+		println(cap(a))
+		println(len(a))
+
+		a = append(a, 8)
 
 		println(cap(a))
 		println(len(a))
+
+		println(a[9])
+		println(a[10])
+		println(a[11])
 
 		// for i, e : a {
 		// }

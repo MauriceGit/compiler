@@ -1103,7 +1103,7 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	params := []ComplexType{ComplexType{TYPE_INT, nil}}
 	entry, ok := ast.globalSymbolTable.getFun("printChar", params, true)
 	if !ok {
-		fmt.Println("Code generation error. printChar can not be found")
+		panic("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
 
@@ -1190,12 +1190,12 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
 	entry, ok := ast.globalSymbolTable.getFun("printChar", params, false)
 	if !ok {
-		fmt.Println("Code generation error. printChar can not be found")
+		panic("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
 	entry, ok = ast.globalSymbolTable.getFun("print", params, false)
 	if !ok {
-		fmt.Println("Code generation error. print can not be found")
+		panic("Code generation error. print can not be found")
 	}
 	printIntName := entry.jumpLabel
 
@@ -1237,12 +1237,12 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 
 	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI, false)
 	if !ok {
-		fmt.Println("Code generation error. printChar can not be found")
+		panic("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
 	entry, ok = ast.globalSymbolTable.getFun("print", paramsI, false)
 	if !ok {
-		fmt.Println("Code generation error. print can not be found")
+		panic("Code generation error. print can not be found")
 	}
 	printIntName := entry.jumpLabel
 
@@ -1311,12 +1311,12 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
 	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI, false)
 	if !ok {
-		fmt.Println("Code generation error. printChar can not be found")
+		panic("Code generation error. printChar can not be found")
 	}
 	printCharName := entry.jumpLabel
 	entry, ok = ast.globalSymbolTable.getFun("print", paramsF, false)
 	if !ok {
-		fmt.Println("Code generation error. print can not be found")
+		panic("Code generation error. print can not be found")
 	}
 	printFloatName := entry.jumpLabel
 
@@ -1509,19 +1509,19 @@ func (ast AST) addArrayClearFunction(asm *ASM) {
 	asm.program = savedProgram
 }
 
-func (ast AST) addArrayAppendFunction(asm *ASM) {
+func (ast AST) addArrayExtendFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{
 		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
 		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
 	}
-	functionName := "append"
+	functionName := "extend"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
 	entry, ok := ast.globalSymbolTable.getFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, false)
 	if !ok {
-		fmt.Println("Code generation error. free can not be found")
+		panic("Code generation error. free can not be found")
 	}
 	freeAsmName := entry.jumpLabel
 
@@ -1530,8 +1530,6 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 
 	asm.addLabel("; " + functionName)
 	asm.addFun(asmName, isInline)
-
-	// TODO: Check, if the current memory is enough for both, then don't create new heap memory!
 
 	// Determine size of the new memory block. len1 + len2
 	asm.addLine("mov", "r9, [rdi+8]")
@@ -1638,6 +1636,125 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asm.program = savedProgram
 }
 
+func (ast AST) addArrayAppendFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{
+		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		ComplexType{TYPE_WHATEVER, nil},
+	}
+	functionName := "append"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
+
+	entry, ok := ast.globalSymbolTable.getFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, false)
+	if !ok {
+		panic("Code generation error. free can not be found")
+	}
+	freeAsmName := entry.jumpLabel
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; " + functionName + " element")
+	asm.addFun(asmName, isInline)
+
+	// Determine size of the new memory block. len1 + len2
+	asm.addLine("mov", "r9, [rdi+8]")
+	asm.addLine("add", "r9, 1")
+	asm.addLine("push", "rsi")
+
+	// Compare capacity of array1 to the length we need
+	asm.addLine("cmp", "[rdi], r9")
+	noNewMemLabel := asm.nextLabelName()
+	memContinue := asm.nextLabelName()
+	asm.addLine("jge", noNewMemLabel)
+
+	asm.addLine("push", "rdi")
+
+	// Double the memory!
+	asm.addLine("imul", "r9, 2")
+
+	asm.addLine("push", "r9")
+	asm.addLine("mov", "r10, r9")
+
+	// Add space for cap and len
+	asm.addLine("add", "r10, 2")
+	// Multiply by size of array element.
+	asm.addLine("imul", "r10, 8")
+
+	// Create new memory block
+	asm.addLine("mov", "rax, sys_mmap")
+	asm.addLine("mov", "rdi, 0x00")
+	asm.addLine("mov", "rsi, r10")
+	asm.addLine("mov", "rdx, 0x03")
+	asm.addLine("mov", "r10, 0x22")
+	asm.addLine("mov", "r9, 0x00")
+	asm.addLine("mov", "r8, -1")
+	asm.addLine("syscall", "")
+
+	// mem check
+	asm.addLine("cmp", "rax, 0")
+	asm.addLine("jl", "exit")
+
+	// Write capacity of new array
+	asm.addLine("pop", "r9")
+	asm.addLine("mov", "[rax], r9")
+
+	// Copy memory from array 1 over to new array
+	// Old array 1
+	asm.addLine("pop", "r11")
+
+	// len of array 1
+	asm.addLine("mov", "r8, [r11+8]")
+	// So we can use r8 later without having to re-calculate
+	asm.addLine("mov", "rcx, r8")
+	// Destination address (after cap+len)
+	asm.addLine("lea", "rdi, [rax+16]")
+	// Source address (after cap+len)
+	asm.addLine("lea", "rsi, [r11+16]")
+	// Copy data over
+	asm.addLine("rep", "movsq")
+
+	// Free the original array1!
+	asm.addLine("push", "rax")
+	asm.addLine("mov", "rdi, r11")
+	asm.addLine("call", freeAsmName)
+	asm.addLine("pop", "rax")
+
+	asm.addLine("jmp", memContinue)
+
+	asm.addLabel(noNewMemLabel)
+	// Our current array1 is large enough
+	asm.addLine("mov", "rax, rdi")
+	// We use r8 later as length of array1. So we need to set it here as well.
+	asm.addLine("mov", "r8, [rdi+8]")
+
+	asm.addLabel(memContinue)
+
+	// element to insert into array.
+	asm.addLine("pop", "r11")
+
+	// Write actual element into the array at current length position
+	asm.addLine("mov", "r9, r8")
+	asm.addLine("imul", "r9, 8")
+	asm.addLine("mov", "[rax+r9+16], r11")
+
+	// Write new current length!
+	asm.addLine("inc", "r8")
+	asm.addLine("mov", "[rax+8], r8")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
+
+	for _, line := range asm.program {
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
+	}
+	asm.program = savedProgram
+}
+
 func (ast AST) generateCode() ASM {
 
 	asm := ASM{}
@@ -1671,6 +1788,7 @@ func (ast AST) generateCode() ASM {
 	ast.addArrayResetFunction(&asm)
 	ast.addArrayClearFunction(&asm)
 
+	ast.addArrayExtendFunction(&asm)
 	ast.addArrayAppendFunction(&asm)
 
 	//asm.addFun("_start")
