@@ -146,7 +146,17 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		println(cap([1,2,3]))
+		a = [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+		b = [](int, 1234565)
+		c = [](float, 1234565)
+		d = [](bool, 1234565)
+
+		free(a)
+		free(b)
+		free(c)
+		free(d)
+
+		println(555.666)
 
 		// for i,e : a {
 		// }

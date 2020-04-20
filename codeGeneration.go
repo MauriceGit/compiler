@@ -1066,6 +1066,9 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 	asm.addLabel("; " + functionName)
 	asm.addFun(asmName, isInline)
 
+	// Set only for itself!
+	asm.setFunIsUsed(asmName, ast.globalSymbolTable.funIsUsed(functionName, params, true))
+
 	asm.addLine("push", "rsi")
 	asm.addLine("push", "rdi")
 
@@ -1105,9 +1108,6 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 	}
 	printCharName := entry.jumpLabel
 
-	// set is-used status based on, if this function is used.
-	asm.setFunIsUsed(printCharName, true)
-
 	functionName := "print"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
@@ -1117,6 +1117,9 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 
 	asm.addLabel("; printInt")
 	asm.addFun(asmName, isInline)
+
+	// Set only for itself!
+	asm.setFunIsUsed(asmName, ast.globalSymbolTable.funIsUsed(functionName, params, true))
 
 	asm.addLine("push", "rdi")
 	asm.addLine("push", "rsi")
@@ -1197,9 +1200,6 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 	}
 	printIntName := entry.jumpLabel
 
-	asm.setFunIsUsed(printCharName, true)
-	asm.setFunIsUsed(printIntName, true)
-
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
@@ -1247,14 +1247,14 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	}
 	printIntName := entry.jumpLabel
 
-	asm.setFunIsUsed(printCharName, true)
-	asm.setFunIsUsed(printIntName, true)
-
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
 	asm.addLabel("; printFloat")
 	asm.addFun(asmName, isInline)
+
+	// Set only for itself!
+	asm.setFunIsUsed(asmName, ast.globalSymbolTable.funIsUsed(functionName, paramsF, true))
 
 	asm.addLine("push", "rdi")
 
@@ -1320,9 +1320,6 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 		fmt.Println("Code generation error. print can not be found")
 	}
 	printFloatName := entry.jumpLabel
-
-	asm.setFunIsUsed(printCharName, true)
-	asm.setFunIsUsed(printFloatName, true)
 
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)

@@ -873,6 +873,26 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 	return block, nil
 }
 
+// Set usage status for system the functions above. This can be made nicer and general, but the effort is not
+// worth it right now. Maybe at a later point.
+func setSystemFunctionUsage(s *SymbolTable) {
+
+	iArg := []ComplexType{ComplexType{TYPE_INT, nil}}
+	fArg := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+
+	plnI := s.funIsUsed("println", iArg, true)
+	pI := s.funIsUsed("print", iArg, true)
+
+	plnF := s.funIsUsed("println", fArg, true)
+	pF := s.funIsUsed("print", fArg, true)
+
+	s.setFunIsUsed("print", fArg, pF || plnF)
+	s.setFunIsUsed("print", iArg, pI || plnI || s.funIsUsed("print", fArg, true))
+
+	// We need to re-query them because we just possibly changed their state.
+	s.setFunIsUsed("printChar", iArg, s.funIsUsed("print", iArg, true) || s.funIsUsed("print", fArg, true))
+}
+
 // analyzeTypes traverses the tree and analyzes variables with their corresponding type recursively from expressions!
 // returns an error if we have a type missmatch anywhere!
 func semanticAnalysis(ast AST) (AST, error) {
@@ -912,6 +932,8 @@ func semanticAnalysis(ast AST) (AST, error) {
 		return ast, err
 	}
 	ast.block = block
+
+	setSystemFunctionUsage(&ast.globalSymbolTable)
 
 	return ast, nil
 }
