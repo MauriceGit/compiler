@@ -147,17 +147,22 @@ func main() {
 	var program []byte = []byte(`
 
 		a = [1,2,3,4,5]
+		b = [[1], [1,2,3], a]
 
-//	  	for i, e : a {
-//			println(i)
-//			println(e*2)
+	  	for i, aa : b {
+			for j, e : aa {
+				println(e)
+			}
+		}
+
+//		for i = 0; i < len(b); i++ {
+//			aa = b[i]
+//			for j = 0; j < len(aa); j++ {
+//				e = aa[j]
+//				println(e)
+//			}
 //		}
 
-		for i = 0; i < len(a); i++ {
-			e = a[i]
-			println(i)
-			println(e*2)
-		}
 
 	`)
 

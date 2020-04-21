@@ -371,6 +371,15 @@ type Loop struct {
 	line, column   int
 }
 
+type RangedLoop struct {
+	// Counter and element
+	counter         Variable
+	elem            Variable
+	rangeExpression Expression
+	block           Block
+	line, column    int
+}
+
 type Function struct {
 	fName        string
 	parameters   []Variable
@@ -391,6 +400,7 @@ func (l Loop) statement()       {}
 func (f Function) statement()   {}
 func (r Return) statement()     {}
 func (f FunCall) statement()    {}
+func (f RangedLoop) statement() {}
 
 func (s Block) startPos() (int, int) {
 	return s.line, s.column
@@ -408,6 +418,9 @@ func (s Function) startPos() (int, int) {
 	return s.line, s.column
 }
 func (s Return) startPos() (int, int) {
+	return s.line, s.column
+}
+func (s RangedLoop) startPos() (int, int) {
 	return s.line, s.column
 }
 
@@ -607,6 +620,15 @@ func (l Loop) String() (s string) {
 		s += fmt.Sprintf("\t%v\n", st)
 	}
 
+	s += "}"
+	return
+}
+
+func (l RangedLoop) String() (s string) {
+	s += fmt.Sprintf("for %v, %v : %v {\n", l.counter, l.elem, l.rangeExpression)
+	for _, st := range l.block.statements {
+		s += fmt.Sprintf("\t%v\n", st)
+	}
 	s += "}"
 	return
 }
@@ -1333,6 +1355,81 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	return
 }
 
+// parseRangedLoop is special in the case, that we have multiple statements that start with 'for id, id'.
+// So we have to push multiple tokens back to the channel, if we fail before encountering the ':'.
+// After that, we fail hard!
+func parseRangedLoop(tokens *TokenChannel) (loop RangedLoop, err error) {
+
+	startRow, startCol, ok := 0, 0, false
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "for"); !ok {
+		err = fmt.Errorf("%wExpected 'for' keyword for loop", ErrNormal)
+		return
+	}
+
+	i, iRow, iCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, "for", startRow, startCol))
+		err = fmt.Errorf("%wExpected identifier", ErrNormal)
+		return
+	}
+
+	sRow, sCol, ok := tokens.expect(TOKEN_SEPARATOR, ",")
+	if !ok {
+		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, i, iRow, iCol))
+		tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, "for", startRow, startCol))
+		err = fmt.Errorf("%wExpected separator ','", ErrNormal)
+		return
+	}
+
+	// After a ',' there must be an identifier, no matter what. Might as well fail here!
+	e, eRow, eCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected identifier after ','", ErrCritical, eRow, eCol)
+		return
+	}
+
+	// Last place where this might be a normal loop. Push everything back!
+	if _, _, ok := tokens.expect(TOKEN_COLON, ":"); !ok {
+		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, e, eRow, eCol))
+		tokens.pushBack(tokens.createToken(TOKEN_SEPARATOR, ",", sRow, sCol))
+		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, i, iRow, iCol))
+		tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, "for", startRow, startCol))
+		err = fmt.Errorf("%wExpected colon ':'", ErrNormal)
+		return
+	}
+
+	a, parseErr := parseExpression(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid expression in ranged loop", parseErr)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '{' after loop header", ErrCritical, row, col)
+		return
+	}
+
+	forBlock, parseErr := parseBlock(tokens)
+	if parseErr != nil {
+		err = fmt.Errorf("%w - Error while parsing loop block", parseErr)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '}' after loop block", ErrCritical, row, col)
+		return
+	}
+
+	loop.counter = Variable{ComplexType{TYPE_INT, nil}, i, false, nil, iRow, iCol}
+	loop.elem = Variable{ComplexType{TYPE_UNKNOWN, nil}, e, false, nil, eRow, eCol}
+	loop.rangeExpression = a
+	loop.block = forBlock
+	loop.line = startRow
+	loop.column = startCol
+
+	return
+}
+
 func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 
 	startRow, startCol, ok := 0, 0, false
@@ -1597,6 +1694,15 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 		switch ifStatement, parseErr := parseCondition(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, ifStatement)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
+
+		switch loopStatement, parseErr := parseRangedLoop(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, loopStatement)
 			continue
 		case errors.Is(parseErr, ErrCritical):
 			err = parseErr

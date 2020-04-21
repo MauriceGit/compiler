@@ -792,6 +792,50 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 	return loop, nil
 }
 
+func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, error) {
+
+	nextSymbolTable := SymbolTable{
+		make(map[string]SymbolVarEntry, 0),
+		make(map[string][]SymbolFunEntry, 0),
+		symbolTable.activeFunctionName,
+		symbolTable.activeFunctionParams,
+		symbolTable.activeFunctionReturn,
+		symbolTable,
+	}
+
+	rangeExpression, err := analyzeExpression(loop.rangeExpression, &nextSymbolTable)
+	if err != nil {
+		return loop, err
+	}
+
+	if rangeExpression.getResultCount() != 1 {
+		return loop, fmt.Errorf("%w[%v:%v] - RangedLoop can only iterate one array at a time", ErrCritical, loop.line, loop.column)
+	}
+	rangeType := rangeExpression.getExpressionTypes()[0]
+
+	if !equalType(rangeType, ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}, false) {
+		return loop, fmt.Errorf("%w[%v:%v] - RangedLoop can only iterate arrays", ErrCritical, loop.line, loop.column)
+	}
+
+	loop.elem.vType = *rangeType.subType
+	// As we don't have an assignment (that does it for us), we have to register the variables ourself
+	nextSymbolTable.setVar(loop.elem.vName, loop.elem.vType, false)
+	nextSymbolTable.setVar(loop.counter.vName, loop.counter.vType, false)
+
+	// TODO: Handle shadowing? Or is it just OK like that?
+
+	statements, err := analyzeBlock(loop.block, symbolTable, &nextSymbolTable)
+	if err != nil {
+		return loop, err
+	}
+
+	loop.rangeExpression = rangeExpression
+	loop.block = statements
+	loop.block.symbolTable = nextSymbolTable
+
+	return loop, nil
+}
+
 func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 
 	functionSymbolTable := SymbolTable{
@@ -871,6 +915,8 @@ func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement,
 		return analyzeCondition(st, symbolTable)
 	case Loop:
 		return analyzeLoop(st, symbolTable)
+	case RangedLoop:
+		return analyzeRangedLoop(st, symbolTable)
 	case Assignment:
 		return analyzeAssignment(st, symbolTable)
 	case Function:

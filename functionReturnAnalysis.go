@@ -14,10 +14,6 @@ func (s Condition) functionReturnAnalysis() error {
 	return nil
 }
 
-func (s Loop) functionReturnAnalysis() error {
-	return s.block.functionReturnAnalysis()
-}
-
 func (b Block) functionReturnAnalysis() error {
 
 	// Shallow check so we don't need a recursive descent.
@@ -43,7 +39,12 @@ func (b Block) functionReturnAnalysis() error {
 			}
 			foundReturns++
 		case Loop:
-			if err := st.functionReturnAnalysis(); err != nil {
+			if err := st.block.functionReturnAnalysis(); err != nil {
+				return err
+			}
+			foundReturns++
+		case RangedLoop:
+			if err := st.block.functionReturnAnalysis(); err != nil {
 				return err
 			}
 			foundReturns++

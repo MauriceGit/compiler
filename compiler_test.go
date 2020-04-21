@@ -303,6 +303,33 @@ func ExampleArrayAppend() {
 	// 8
 }
 
+// ExampleRangedFor checks, that the ranged-for loop works fine on more complex examples, such as arrays in arrays
+func ExampleRangedFor() {
+	var program []byte = []byte(`
+		a = [1,2,3,4,5]
+		b = [[1], [1,2,3], a]
+
+	  	for i, aa : b {
+			for j, e : aa {
+				println(e)
+			}
+		}
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 1
+	// 1
+	// 2
+	// 3
+	// 1
+	// 2
+	// 3
+	// 4
+	// 5
+}
+
 // ExampleMultiAssignment checks, that multi-value assignments and automatic unpacking works correctly
 func ExampleMultiAssignment() {
 	var program []byte = []byte(`

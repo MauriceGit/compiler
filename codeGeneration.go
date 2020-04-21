@@ -441,7 +441,9 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	// Save our first memory register!
 	// We use rsi manually here as a register that is Caller-saved and will not be
 	// altered by anything that happens while creating/allocating/filling the array (well, only by myself)
-	asm.addLine("mov", "rsi, rax")
+	//asm.addLine("mov", "rsi, rax")
+
+	asm.addLine("push", "rax")
 
 	// Check memory error
 	asm.addLine("cmp", "rax, 0")
@@ -468,6 +470,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 			e.generateCode(asm, s)
 			// Multiple return values are already on the stack, single ones not!
 			if e.getResultCount() == 1 {
+
 				switch e.getExpressionTypes()[0].t {
 				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
@@ -475,26 +478,40 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 					tmpR, _ := getRegister(TYPE_INT)
 					asm.addLine("movq", fmt.Sprintf("%v, %v", tmpR, getReturnRegister(TYPE_FLOAT)))
 					asm.addLine("push", tmpR)
+				default:
+					panic("Code generation error. Array doesn't know, what type it got")
 				}
 			}
 		}
 
-		register, _ := getRegister(TYPE_INT)
+		value, pointer := getRegister(TYPE_INT)
+
+		// Calculate, where our pointer is on the stack and reference it directly!
+		// There should be a.aCount additional values pushed on stack right now.
+		// So our array should be at [rsp+a.aCount*8]
+		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v*8]", pointer, a.aCount))
+
 		for i := 0; i < a.aCount; i++ {
-			asm.addLine("pop", register)
-			asm.addLine("mov", fmt.Sprintf("[rsi+%v], %v", i*8+16, register))
+
+			// Pop our value from the stack
+			asm.addLine("pop", value)
+
+			asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", pointer, i*8+16, value))
+			// Save the array pointer back to the stack
+
 		}
 	}
 
 	// Write capacity into first position in array
-	register, _ := getRegister(TYPE_INT)
+	register, pointer := getRegister(TYPE_INT)
+	asm.addLine("pop", pointer)
 	asm.addLine("mov", fmt.Sprintf("%v, %v", register, a.aCount))
-	asm.addLine("mov", fmt.Sprintf("[rsi], %v", register))
+	asm.addLine("mov", fmt.Sprintf("[%v], %v", pointer, register))
 
-	// Currently used memory into second position
-	asm.addLine("mov", fmt.Sprintf("[rsi+8], %v", register))
+	// len into second position
+	asm.addLine("mov", fmt.Sprintf("[%v+8], %v", pointer, register))
 
-	asm.addLine("mov", "rax, rsi")
+	asm.addLine("mov", "rax, "+pointer)
 
 	if len(a.indexExpressions) > 0 {
 		generateArrayAccessCode(a.indexExpressions, asm, s)
@@ -593,7 +610,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	}
 
-	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args), true); ok {
+	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args), false); ok {
 
 		if !entry.inline {
 			asm.addLine("call", entry.jumpLabel)
@@ -751,13 +768,81 @@ func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", register, getReturnRegister(TYPE_FLOAT)))
 		}
 
-		//asm.addLine("pop", register)
 		asm.addLine("cmp", fmt.Sprintf("%v, 0", register))
 		asm.addLine("je", endLabel)
 	}
 	// So if we getVar here, all expressions were true. So jump to start again.
 	asm.addLine("jmp", startLabel)
 	asm.addLabel(endLabel)
+}
+
+func (l RangedLoop) generateCode(asm *ASM, s *SymbolTable) {
+
+	// This can not/should not fail!
+	entryI, ok := l.block.symbolTable.getVar(l.counter.vName)
+	if !ok {
+		panic("No counter variable availabe for ranged loop")
+	}
+	signI := "+"
+	if entryI.offset < 0 {
+		signI = ""
+	}
+
+	entryE, ok := l.block.symbolTable.getVar(l.elem.vName)
+	if !ok {
+		panic("No counter variable availabe for ranged loop")
+	}
+	signE := "+"
+	if entryE.offset < 0 {
+		signE = ""
+	}
+
+	startLabel := asm.nextLabelName()
+	evalLabel := asm.nextLabelName()
+	endLabel := asm.nextLabelName()
+
+	// initialize counter and assign to variable/stack
+	asm.addLine("mov", "r10, 0")
+	asm.addLine("mov", fmt.Sprintf("[rbp%v%v], r10", signI, entryI.offset))
+
+	asm.addLine("jmp", evalLabel)
+	asm.addLabel(startLabel)
+
+	// result will be in rax
+	asm.addLine("; ->", "")
+	l.rangeExpression.generateCode(asm, &l.block.symbolTable)
+	asm.addLine("; <-", "")
+
+	// load i
+	asm.addLine("mov", fmt.Sprintf("r10, [rbp%v%v]", signI, entryI.offset))
+	// calculate a[i]
+	asm.addLine("mov", "r10, [rax+r10*8+16]")
+
+	// assign element variable
+	asm.addLine("mov", fmt.Sprintf("[rbp%v%v], r10", signE, entryE.offset))
+
+	l.block.generateCode(asm, s)
+
+	// i++
+	asm.addLine("mov", "r10, 1")
+	asm.addLine("add", fmt.Sprintf("[rbp%v%v], r10", signI, entryI.offset))
+
+	asm.addLabel(evalLabel)
+
+	// len(a)
+	//asm.addLine("mov", fmt.Sprintf("r10, [rbp%v%v]", signE, entryE.offset))
+
+	l.rangeExpression.generateCode(asm, &l.block.symbolTable)
+	asm.addLine("mov", "r10, [rax+8]")
+
+	asm.addLine("mov", fmt.Sprintf("r11, [rbp%v%v]", signI, entryI.offset))
+
+	asm.addLine("cmp", "r10, r11")
+	asm.addLine("jle", endLabel)
+	asm.addLine("jmp", startLabel)
+
+	asm.addLabel(endLabel)
+
 }
 
 func (b Block) generateCode(asm *ASM, s *SymbolTable) {
@@ -794,6 +879,8 @@ func (b Block) extractAllFunctionVariables(isRoot bool) (vars []FunctionVar) {
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
 			vars = append(vars, st.elseBlock.extractAllFunctionVariables(false)...)
 		case Loop:
+			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
+		case RangedLoop:
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
 		}
 	}
