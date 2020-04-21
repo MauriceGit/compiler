@@ -1014,6 +1014,10 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{}, false)
+
+	ast.globalSymbolTable.setFun("int", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
+	ast.globalSymbolTable.setFun("float", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{ComplexType{TYPE_FLOAT, nil}}, true)
+
 	ast.globalSymbolTable.setFun("cap", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
 	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
 	// free can not be set as inline, as we have to call it explicitely from assembly in append()

@@ -1367,11 +1367,42 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 	// Digits after decimal point
 	asm.addLine("subsd", "xmm0, xmm1")
 	// Number of digits to print (power of 10)
-	asm.addLine("mov", "r10, 1000.0")
+	asm.addLine("mov", "r10, 100000.00000001")
 	asm.addLine("movq", "xmm1, r10")
 	asm.addLine("mulsd", "xmm0, xmm1")
+
+	asm.addLine("mov", "r10, 0.099999999")
+	asm.addLine("movq", "xmm3, r10")
+	asm.addLine("mulsd", "xmm1, xmm3")
+
+	asm.addLine("mov", "r10, 0.5")
+	asm.addLine("movq", "xmm4, r10")
+
+	check := asm.nextLabelName()
+	printInt := asm.nextLabelName()
+	done := asm.nextLabelName()
+	// print leading 0s, if its fewer than r10 digits
+	asm.addLabel(check)
+
+	asm.addLine("comisd", "xmm1, xmm4")
+	asm.addLine("jbe", done)
+
+	asm.addLine("comisd", "xmm0, xmm1")
+	asm.addLine("jae", printInt)
+	//asm.addLine("jnz", printInt)
+
+	// print 0
+	asm.addLine("mov", "rdi, 0x30")
+	asm.addLine("call", printCharName)
+
+	asm.addLine("mulsd", "xmm1, xmm3")
+	asm.addLine("jmp", check)
+
+	asm.addLabel(printInt)
 	asm.addLine("cvttsd2si", "rdi, xmm0")
 	asm.addLine("call", printIntName)
+
+	asm.addLabel(done)
 
 	asm.addLine("pop", "rdi")
 
@@ -1475,6 +1506,60 @@ func (ast AST) addArrayCapFunction(asm *ASM) {
 	asm.addFun(asmName, isInline)
 	// Reads the actual first entry manually, which is the capacity of the following array
 	asm.addLine("mov", "rax, [rdi]")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
+
+	for _, line := range asm.program {
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addIntFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+	functionName := "int"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
+
+	asm.addLine("cvttsd2si", "rax, xmm0")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
+
+	for _, line := range asm.program {
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addFloatFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	functionName := "float"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
+
+	asm.addLine("cvtsi2sd", "xmm0, rdi")
 
 	if !isInline {
 		asm.addLine("ret", "")
@@ -1868,6 +1953,9 @@ func (ast AST) generateCode() ASM {
 
 	ast.addPrintFloatFunction(&asm)
 	ast.addPrintFloatLnFunction(&asm)
+
+	ast.addIntFunction(&asm)
+	ast.addFloatFunction(&asm)
 
 	ast.addArrayCapFunction(&asm)
 	ast.addArrayLenFunction(&asm)

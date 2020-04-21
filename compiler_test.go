@@ -133,7 +133,7 @@ func ExampleArrayFree() {
 	compileAndRun(program)
 
 	// Output:
-	// 555.666
+	// 555.66600
 }
 
 // ExampleArrayReset runs the internal reset() function and checks, if the length has been reset.
@@ -218,10 +218,10 @@ func ExampleArrayExtend() {
 	// 7
 	// 8
 	// 9
-	// 1.500
-	// 2.500
-	// 3.500
-	// 4.500
+	// 1.50000
+	// 2.50000
+	// 3.50000
+	// 4.50000
 	// 4
 	// 4
 }
@@ -426,7 +426,40 @@ func ExampleFunctionOverload() {
 	// 5
 	// 6
 	// 7
-	// 5.500
-	// 5.500
-	// 6.500
+	// 5.50000
+	// 5.50000
+	// 6.50000
+}
+
+func ExampleTypeCast() {
+	var program []byte = []byte(`
+		f = 5.123
+	   	println(f)
+		println(int(f))
+		println(float(int(f)))
+		println(int(float(int(f))))
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 5.12300
+	// 5
+	// 5.00000
+	// 5
+}
+
+// ExamplePrintFloat exists because we had an issue with incorrect printing of some float values. Just to make sure
+// it works from now on.
+func ExamplePrintFloat() {
+	var program []byte = []byte(`
+	   	println(5.1)
+	   	println(0.0123)
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 5.10000
+	// 0.01230
 }

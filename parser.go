@@ -913,8 +913,14 @@ func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 
 	v, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
 	if !ok {
-		err = fmt.Errorf("%w - Invalid function call statement", ErrNormal)
-		return
+		sv, row, col, ok := tokens.expectType(TOKEN_KEYWORD)
+		if !ok {
+			err = fmt.Errorf("%w - Invalid function call statement", ErrNormal)
+			return
+		}
+		v = sv
+		startRow = row
+		startCol = col
 	}
 
 	if row, col, ok := tokens.expect(TOKEN_PARENTHESIS_OPEN, "("); !ok {
