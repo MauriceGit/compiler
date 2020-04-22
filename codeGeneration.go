@@ -907,8 +907,6 @@ func (b Block) extractAllFunctionVariables(isRoot bool) (vars []FunctionVar) {
 		case Condition:
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
 			vars = append(vars, st.elseBlock.extractAllFunctionVariables(false)...)
-		case FunCall:
-		case Assignment:
 		case Switch:
 			for _, c := range st.cases {
 				vars = append(vars, c.block.extractAllFunctionVariables(false)...)
@@ -917,6 +915,10 @@ func (b Block) extractAllFunctionVariables(isRoot bool) (vars []FunctionVar) {
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
 		case RangedLoop:
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
+		case FunCall:
+		case Assignment:
+		case Function:
+		case Return:
 		default:
 			panic(fmt.Sprintf("Unknown statement '%v' for function variable extraction, ", st))
 		}

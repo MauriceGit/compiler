@@ -463,3 +463,34 @@ func ExamplePrintFloat() {
 	// 5.10000
 	// 0.01230
 }
+
+// ExampleSwitch checks the two variants of switch statements. Value-match switch and general switch.
+func ExampleSwitch() {
+	var program []byte = []byte(`
+	   	a = 4
+
+		switch 4 {
+		case 1:
+			println(1)
+		case 2, 3, a:
+			println(4)
+		case 5:
+			println(5)
+		}
+
+		switch {
+		case 7 < 5:
+			println(1)
+		case false, 4 > 5, a < 6:
+			println(35)
+		case 6 < 7:
+			println(6)
+		}
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 4
+	// 35
+}
