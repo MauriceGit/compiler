@@ -173,15 +173,11 @@ type Expression interface {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 type Variable struct {
-	vType   ComplexType
-	vName   string
-	vShadow bool
-
-	// Lets try it this way first...
-	//isIndexedArray  bool
+	vType            ComplexType
+	vName            string
+	vShadow          bool
 	indexExpressions []Expression
-
-	line, column int
+	line, column     int
 }
 type Constant struct {
 	cType        Type
@@ -189,10 +185,9 @@ type Constant struct {
 	line, column int
 }
 type Array struct {
-	aType        ComplexType
-	aCount       int
-	aExpressions []Expression
-	//isIndexedArray  bool
+	aType            ComplexType
+	aCount           int
+	aExpressions     []Expression
 	indexExpressions []Expression
 	line, column     int
 }
@@ -213,10 +208,9 @@ type UnaryOp struct {
 	line, column int
 }
 type FunCall struct {
-	funName  string
-	args     []Expression
-	retTypes []ComplexType
-	//isIndexedArray  bool
+	funName          string
+	args             []Expression
+	retTypes         []ComplexType
 	indexExpressions []Expression
 	line, column     int
 }
@@ -363,6 +357,19 @@ type Condition struct {
 	line, column int
 }
 
+type Case struct {
+	// When comparing values, a nil expressions list means: 'default'
+	// In a general switch, default is just 'true'
+	expressions []Expression
+	block       Block
+}
+type Switch struct {
+	// nil for a general switch
+	expression   Expression
+	cases        []Case
+	line, column int
+}
+
 type Loop struct {
 	assignment     Assignment
 	expressions    []Expression
@@ -372,7 +379,6 @@ type Loop struct {
 }
 
 type RangedLoop struct {
-	// Counter and element
 	counter         Variable
 	elem            Variable
 	rangeExpression Expression
@@ -396,6 +402,7 @@ type Return struct {
 func (a Block) statement()      {}
 func (a Assignment) statement() {}
 func (c Condition) statement()  {}
+func (c Switch) statement()     {}
 func (l Loop) statement()       {}
 func (f Function) statement()   {}
 func (r Return) statement()     {}
@@ -409,6 +416,9 @@ func (s Assignment) startPos() (int, int) {
 	return s.line, s.column
 }
 func (s Condition) startPos() (int, int) {
+	return s.line, s.column
+}
+func (s Switch) startPos() (int, int) {
 	return s.line, s.column
 }
 func (s Loop) startPos() (int, int) {
@@ -558,7 +568,7 @@ func (s SymbolFunEntry) String() string {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-// ASSIGNMENT STRING
+// STATEMENT STRING
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (a Assignment) String() (s string) {
@@ -598,6 +608,34 @@ func (c Condition) String() (s string) {
 		}
 		s += "}"
 	}
+	return
+}
+func (c Case) String() (s string) {
+	s += "case "
+	for i, e := range c.expressions {
+		s += fmt.Sprintf("%v", e)
+		if i != len(c.expressions)-1 {
+			s += ", "
+		}
+	}
+	s += ":\n"
+	s += fmt.Sprintf("%v\n", c.block)
+	return
+
+}
+func (sw Switch) String() (s string) {
+
+	s = "switch "
+	if sw.expression != nil {
+		s += fmt.Sprintf("%v ", sw.expression)
+	}
+	s += "{\n"
+
+	for _, c := range sw.cases {
+		s += c.String()
+	}
+
+	s += "}"
 	return
 }
 
@@ -911,6 +949,8 @@ func parseConstant(tokens *TokenChannel) (Constant, bool) {
 
 func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 
+	readKeyword := false
+
 	v, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
 	if !ok {
 		sv, row, col, ok := tokens.expectType(TOKEN_KEYWORD)
@@ -918,6 +958,7 @@ func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 			err = fmt.Errorf("%w - Invalid function call statement", ErrNormal)
 			return
 		}
+		readKeyword = true
 		v = sv
 		startRow = row
 		startCol = col
@@ -928,7 +969,11 @@ func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 		err = fmt.Errorf("%w[%v:%v] - Expected '(' for function call parameters", ErrNormal, row, col)
 
 		// LL(2)
-		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, v, startRow, startCol))
+		var t TokenType = TOKEN_IDENTIFIER
+		if readKeyword {
+			t = TOKEN_KEYWORD
+		}
+		tokens.pushBack(tokens.createToken(t, v, startRow, startCol))
 		return
 	}
 
@@ -1361,6 +1406,77 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	return
 }
 
+func parseCases(tokens *TokenChannel) (cases []Case, err error) {
+
+	for {
+		if _, _, ok := tokens.expect(TOKEN_KEYWORD, "case"); !ok {
+			err = fmt.Errorf("%wExpected case keyword", ErrNormal)
+			return
+		}
+		expressions, parseErr := parseExpressionList(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+
+		if row, col, ok := tokens.expect(TOKEN_COLON, ":"); !ok {
+			err = fmt.Errorf("%w[%v:%v] - Expected ':' after case expressions", ErrCritical, row, col)
+			return
+		}
+
+		block, parseErr := parseBlock(tokens)
+		if errors.Is(parseErr, ErrCritical) {
+			err = parseErr
+			return
+		}
+
+		cases = append(cases, Case{expressions, block})
+	}
+
+	return
+}
+
+func parseSwitch(tokens *TokenChannel) (switchCase Switch, err error) {
+
+	startRow, startCol, ok := 0, 0, false
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "switch"); !ok {
+		err = fmt.Errorf("%wExpected 'switch' keyword", ErrNormal)
+		return
+	}
+
+	e, parseErr := parseExpression(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = parseErr
+		return
+	}
+	if parseErr != nil {
+		e = nil
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '{'", ErrCritical, row, col)
+		return
+	}
+
+	// Parse cases
+	cases, parseErr := parseCases(tokens)
+	if errors.Is(parseErr, ErrCritical) {
+		err = parseErr
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '}'", ErrCritical, row, col)
+		return
+	}
+
+	switchCase.expression = e
+	switchCase.cases = cases
+	switchCase.line = startRow
+	switchCase.column = startCol
+	return
+}
+
 // parseRangedLoop is special in the case, that we have multiple statements that start with 'for id, id'.
 // So we have to push multiple tokens back to the channel, if we fail before encountering the ':'.
 // After that, we fail hard!
@@ -1706,6 +1822,15 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			return
 		}
 
+		switch switchStatement, parseErr := parseSwitch(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, switchStatement)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
+
 		switch loopStatement, parseErr := parseRangedLoop(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, loopStatement)
@@ -1751,15 +1876,14 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			return
 		}
 
-		switch ret, parseErr := parseFunCall(tokens); {
+		switch funCall, parseErr := parseFunCall(tokens); {
 		case parseErr == nil:
-			block.statements = append(block.statements, ret)
+			block.statements = append(block.statements, funCall)
 			continue
 		case errors.Is(parseErr, ErrCritical):
 			err = parseErr
 			return
 		}
-
 		if _, _, ok := tokens.expect(TOKEN_EOF, ""); ok {
 			return
 		}
@@ -1767,8 +1891,13 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 		// A block can only be closed with }. If we don't find that, we have an error on hand.
 		row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}")
 		if !ok {
-			err = fmt.Errorf("%w[%v:%v] - Unexpected symbol. Can not be parsed.", ErrCritical, row, col)
-			return
+			row, col, ok := tokens.expect(TOKEN_KEYWORD, "case")
+			if !ok {
+				err = fmt.Errorf("%w[%v:%v] - Unexpected symbol. Can not be parsed.", ErrCritical, row, col)
+				return
+			}
+			tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, "case", row, col))
+			break
 		}
 		tokens.pushBack(tokens.createToken(TOKEN_CURLY_CLOSE, "}", row, col))
 
@@ -1794,7 +1923,7 @@ func parse(tokens chan Token) (ast AST, err error) {
 
 	block, parseErr := parseBlock(&tokenChan)
 	err = parseErr
-	ast.block = block
 
+	ast.block = block
 	return
 }

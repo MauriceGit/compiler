@@ -740,6 +740,65 @@ func analyzeCondition(condition Condition, symbolTable *SymbolTable) (Condition,
 	return condition, nil
 }
 
+func analyzeSwitch(sc Switch, symbolTable *SymbolTable) (Switch, error) {
+
+	valueSwitch := sc.expression != nil
+	if valueSwitch {
+		e, err := analyzeExpression(sc.expression, symbolTable)
+		if err != nil {
+			return sc, err
+		}
+		sc.expression = e
+	}
+
+	for i, c := range sc.cases {
+		if len(c.expressions) == 0 {
+			row, col := sc.startPos()
+			return sc, fmt.Errorf("%w[%v:%v] - case must have at least one expression to match against",
+				ErrCritical, row, col,
+			)
+		}
+		for j, ce := range c.expressions {
+			e, err := analyzeExpression(ce, symbolTable)
+			if err != nil {
+				return sc, err
+			}
+			if e.getResultCount() != 1 {
+				row, col := e.startPos()
+				return sc, fmt.Errorf("%w[%v:%v] - case expression can only have one result value",
+					ErrCritical, row, col,
+				)
+			}
+			if valueSwitch {
+				if e.getExpressionTypes()[0].t != TYPE_INT {
+					row, col := e.startPos()
+					return sc, fmt.Errorf("%w[%v:%v] - value switch only accepts integers as cases",
+						ErrCritical, row, col,
+					)
+				}
+			} else {
+				if e.getExpressionTypes()[0].t != TYPE_BOOL {
+					row, col := e.startPos()
+					return sc, fmt.Errorf("%w[%v:%v] - general switch only accepts bools as cases",
+						ErrCritical, row, col,
+					)
+				}
+			}
+			c.expressions[j] = e
+		}
+
+		block, err := analyzeBlock(c.block, symbolTable, nil)
+		if err != nil {
+			return sc, err
+		}
+		c.block = block
+
+		sc.cases[i] = c
+	}
+
+	return sc, nil
+}
+
 func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 
 	nextSymbolTable := SymbolTable{
@@ -913,6 +972,8 @@ func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement,
 	switch st := statement.(type) {
 	case Condition:
 		return analyzeCondition(st, symbolTable)
+	case Switch:
+		return analyzeSwitch(st, symbolTable)
 	case Loop:
 		return analyzeLoop(st, symbolTable)
 	case RangedLoop:

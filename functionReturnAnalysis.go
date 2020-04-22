@@ -48,6 +48,8 @@ func (b Block) functionReturnAnalysis() error {
 				return err
 			}
 			foundReturns++
+		default:
+			panic(fmt.Sprintf("Unknown statement '%v' for return analysis", st))
 		}
 	}
 

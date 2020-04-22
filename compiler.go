@@ -146,8 +146,31 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		println(3.0)
+//		println(3.0)
+//		println(1)
 
+
+		a = 3
+
+		switch 4 {
+		case 1:
+			println(1)
+		case a:
+			println(4)
+		case 4:
+			println(6)
+		}
+
+		switch {
+		case 7 < 5:
+			println(1)
+		case false, 4 > 5, a < 6:
+			println(4)
+		case 6 < 7:
+			println(6)
+		}
+
+		//println(3.7)
 
 	`)
 

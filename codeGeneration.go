@@ -406,16 +406,8 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("pop", rRight)
 
 	switch t.t {
-	case TYPE_INT, TYPE_FLOAT:
+	case TYPE_INT, TYPE_FLOAT, TYPE_BOOL:
 		binaryOperationNumber(b.operator, b.opType.t, rLeft, rRight, asm)
-	case TYPE_BOOL:
-		// Equal and unequal are identical for bool or int, as a bool is an integer type.
-		if b.operator == OP_EQ || b.operator == OP_NE {
-			binaryOperationNumber(b.operator, b.opType.t, rLeft, rRight, asm)
-		} else {
-			panic("Code generation error. Unknown operator for bool (I think?).")
-		}
-
 	case TYPE_STRING:
 		panic("Code generation error: Strings not supported yet.")
 	default:
@@ -723,7 +715,6 @@ func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
 		asm.addLine("movq", fmt.Sprintf("%v, %v", register, getReturnRegister(TYPE_FLOAT)))
 	}
 
-	//asm.addLine("pop", register)
 	asm.addLine("cmp", fmt.Sprintf("%v, 0", register))
 	asm.addLine("je", elseLabel)
 
@@ -735,6 +726,44 @@ func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
 	c.elseBlock.generateCode(asm, s)
 
 	asm.addLabel(endLabel)
+}
+
+func (sc Switch) generateCode(asm *ASM, s *SymbolTable) {
+
+	switchEnd := asm.nextLabelName()
+
+	vReg, _ := getRegister(TYPE_INT)
+	ret := getReturnRegister(TYPE_INT)
+	if sc.expression != nil {
+		sc.expression.generateCode(asm, s)
+		asm.addLine("mov", fmt.Sprintf("%v, %v", vReg, ret))
+	}
+
+	caseLabels := make([]string, len(sc.cases))
+	for i, c := range sc.cases {
+		caseLabels[i] = asm.nextLabelName()
+		for _, ce := range c.expressions {
+			if sc.expression != nil {
+				asm.addLine("push", vReg)
+				ce.generateCode(asm, s)
+				asm.addLine("pop", vReg)
+				asm.addLine("cmp", fmt.Sprintf("%v, %v", ret, vReg))
+				asm.addLine("je", caseLabels[i])
+			} else {
+				ce.generateCode(asm, s)
+				asm.addLine("cmp", fmt.Sprintf("%v, 0", ret))
+				asm.addLine("jne", caseLabels[i])
+			}
+		}
+	}
+	asm.addLine("jmp", switchEnd)
+	for i, c := range sc.cases {
+		asm.addLabel(caseLabels[i])
+		c.block.generateCode(asm, s)
+		asm.addLine("jmp", switchEnd)
+	}
+
+	asm.addLabel(switchEnd)
 }
 
 func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
@@ -878,10 +907,18 @@ func (b Block) extractAllFunctionVariables(isRoot bool) (vars []FunctionVar) {
 		case Condition:
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
 			vars = append(vars, st.elseBlock.extractAllFunctionVariables(false)...)
+		case FunCall:
+		case Assignment:
+		case Switch:
+			for _, c := range st.cases {
+				vars = append(vars, c.block.extractAllFunctionVariables(false)...)
+			}
 		case Loop:
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
 		case RangedLoop:
 			vars = append(vars, st.block.extractAllFunctionVariables(false)...)
+		default:
+			panic(fmt.Sprintf("Unknown statement '%v' for function variable extraction, ", st))
 		}
 	}
 	return
