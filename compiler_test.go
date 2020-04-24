@@ -358,15 +358,22 @@ func ExampleMultiAssignment() {
 // there is some special case handling here
 func ExampleMultiParameter() {
 	var program []byte = []byte(`
-		fun sum(a int, b int, c int, d int, e int, f int, g int, h int) int {
+		fun sumI(a int, b int, c int, d int, e int, f int, g int, h int) int {
 			return a+b+c+d+e+f+g+h
 		}
-		println(sum(1,2,3,4,5,6,7,8))`,
+		println(sumI(1,2,3,4,5,6,7,8))
+
+		fun sumF(a float, b float, c float, d float, e float, f float, g float, h float, i float, j float, k float) float {
+			return a+b+c+d+e+f+g+h+i+j+k
+		}
+		println(sumF(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0))
+		`,
 	)
 	compileAndRun(program)
 
 	// Output:
 	// 36
+	// 66.00000
 }
 
 // ExampleMultiReturn checks, that returning multiple values works correctly. This is important, as

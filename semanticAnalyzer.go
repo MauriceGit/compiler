@@ -35,6 +35,26 @@ func (s *SymbolTable) setVar(v string, t ComplexType, isIndexed bool) {
 	s.varTable[v] = SymbolVarEntry{t, "", 0, isIndexed}
 }
 
+func (s *SymbolTable) setType(v string, members []StructMem) {
+
+	// Only set type definitions in the upper-most symbol table!
+	if s != nil && s.parent == nil {
+		s.typeTable[v] = SymbolTypeEntry{members, 0}
+		return
+	}
+	s.parent.setType(v, members)
+}
+
+func (s *SymbolTable) getType(v string) (SymbolTypeEntry, bool) {
+
+	// Only query type definitions from the upper-most symbol table!
+	if s != nil && s.parent == nil {
+		entry, ok := s.typeTable[v]
+		return entry, ok
+	}
+	return s.parent.getType(v)
+}
+
 func (s *SymbolTable) setFun(name string, argTypes, returnTypes []ComplexType, inline bool) {
 	l := s.funTable[name]
 	l = append(l, SymbolFunEntry{argTypes, returnTypes, "", "", 0, inline, false})
@@ -253,7 +273,7 @@ func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, erro
 		if t.t != TYPE_BOOL {
 			return nil, fmt.Errorf("%w[%v:%v] - Unary '!' expression must be bool, but is: %v", ErrCritical, unaryOp.line, unaryOp.column, unaryOp)
 		}
-		unaryOp.opType = ComplexType{TYPE_BOOL, nil}
+		unaryOp.opType = ComplexType{TYPE_BOOL, "", nil}
 		return unaryOp, nil
 	}
 	return nil, fmt.Errorf("%w[%v:%v] - Unknown unary expression: %v", ErrCritical, unaryOp.line, unaryOp.column, unaryOp)
@@ -306,7 +326,7 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	// that are not considered yet!
 	switch binaryOp.operator {
 	case OP_AND, OP_OR:
-		binaryOp.opType = ComplexType{TYPE_BOOL, nil}
+		binaryOp.opType = ComplexType{TYPE_BOOL, "", nil}
 		// We know left and right are the same type, so only compare left here.
 		if tLeft.t != TYPE_BOOL {
 			return binaryOp, fmt.Errorf(
@@ -316,7 +336,7 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		}
 		//return binaryOp, TYPE_BOOL, nil
 	case OP_MOD:
-		binaryOp.opType = ComplexType{TYPE_INT, nil}
+		binaryOp.opType = ComplexType{TYPE_INT, "", nil}
 		if tLeft.t != TYPE_INT {
 			return binaryOp, fmt.Errorf(
 				"%w[%v:%v] - BinaryOp '%v' only works for int",
@@ -326,9 +346,9 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	case OP_PLUS, OP_MINUS, OP_MULT, OP_DIV:
 
 		if tLeft.t == TYPE_FLOAT {
-			binaryOp.opType = ComplexType{TYPE_FLOAT, nil}
+			binaryOp.opType = ComplexType{TYPE_FLOAT, "", nil}
 		} else {
-			binaryOp.opType = ComplexType{TYPE_INT, nil}
+			binaryOp.opType = ComplexType{TYPE_INT, "", nil}
 		}
 		if tLeft.t != TYPE_FLOAT && tLeft.t != TYPE_INT {
 			return binaryOp, fmt.Errorf(
@@ -347,7 +367,7 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		}
 		//return binaryOp, TYPE_BOOL, nil
 	case OP_EQ, OP_NE:
-		binaryOp.opType = ComplexType{TYPE_BOOL, nil}
+		binaryOp.opType = ComplexType{TYPE_BOOL, "", nil}
 		// We can actually compare all data types. So there will be no missmatch in general!
 	default:
 		return binaryOp, fmt.Errorf(
@@ -406,15 +426,12 @@ func analyzeIndexedAccess(t ComplexType, indexExpressions []Expression, symbolTa
 // Sometimes we need a bit of special handling to work with system-side generic functions
 // like 'append()', to keep our type system going on the programmer and semantic side ...
 func analyzeFunCallReturnTypes(fun FunCall, args []ComplexType, symbolTable *SymbolTable) ([]ComplexType, error) {
-	funEntry, ok := symbolTable.getFun(fun.funName, args, false)
-	if !ok {
-		return nil, fmt.Errorf("%w[%v:%v] - Function '%v' called before declaration", ErrCritical, fun.line, fun.column, fun.funName)
-	}
+	funEntry, _ := symbolTable.getFun(fun.funName, args, false)
 	types := funEntry.returnTypes
 
-	if len(types) == 1 && typeIsGeneric(types[0]) {
+	if len(types) == 1 && types[0].typeIsGeneric() {
 
-		arrayType := ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}
+		arrayType := ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}
 
 		switch fun.funName {
 		case "extend":
@@ -471,6 +488,13 @@ func analyzeFunCallReturnTypes(fun FunCall, args []ComplexType, symbolTable *Sym
 	return types, nil
 }
 
+func structMemToTypeList(mems []StructMem) (types []ComplexType) {
+	for _, m := range mems {
+		types = append(types, m.memType)
+	}
+	return
+}
+
 func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 
 	// The parameters must be analyzed before we query the symbol table for the actual
@@ -486,19 +510,36 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 		expressionTypes = append(expressionTypes, newE.getExpressionTypes()...)
 	}
 
-	funEntry, ok := symbolTable.getFun(fun.funName, expressionsToTypes(fun.args), false)
-	if !ok {
+	funEntry, funOk := symbolTable.getFun(fun.funName, expressionsToTypes(fun.args), false)
+	typeEntry, typeOk := symbolTable.getType(fun.funName)
+
+	if funOk && typeOk {
+		return fun, fmt.Errorf("%w[%v:%v] - Function name '%v' already in use as a Type", ErrCritical, fun.line, fun.column, fun.funName)
+	}
+
+	var paramTypes []ComplexType
+
+	switch {
+	case funOk:
+		paramTypes = funEntry.paramTypes
+		symbolTable.setFunIsUsed(fun.funName, expressionsToTypes(fun.args), true)
+
+		returnTypes, err := analyzeFunCallReturnTypes(fun, expressionsToTypes(fun.args), symbolTable)
+		if err != nil {
+			return fun, err
+		}
+		fun.retTypes = returnTypes
+		fun.createStruct = false
+	case typeOk:
+		paramTypes = structMemToTypeList(typeEntry.members)
+		// One well defined return type. That is this struct we expect!
+		fun.retTypes = []ComplexType{ComplexType{TYPE_STRUCT, fun.funName, nil}}
+		fun.createStruct = true
+	default:
 		return fun, fmt.Errorf("%w[%v:%v] - Function '%v' called before declaration", ErrCritical, fun.line, fun.column, fun.funName)
 	}
-	symbolTable.setFunIsUsed(fun.funName, expressionsToTypes(fun.args), true)
 
-	returnTypes, err := analyzeFunCallReturnTypes(fun, expressionsToTypes(fun.args), symbolTable)
-	if err != nil {
-		return fun, err
-	}
-	fun.retTypes = returnTypes
-
-	if len(expressionTypes) != len(funEntry.paramTypes) {
+	if len(expressionTypes) != len(paramTypes) {
 		return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' has %v parameters, but needs %v",
 			ErrCritical, fun.line, fun.column, fun.funName, len(expressionTypes), len(funEntry.paramTypes),
 		)
@@ -506,9 +547,9 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 
 	for i, t := range expressionTypes {
 
-		if !equalType(t, funEntry.paramTypes[i], false) {
+		if !equalType(t, paramTypes[i], false) {
 			return fun, fmt.Errorf("%w[%v:%v] - Function call to '%v' got type %v as %v. parameter, but needs %v",
-				ErrCritical, fun.line, fun.column, fun.funName, t, i+1, funEntry.paramTypes[i],
+				ErrCritical, fun.line, fun.column, fun.funName, t, i+1, paramTypes[i],
 			)
 		}
 	}
@@ -531,7 +572,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 
 func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 
-	var arrayType ComplexType = ComplexType{TYPE_UNKNOWN, nil}
+	var arrayType ComplexType = ComplexType{TYPE_UNKNOWN, "", nil}
 	arraySize := 0
 	for i, e := range a.aExpressions {
 		newE, err := analyzeExpression(e, symbolTable)
@@ -540,7 +581,7 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 		}
 		a.aExpressions[i] = newE
 		if i == 0 && a.aType.t == TYPE_UNKNOWN {
-			arrayType = ComplexType{TYPE_ARRAY, &newE.getExpressionTypes()[0]}
+			arrayType = ComplexType{TYPE_ARRAY, "", &newE.getExpressionTypes()[0]}
 		}
 		if !equalType(newE.getExpressionTypes()[0], *arrayType.subType, true) {
 			return a, fmt.Errorf("%w[%v:%v] - Not all expressions in array declaration have the same type",
@@ -558,6 +599,10 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 	// For an empty array declaration, the type is set explicitely!
 	if a.aType.t == TYPE_UNKNOWN {
 		a.aType = arrayType
+	}
+
+	if e := analyzeType(a.aType, symbolTable); e != nil {
+		return a, fmt.Errorf("%w[%v:%v] - %v", ErrCritical, a.line, a.column, e.Error())
 	}
 
 	if a.isIndexedExpression() {
@@ -611,9 +656,11 @@ func analyzeExpression(expression Expression, symbolTable *SymbolTable) (Express
 		return analyzeFunCall(e, symbolTable)
 	case Array:
 		return analyzeArrayDecl(e, symbolTable)
+	default:
+		row, col := expression.startPos()
+		return expression, fmt.Errorf("%w[%v:%v] - Unknown type for expression '%v'", ErrCritical, row, col, expression)
 	}
-	row, col := expression.startPos()
-	return expression, fmt.Errorf("%w[%v:%v] - Unknown type for expression '%v'", ErrCritical, row, col, expression)
+
 }
 
 // Returns newly created variables and variables that should shadow others!
@@ -804,6 +851,7 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 	nextSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
+		make(map[string]SymbolTypeEntry, 0),
 		symbolTable.activeFunctionName,
 		symbolTable.activeFunctionParams,
 		symbolTable.activeFunctionReturn,
@@ -856,6 +904,7 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 	nextSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
+		make(map[string]SymbolTypeEntry, 0),
 		symbolTable.activeFunctionName,
 		symbolTable.activeFunctionParams,
 		symbolTable.activeFunctionReturn,
@@ -872,7 +921,7 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 	}
 	rangeType := rangeExpression.getExpressionTypes()[0]
 
-	if !equalType(rangeType, ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}, false) {
+	if !equalType(rangeType, ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}, false) {
 		return loop, fmt.Errorf("%w[%v:%v] - RangedLoop can only iterate arrays", ErrCritical, loop.line, loop.column)
 	}
 
@@ -900,6 +949,7 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 	functionSymbolTable := SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
+		make(map[string]SymbolTypeEntry, 0),
 		fun.fName,
 		variablesToTypes(fun.parameters),
 		fun.returnTypes,
@@ -913,6 +963,10 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 		if _, ok := functionSymbolTable.getVar(v.vName); ok {
 			return fun, fmt.Errorf("%w[%v:%v] - Function parameter %v already exists", ErrCritical, v.line, v.column, v)
 		}
+		if e := analyzeType(v.vType, symbolTable); e != nil {
+			return fun, fmt.Errorf("%w[%v:%v] - %v", ErrCritical, v.line, v.column, e.Error())
+		}
+
 		functionSymbolTable.setVar(v.vName, v.vType, false)
 	}
 
@@ -968,8 +1022,51 @@ func analyzeReturn(ret Return, symbolTable *SymbolTable) (Return, error) {
 	return ret, nil
 }
 
+// analyzeType recursively goes through the type hierarchy and checks, if all types are well defined.
+func analyzeType(t ComplexType, symbolTable *SymbolTable) error {
+
+	// Needs to be defined!
+	if t.t == TYPE_STRUCT {
+		if _, ok := symbolTable.getType(t.tName); !ok {
+			return fmt.Errorf("Struct name '%v' undefined", t.tName)
+		}
+		return nil
+	}
+	if t.t == TYPE_ARRAY {
+		return analyzeType(*t.subType, symbolTable)
+	}
+	if t.t == TYPE_UNKNOWN {
+		return fmt.Errorf("Type '%v' is unknown", t.t)
+	}
+	return nil
+}
+
+func analyzeStructDef(st StructDef, symbolTable *SymbolTable) (StructDef, error) {
+
+	if _, ok := symbolTable.getType(st.name); ok {
+		return st, fmt.Errorf("%w[%v:%v] - Struct name '%v' already used", ErrCritical, st.line, st.column, st.name)
+	}
+
+	if len(st.members) == 0 {
+		return st, fmt.Errorf("%w[%v:%v] - A Struct can not have zero members", ErrCritical, st.line, st.column)
+	}
+
+	// Go through the complex type of each member and check, that all types are well defined.
+	for _, m := range st.members {
+		if e := analyzeType(m.memType, symbolTable); e != nil {
+			return st, fmt.Errorf("%w[%v:%v] - %v", ErrCritical, st.line, st.column, e.Error())
+		}
+	}
+
+	symbolTable.setType(st.name, st.members)
+
+	return st, nil
+}
+
 func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement, error) {
 	switch st := statement.(type) {
+	case StructDef:
+		return analyzeStructDef(st, symbolTable)
 	case Condition:
 		return analyzeCondition(st, symbolTable)
 	case Switch:
@@ -1003,6 +1100,7 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 		block.symbolTable = SymbolTable{
 			make(map[string]SymbolVarEntry, 0),
 			make(map[string][]SymbolFunEntry, 0),
+			make(map[string]SymbolTypeEntry, 0),
 			symbolTable.activeFunctionName,
 			symbolTable.activeFunctionParams,
 			symbolTable.activeFunctionReturn,
@@ -1025,16 +1123,16 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 // worth it right now. Maybe at a later point.
 func setSystemFunctionUsage(s *SymbolTable) {
 
-	iArg := []ComplexType{ComplexType{TYPE_INT, nil}}
-	fArg := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
-	aArg := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	iArg := []ComplexType{ComplexType{TYPE_INT, "", nil}}
+	fArg := []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}
+	aArg := []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}
 	aeArg := []ComplexType{
-		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
-		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
+		ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
 	}
 	aaArg := []ComplexType{
-		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
-		ComplexType{TYPE_WHATEVER, nil},
+		ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
+		ComplexType{TYPE_WHATEVER, "", nil},
 	}
 
 	plnI := s.funIsUsed("println", iArg, true)
@@ -1064,43 +1162,65 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable = SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
+		make(map[string]SymbolTypeEntry, 0),
 		"",
 		nil,
 		nil,
 		nil,
 	}
 
-	ast.globalSymbolTable.setFun("printChar", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{}, false)
-	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{}, false)
-	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{}, false)
-	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{}, false)
-	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{}, false)
+	ast.globalSymbolTable.setFun("printChar", []ComplexType{ComplexType{TYPE_INT, "", nil}}, []ComplexType{}, false)
+	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_INT, "", nil}}, []ComplexType{}, false)
+	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_INT, "", nil}}, []ComplexType{}, false)
+	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}, []ComplexType{}, false)
+	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}, []ComplexType{}, false)
 
-	ast.globalSymbolTable.setFun("int", []ComplexType{ComplexType{TYPE_FLOAT, nil}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
-	ast.globalSymbolTable.setFun("float", []ComplexType{ComplexType{TYPE_INT, nil}}, []ComplexType{ComplexType{TYPE_FLOAT, nil}}, true)
+	ast.globalSymbolTable.setFun("int",
+		[]ComplexType{ComplexType{TYPE_FLOAT, "", nil}},
+		[]ComplexType{ComplexType{TYPE_INT, "", nil}}, true,
+	)
+	ast.globalSymbolTable.setFun("float",
+		[]ComplexType{ComplexType{TYPE_INT, "", nil}},
+		[]ComplexType{ComplexType{TYPE_FLOAT, "", nil}}, true,
+	)
 
-	ast.globalSymbolTable.setFun("cap", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
-	ast.globalSymbolTable.setFun("len", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{ComplexType{TYPE_INT, nil}}, true)
+	ast.globalSymbolTable.setFun("cap",
+		[]ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}},
+		[]ComplexType{ComplexType{TYPE_INT, "", nil}}, true,
+	)
+	ast.globalSymbolTable.setFun("len",
+		[]ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}},
+		[]ComplexType{ComplexType{TYPE_INT, "", nil}}, true,
+	)
 	// free can not be set as inline, as we have to call it explicitely from assembly in append()
-	ast.globalSymbolTable.setFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, false)
-	ast.globalSymbolTable.setFun("reset", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, true)
-	ast.globalSymbolTable.setFun("clear", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, []ComplexType{}, true)
+	ast.globalSymbolTable.setFun("free",
+		[]ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}},
+		[]ComplexType{}, false,
+	)
+	ast.globalSymbolTable.setFun("reset",
+		[]ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}},
+		[]ComplexType{}, true,
+	)
+	ast.globalSymbolTable.setFun("clear",
+		[]ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}},
+		[]ComplexType{}, true,
+	)
 
 	ast.globalSymbolTable.setFun("extend",
 		[]ComplexType{
-			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
-			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+			ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
+			ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
 		},
-		[]ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}},
+		[]ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}},
 		false,
 	)
 
 	ast.globalSymbolTable.setFun("append",
 		[]ComplexType{
-			ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
-			ComplexType{TYPE_WHATEVER, nil},
+			ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
+			ComplexType{TYPE_WHATEVER, "", nil},
 		},
-		[]ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}},
+		[]ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}},
 		false,
 	)
 

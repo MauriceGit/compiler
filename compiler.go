@@ -146,31 +146,20 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-//		println(3.0)
-//		println(1)
-
-
-		a = 3
-
-		switch 4 {
-		case 1:
-			println(1)
-		case a:
-			println(4)
-		case 4:
-			println(6)
+		struct Blubb {
+			i int
+			j int
+		}
+		fun abc(i Blubb) Blubb {
+			return Blubb(4,5)
 		}
 
-		switch {
-		case 7 < 5:
-			println(1)
-		case false, 4 > 5, a < 6:
-			println(4)
-		case 6 < 7:
-			println(6)
-		}
+		a = Blubb(1, 2)
 
-		//println(3.7)
+		b = abc(a)
+
+		println(3)
+
 
 	`)
 

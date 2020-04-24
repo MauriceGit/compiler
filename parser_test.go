@@ -230,10 +230,10 @@ func testAST(code []byte, expected AST, t *testing.T) {
 }
 
 func newVar(value string, shadow bool) Variable {
-	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, shadow, nil, 0, 0}
+	return Variable{ComplexType{TYPE_UNKNOWN, "", nil}, value, shadow, nil, 0, 0}
 }
 func newIndexedVar(value string, e []Expression) Variable {
-	return Variable{ComplexType{TYPE_UNKNOWN, nil}, value, false, e, 0, 0}
+	return Variable{ComplexType{TYPE_UNKNOWN, "", nil}, value, false, e, 0, 0}
 }
 func newParam(t ComplexType, value string) Variable {
 	return Variable{t, value, true, nil, 0, 0}
@@ -242,10 +242,10 @@ func newConst(t Type, value string) Constant {
 	return Constant{t, value, 0, 0}
 }
 func newUnary(op Operator, e Expression) UnaryOp {
-	return UnaryOp{op, e, ComplexType{TYPE_UNKNOWN, nil}, 0, 0}
+	return UnaryOp{op, e, ComplexType{TYPE_UNKNOWN, "", nil}, 0, 0}
 }
 func newBinary(op Operator, eLeft, eRight Expression, fixed bool) BinaryOp {
-	return BinaryOp{op, eLeft, eRight, ComplexType{TYPE_UNKNOWN, nil}, fixed, 0, 0}
+	return BinaryOp{op, eLeft, eRight, ComplexType{TYPE_UNKNOWN, "", nil}, fixed, 0, 0}
 }
 func newArray(t ComplexType, count int, exprs []Expression) Array {
 	return Array{t, count, exprs, nil, 0, 0}
@@ -266,7 +266,7 @@ func newReturn(expressions []Expression) Return {
 	return Return{expressions, 0, 0}
 }
 func newFunCall(name string, exprs []Expression) FunCall {
-	return FunCall{name, exprs, []ComplexType{}, nil, 0, 0}
+	return FunCall{name, false, exprs, []ComplexType{}, nil, 0, 0}
 }
 func newBlock(statements []Statement) Block {
 	return Block{statements, SymbolTable{}, 0, 0}
@@ -276,7 +276,7 @@ func newAST(statements []Statement) AST {
 }
 func newSimpleTypeList(ts []Type) (tcs []ComplexType) {
 	for _, t := range ts {
-		tcs = append(tcs, ComplexType{t, nil})
+		tcs = append(tcs, ComplexType{t, "", nil})
 	}
 	return
 }
@@ -632,9 +632,9 @@ func TestParserFunction2(t *testing.T) {
 	expected := newAST(
 		[]Statement{
 			newFunction("abc", []Variable{
-				newParam(ComplexType{TYPE_INT, nil}, "a"),
-				newParam(ComplexType{TYPE_FLOAT, nil}, "b"),
-				newParam(ComplexType{TYPE_BOOL, nil}, "c"),
+				newParam(ComplexType{TYPE_INT, "", nil}, "a"),
+				newParam(ComplexType{TYPE_FLOAT, "", nil}, "b"),
+				newParam(ComplexType{TYPE_BOOL, "", nil}, "c"),
 			}, []ComplexType{}, newBlock(
 				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")}), newReturn(nil)},
 			)),
@@ -703,13 +703,13 @@ func TestParserArray1(t *testing.T) {
 		[]Statement{
 			newAssignment(
 				[]Variable{newVar("a", false)},
-				[]Expression{newArray(ComplexType{TYPE_UNKNOWN, nil}, 0, []Expression{
+				[]Expression{newArray(ComplexType{TYPE_UNKNOWN, "", nil}, 0, []Expression{
 					newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3"),
 				})},
 			),
 			newAssignment(
 				[]Variable{newVar("b", false)},
-				[]Expression{newArray(ComplexType{TYPE_ARRAY, &ComplexType{TYPE_INT, nil}}, 3, []Expression{})},
+				[]Expression{newArray(ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_INT, "", nil}}, 3, []Expression{})},
 			),
 		},
 	)
@@ -732,13 +732,13 @@ func TestParserArray2(t *testing.T) {
 		[]Statement{
 			newAssignment(
 				[]Variable{newVar("a", false)},
-				[]Expression{newArray(ComplexType{TYPE_UNKNOWN, nil}, 0, []Expression{
+				[]Expression{newArray(ComplexType{TYPE_UNKNOWN, "", nil}, 0, []Expression{
 					newConst(TYPE_INT, "1"), newConst(TYPE_INT, "2"), newConst(TYPE_INT, "3"),
 				})},
 			),
 			newAssignment(
 				[]Variable{newVar("b", false)},
-				[]Expression{newArray(ComplexType{TYPE_ARRAY, &ComplexType{TYPE_INT, nil}}, 3, []Expression{})},
+				[]Expression{newArray(ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_INT, "", nil}}, 3, []Expression{})},
 			),
 			newAssignment(
 				[]Variable{b},

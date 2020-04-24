@@ -58,6 +58,7 @@ const (
 	TYPE_BOOL
 	// TYPE_FUNCTION ?
 	TYPE_ARRAY
+	TYPE_STRUCT
 	// This type will always be considered equal to any other type when compared!
 	// Used for variadic functions.
 	TYPE_WHATEVER
@@ -120,9 +121,15 @@ type SymbolFunEntry struct {
 	isUsed                   bool
 }
 
+type SymbolTypeEntry struct {
+	members []StructMem
+	offset  int
+}
+
 type SymbolTable struct {
-	varTable map[string]SymbolVarEntry
-	funTable map[string][]SymbolFunEntry
+	varTable  map[string]SymbolVarEntry
+	funTable  map[string][]SymbolFunEntry
+	typeTable map[string]SymbolTypeEntry
 	// activeFunctionReturn references the function return types, if we are within a function, otherwise nil
 	// This is required to check validity and code generation of return statements
 	activeFunctionName   string
@@ -137,8 +144,9 @@ type AST struct {
 }
 
 type ComplexType struct {
-	// Array
-	t       Type
+	t Type
+	// iff t is a struct, we need the qualified type name to query the symbol table!
+	tName   string
 	subType *ComplexType
 }
 
@@ -208,7 +216,10 @@ type UnaryOp struct {
 	line, column int
 }
 type FunCall struct {
-	funName          string
+	funName string
+	// as struct creation and funCalls have the same syntax, we set this flag, weather we have a
+	// function call or a struct creation. Analysis and code generation may differ.
+	createStruct     bool
 	args             []Expression
 	retTypes         []ComplexType
 	indexExpressions []Expression
@@ -221,7 +232,6 @@ func (_ Array) expression()    {}
 func (_ BinaryOp) expression() {}
 func (_ UnaryOp) expression()  {}
 func (_ FunCall) expression()  {}
-
 func (e Variable) startPos() (int, int) {
 	return e.line, e.column
 }
@@ -242,7 +252,7 @@ func (e FunCall) startPos() (int, int) {
 }
 
 func (e Constant) getExpressionTypes() []ComplexType {
-	return []ComplexType{ComplexType{e.cType, nil}}
+	return []ComplexType{ComplexType{e.cType, "", nil}}
 }
 func (e Array) getExpressionTypes() []ComplexType {
 	t := e.aType
@@ -270,6 +280,8 @@ func (e FunCall) getExpressionTypes() []ComplexType {
 		return e.retTypes
 	}
 
+	// Only an expression with exactly 1 result can be indexed!
+	// So we return the simple result first and go down indexing types here.
 	t := e.retTypes[0]
 	for _ = range e.indexExpressions {
 		t = *t.subType
@@ -337,6 +349,15 @@ func (e FunCall) getIndexExpressions() []Expression {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // STATEMENTS
 /////////////////////////////////////////////////////////////////////////////////////////////////
+type StructMem struct {
+	memName string
+	memType ComplexType
+}
+type StructDef struct {
+	name         string
+	members      []StructMem
+	line, column int
+}
 
 type Block struct {
 	statements   []Statement
@@ -399,16 +420,20 @@ type Return struct {
 	line, column int
 }
 
-func (a Block) statement()      {}
-func (a Assignment) statement() {}
-func (c Condition) statement()  {}
-func (c Switch) statement()     {}
-func (l Loop) statement()       {}
-func (f Function) statement()   {}
-func (r Return) statement()     {}
-func (f FunCall) statement()    {}
-func (f RangedLoop) statement() {}
+func (_ StructDef) statement()  {}
+func (_ Block) statement()      {}
+func (_ Assignment) statement() {}
+func (_ Condition) statement()  {}
+func (_ Switch) statement()     {}
+func (_ Loop) statement()       {}
+func (_ Function) statement()   {}
+func (_ Return) statement()     {}
+func (_ FunCall) statement()    {}
+func (_ RangedLoop) statement() {}
 
+func (s StructDef) startPos() (int, int) {
+	return s.line, s.column
+}
 func (s Block) startPos() (int, int) {
 	return s.line, s.column
 }
@@ -584,10 +609,21 @@ func (a Assignment) String() (s string) {
 	for i, v := range a.expressions {
 		s += fmt.Sprintf("%v", v)
 		if i != len(a.expressions)-1 {
-			s += fmt.Sprintf(", ")
+			s += ", "
 		}
 	}
 
+	return
+}
+
+func (st StructDef) String() (s string) {
+	s += "struct " + st.name + " {\n"
+
+	for _, m := range st.members {
+		s += fmt.Sprintf("    %v    %v\n", m.memName, m.memType)
+	}
+
+	s += "}"
 	return
 }
 
@@ -683,8 +719,6 @@ func (s Return) String() string {
 type TokenChannel struct {
 	c      chan Token
 	cached []Token
-	//	isCached bool
-	//	token    Token
 }
 
 func (tc *TokenChannel) next() Token {
@@ -720,6 +754,9 @@ func equalType(c1, c2 ComplexType, strict bool) bool {
 	if c1.t != TYPE_WHATEVER && c2.t != TYPE_WHATEVER && c1.t != c2.t {
 		return false
 	}
+	if c1.tName != c2.tName {
+		return false
+	}
 	if c1.subType != nil && c2.subType != nil {
 		return equalType(*c1.subType, *c2.subType, strict)
 	}
@@ -737,22 +774,48 @@ func equalTypes(l1, l2 []ComplexType, strict bool) bool {
 	return true
 }
 
-func typeIsGeneric(c ComplexType) bool {
+func (c ComplexType) typeIsGeneric() bool {
 	if c.t == TYPE_WHATEVER {
 		return true
 	}
 	if c.subType == nil {
 		return false
 	}
-	return typeIsGeneric(*c.subType)
+	return c.subType.typeIsGeneric()
+}
+
+func (c ComplexType) getMemTypes(symbolTable *SymbolTable) []Type {
+
+	if c.t == TYPE_STRUCT {
+		types := make([]Type, 0)
+		entry, _ := symbolTable.getType(c.tName)
+		for _, m := range entry.members {
+			types = append(types, m.memType.getMemTypes(symbolTable)...)
+		}
+		return types
+	}
+
+	return []Type{c.t}
+}
+
+func (c ComplexType) getMemCount(symbolTable *SymbolTable) int {
+	return len(c.getMemTypes(symbolTable))
+}
+
+func typesToMemCount(ct []ComplexType, symbolTable *SymbolTable) (count int) {
+	for _, t := range ct {
+		count += t.getMemCount(symbolTable)
+	}
+	return
 }
 
 // Operator priority (Descending priority!):
 // 0:	'-', '!'
-// 1: 	'*', '/'
+// 1: 	'*', '/', '%'
 // 2: 	'+', '-'
 // 3:	'==', '!=', '<=', '>=', '<', '>'
-// 4:	'&&', '||'
+// 4:	'&&'
+// 5:	'||'
 func (o Operator) priority() int {
 	switch o {
 	case OP_NEGATIVE, OP_NOT:
@@ -763,8 +826,10 @@ func (o Operator) priority() int {
 		return 2
 	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LESS, OP_GREATER:
 		return 3
-	case OP_AND, OP_OR:
+	case OP_AND:
 		return 4
+	case OP_OR:
+		return 5
 	default:
 		fmt.Printf("Unknown operator: %v\n", o)
 	}
@@ -877,7 +942,7 @@ func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 	}
 	variable.indexExpressions = indexExpressions
 
-	variable.vType = ComplexType{TYPE_UNKNOWN, nil}
+	variable.vType = ComplexType{TYPE_UNKNOWN, "", nil}
 	variable.vName = vName
 	variable.vShadow = shadowing
 	variable.line = startRow
@@ -1035,7 +1100,7 @@ func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 			return
 		}
 
-		array.aType = ComplexType{TYPE_ARRAY, &t}
+		array.aType = ComplexType{TYPE_ARRAY, "", &t}
 		array.aCount = int(cValue)
 		array.aExpressions = []Expression{}
 		array.line = startRow
@@ -1060,7 +1125,7 @@ func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 			return
 		}
 
-		array.aType = ComplexType{TYPE_UNKNOWN, nil}
+		array.aType = ComplexType{TYPE_UNKNOWN, "", nil}
 		// This needs to be evaluated and counted up in analysis - One expression might have multiple values!
 		array.aCount = 0
 		array.aExpressions = expressions
@@ -1070,6 +1135,37 @@ func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 	}
 
 }
+
+//func parseStructExpr(tokens *TokenChannel) (st StructExpr, err error) {
+
+//	name, startRow, startCol, ok := tokens.expectType(TOKEN_IDENTIFIER)
+//	if !ok {
+//		err = fmt.Errorf("%wExpected identifier for struct expression", ErrNormal)
+//		return
+//	}
+
+//	if _, _, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
+//		err = fmt.Errorf("%wExpected '{' after struct name", ErrNormal)
+//		tokens.pushBack(tokens.createToken(TOKEN_IDENTIFIER, name, startRow, startCol))
+//		return
+//	}
+
+//	expressions, parseErr := parseExpressionList(tokens)
+//	if errors.Is(parseErr, ErrCritical) {
+//		err = parseErr
+//		return
+//	}
+
+//	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
+//		err = fmt.Errorf("%w[%v:%v] - Expected '}' after struct expression", ErrCritical, row, col)
+//		return
+//	}
+
+//	st.sType = ComplexType{TYPE_STRUCT, name, nil}
+//	st.name = name
+//	st.args = expressions
+//	return
+//}
 
 // parseSimpleExpression just parses variables, constants and '('...')'
 func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err error) {
@@ -1085,6 +1181,16 @@ func parseSimpleExpression(tokens *TokenChannel) (expression Expression, err err
 		err = parseErr
 		return
 	}
+
+	//	tmpStructExpr, parseErr := parseStructExpr(tokens)
+	//	switch {
+	//	case parseErr == nil:
+	//		expression = tmpStructExpr
+	//		return
+	//	case errors.Is(parseErr, ErrCritical):
+	//		err = parseErr
+	//		return
+	//	}
 
 	tmpV, parseErr := parseVariable(tokens)
 	switch {
@@ -1149,7 +1255,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 			return
 		}
 
-		expression = UnaryOp{OP_NEGATIVE, e, ComplexType{TYPE_UNKNOWN, nil}, row, col}
+		expression = UnaryOp{OP_NEGATIVE, e, ComplexType{TYPE_UNKNOWN, "", nil}, row, col}
 		return
 	}
 	// Check for unary operator before the expression
@@ -1160,7 +1266,7 @@ func parseUnaryExpression(tokens *TokenChannel) (expression Expression, err erro
 			return
 		}
 
-		expression = UnaryOp{OP_NOT, e, ComplexType{TYPE_UNKNOWN, nil}, row, col}
+		expression = UnaryOp{OP_NOT, e, ComplexType{TYPE_UNKNOWN, "", nil}, row, col}
 		return
 	}
 
@@ -1193,7 +1299,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 			return
 		}
 		row, col = expression.startPos()
-		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, ComplexType{TYPE_UNKNOWN, nil}, false, row, col}
+		finalExpression := BinaryOp{getOperatorType(t), expression, rightHandExpr, ComplexType{TYPE_UNKNOWN, "", nil}, false, row, col}
 		expression = finalExpression
 	}
 
@@ -1288,7 +1394,7 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 						getOperatorType(o),
 						variables[0],
 						Constant{TYPE_INT, "1", row, col},
-						ComplexType{TYPE_INT, nil},
+						ComplexType{TYPE_INT, "", nil},
 						false,
 						row, col,
 					},
@@ -1309,7 +1415,7 @@ func parseAssignment(tokens *TokenChannel) (assignment Assignment, err error) {
 				}
 
 				assignment.expressions = []Expression{
-					BinaryOp{getOperatorType(o), variables[0], e, ComplexType{TYPE_UNKNOWN, nil}, false, row, col},
+					BinaryOp{getOperatorType(o), variables[0], e, ComplexType{TYPE_UNKNOWN, "", nil}, false, row, col},
 				}
 				return
 			}
@@ -1542,8 +1648,8 @@ func parseRangedLoop(tokens *TokenChannel) (loop RangedLoop, err error) {
 		return
 	}
 
-	loop.counter = Variable{ComplexType{TYPE_INT, nil}, i, false, nil, iRow, iCol}
-	loop.elem = Variable{ComplexType{TYPE_UNKNOWN, nil}, e, false, nil, eRow, eCol}
+	loop.counter = Variable{ComplexType{TYPE_INT, "", nil}, i, false, nil, iRow, iCol}
+	loop.elem = Variable{ComplexType{TYPE_UNKNOWN, "", nil}, e, false, nil, eRow, eCol}
 	loop.rangeExpression = a
 	loop.block = forBlock
 	loop.line = startRow
@@ -1552,7 +1658,7 @@ func parseRangedLoop(tokens *TokenChannel) (loop RangedLoop, err error) {
 	return
 }
 
-func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
+func parseLoop(tokens *TokenChannel) (res Statement, err error) {
 
 	startRow, startCol, ok := 0, 0, false
 
@@ -1607,6 +1713,7 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 		return
 	}
 
+	var loop Loop
 	loop.assignment = assignment
 	loop.expressions = expressions
 	loop.incrAssignment = incrAssignment
@@ -1614,13 +1721,25 @@ func parseLoop(tokens *TokenChannel) (loop Loop, err error) {
 	loop.line = startRow
 	loop.column = startCol
 
+	res = loop
 	return
 }
 
 func parseType(tokens *TokenChannel) (t ComplexType, err error) {
 
-	name, row, col, ok := tokens.expectType(TOKEN_KEYWORD)
-	if !ok {
+	name := ""
+	valid := false
+	if keyword, _, _, ok := tokens.expectType(TOKEN_KEYWORD); ok {
+		name = keyword
+		valid = true
+	} else {
+		if id, _, _, ok := tokens.expectType(TOKEN_IDENTIFIER); ok {
+			name = id
+			valid = true
+		}
+	}
+
+	if !valid {
 
 		if row, col, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); !ok {
 			err = fmt.Errorf("%w[%v:%v] - Expected a type or '['", ErrCritical, row, col)
@@ -1652,14 +1771,13 @@ func parseType(tokens *TokenChannel) (t ComplexType, err error) {
 	case "string":
 		t.t = TYPE_STRING
 	default:
-
-		err = fmt.Errorf("%w[%v:%v] - Not a valid type. Should be: 'int' | 'float' | 'bool' | 'string'", ErrCritical, row, col)
-		return
+		t.t = TYPE_STRUCT
+		t.tName = name
 	}
 	t.subType = nil
 	return
 }
-func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
+func parseArgList(tokens *TokenChannel, expectSeparator bool) (variables []Variable, err error) {
 
 	i := 0
 	lastRow, lastCol, ok := 0, 0, false
@@ -1674,26 +1792,33 @@ func parseArgList(tokens *TokenChannel) (variables []Variable, err error) {
 				return
 			}
 
-			err = fmt.Errorf("%w[%v:%v] - Variable list ends in ','", ErrCritical, lastRow, lastCol)
-			variables = nil
+			// If we have a separator, it means, that we can only fail there. Failing here means, we
+			// do have a trailing ','
+			if expectSeparator {
+				err = fmt.Errorf("%w[%v:%v] - Variable list ends in ','", ErrCritical, lastRow, lastCol)
+				variables = nil
+			}
 			return
 		}
-		v := Variable{ComplexType{TYPE_UNKNOWN, nil}, vName, false, nil, row, col}
+		v := Variable{ComplexType{TYPE_UNKNOWN, "", nil}, vName, false, nil, row, col}
 
 		t, parseErr := parseType(tokens)
 		if parseErr != nil {
 			err = parseErr
 			return
 		}
+
 		v.vType = t
 
 		// Function parameters are always shadowing!
 		v.vShadow = true
 		variables = append(variables, v)
 
-		// Expect separating ','. Otherwise, all good, we are through!
-		if lastRow, lastCol, ok = tokens.expect(TOKEN_SEPARATOR, ","); !ok {
-			break
+		if expectSeparator {
+			// Expect separating ','. Otherwise, all good, we are through!
+			if lastRow, lastCol, ok = tokens.expect(TOKEN_SEPARATOR, ","); !ok {
+				break
+			}
 		}
 		i += 1
 	}
@@ -1749,7 +1874,7 @@ func parseFunction(tokens *TokenChannel) (fun Function, err error) {
 		return
 	}
 
-	variables, parseErr := parseArgList(tokens)
+	variables, parseErr := parseArgList(tokens, true)
 	if errors.Is(parseErr, ErrCritical) {
 		err = fmt.Errorf("%w - Invalid argument list in function header", parseErr)
 		return
@@ -1810,8 +1935,68 @@ func parseReturn(tokens *TokenChannel) (ret Return, err error) {
 	return
 }
 
+func parseStruct(tokens *TokenChannel) (st StructDef, err error) {
+
+	startRow, startCol, ok := 0, 0, false
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "struct"); !ok {
+		err = fmt.Errorf("%wExpected 'struct' keyword", ErrNormal)
+		return
+	}
+
+	name, row, col, ok := tokens.expectType(TOKEN_IDENTIFIER)
+	if !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected identifier after 'struct'", ErrCritical, row, col)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_OPEN, "{"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '{' after function header", ErrCritical, row, col)
+		return
+	}
+
+	// Struct definitions are basically the same as argument lists for function headers.
+	variables, parseErr := parseArgList(tokens, false)
+	if errors.Is(parseErr, ErrCritical) {
+		err = fmt.Errorf("%w - Invalid struct member list", parseErr)
+		return
+	}
+
+	if row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}"); !ok {
+		err = fmt.Errorf("%w[%v:%v] - Expected '}' after struct definition", ErrCritical, row, col)
+		return
+	}
+
+	st.name = name
+	st.members = make([]StructMem, len(variables), len(variables))
+	for i, v := range variables {
+		st.members[i] = StructMem{v.vName, v.vType}
+	}
+	st.line = startRow
+	st.column = startCol
+
+	return
+}
+
 func parseBlock(tokens *TokenChannel) (block Block, err error) {
+
+	//	type ParseStmtFunc func(*TokenChannel) (interface{}, error)
+	//	var blubb ParseStmtFunc = parseStruct
+
+	//	parseStatementMethods := []ParseStmtFunc{
+	//		parseStruct, parseCondition, parseSwitch, parseRangedLoop, parseLoop,
+	//		parseAssignment, parseFunction, parseReturn, parseFunCall,
+	//	}
+
 	for {
+
+		switch structStatement, parseErr := parseStruct(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, structStatement)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
 
 		switch ifStatement, parseErr := parseCondition(tokens); {
 		case parseErr == nil:

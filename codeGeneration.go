@@ -253,47 +253,58 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 func generateArrayAccessCode(indexExpressions []Expression, asm *ASM, s *SymbolTable) {
 
 	for _, indexExpression := range indexExpressions {
-		index, address := getRegister(TYPE_INT)
+		address, _ := getRegister(TYPE_INT)
 		// address = rax
 		asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
 		// Save the address
 		asm.addLine("push", address)
+		// The index will be in rax.
 		indexExpression.generateCode(asm, s)
 		asm.addLine("pop", address)
-		// TODO: Check, if this following mov can entirely be removed, by just using rax as index directly!
-		asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
-		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+16]", getReturnRegister(TYPE_INT), address, index))
+		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+16]", getReturnRegister(TYPE_INT), address, getReturnRegister(TYPE_INT)))
 	}
 }
 
 func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
-	if symbol, ok := s.getVar(v.vName); ok {
-		// We just push it on the stack. So here we can't use floating point registers for example!
-		sign := "+"
-		if symbol.offset < 0 {
-			sign = ""
-		}
+	symbol, ok := s.getVar(v.vName)
+	if !ok {
+		panic("Could not generate code for Variable. No symbol known!")
+	}
 
-		switch v.vType.t {
-		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
-			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", getReturnRegister(TYPE_INT), sign, symbol.offset))
-		case TYPE_FLOAT:
+	switch v.vType.t {
+	case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+		asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", getReturnRegister(TYPE_INT), symbol.offset))
+	case TYPE_FLOAT:
+		register, _ := getRegister(TYPE_INT)
+		asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", register, symbol.offset))
+		asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), register))
+	case TYPE_STRUCT:
+
+		memCount := v.vType.getMemCount(s)
+		// Same as int
+		// TODO: Do we need to distinguish between int/... and float types here? Do we need movq somewhere?
+		if memCount == 1 {
+			asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", getReturnRegister(TYPE_INT), symbol.offset))
+		} else {
 			register, _ := getRegister(TYPE_INT)
-			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", register, sign, symbol.offset))
-			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), register))
-		}
-
-		if len(v.indexExpressions) > 0 {
-			generateArrayAccessCode(v.indexExpressions, asm, s)
-			if v.vType.subType.t == TYPE_FLOAT {
-				asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
+			// We need to push in the reverse order!
+			for i := memCount - 1; i >= 0; i-- {
+				asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp-%v]", register, symbol.offset, i*8))
+				asm.addLine("push", register)
 			}
 		}
-
-		return
 	}
-	panic("Could not generate code for Variable. No symbol known!")
+
+	if len(v.indexExpressions) > 0 {
+		generateArrayAccessCode(v.indexExpressions, asm, s)
+		if v.vType.subType.t == TYPE_FLOAT {
+			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
+		}
+	}
+
+	return
+
 }
 
 func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
@@ -399,11 +410,17 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 	// Result will be left in rax/xmm0
 	b.leftExpr.generateCode(asm, s)
-
 	rLeft := getReturnRegister(t.t)
-
 	_, rRight := getRegister(t.t)
-	asm.addLine("pop", rRight)
+
+	switch t.t {
+	case TYPE_INT, TYPE_BOOL:
+		asm.addLine("pop", rRight)
+	case TYPE_FLOAT:
+		tmpR, _ := getRegister(TYPE_INT)
+		asm.addLine("pop", tmpR)
+		asm.addLine("movq", fmt.Sprintf("%v, %v", rRight, tmpR))
+	}
 
 	switch t.t {
 	case TYPE_INT, TYPE_FLOAT, TYPE_BOOL:
@@ -417,10 +434,12 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
+	elementSize := a.aType.getMemCount(s)
+
 	asm.addLine("mov", "rax, sys_mmap")
 	// Null pointer
 	asm.addLine("mov", "rdi, 0x00")
-	asm.addLine("mov", fmt.Sprintf("rsi, %v", a.aCount*8+16))
+	asm.addLine("mov", fmt.Sprintf("rsi, %v", a.aCount*elementSize*8+16))
 	// PROT_READ | PROT_WRITE
 	asm.addLine("mov", "rdx, 0x03")
 	// MAP_PRIVATE | MAP_ANONYMOUS
@@ -430,40 +449,32 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("mov", "r8, -1")
 	asm.addLine("syscall", "")
 
-	// Save our first memory register!
-	// We use rsi manually here as a register that is Caller-saved and will not be
-	// altered by anything that happens while creating/allocating/filling the array (well, only by myself)
-	//asm.addLine("mov", "rsi, rax")
-
 	asm.addLine("push", "rax")
 
 	// Check memory error
 	asm.addLine("cmp", "rax, 0")
 	asm.addLine("jl", "exit")
 
-	//dataLength := 0
-
 	// Initialize array with 0s, if they are not initialized.
 	if len(a.aExpressions) == 0 {
 		// rdi is now the highest available address
 		asm.addLine("mov", "rdi, rax")
 		// Number of memory blocks we want to clear
-		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount+2))
+		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount*elementSize+2))
 
 		// rax == What to write into memory (default). So we fill it up with 0s
 		asm.addLine("xor", "rax, rax")
 		// store the value of rax into what rdi points to at every position and decrement rcx.
 		asm.addLine("rep", "stosq")
 	} else {
-		//dataLength = a.aCount
 		for i := len(a.aExpressions) - 1; i >= 0; i-- {
 			e := a.aExpressions[i]
 			// Calculate expression
 			e.generateCode(asm, s)
 			// Multiple return values are already on the stack, single ones not!
-			if e.getResultCount() == 1 {
+			if e.getResultCount() == 1 && e.getExpressionTypes()[0].getMemCount(s) == 1 {
 
-				switch e.getExpressionTypes()[0].t {
+				switch e.getExpressionTypes()[0].getMemTypes(s)[0] {
 				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
@@ -481,16 +492,12 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		// Calculate, where our pointer is on the stack and reference it directly!
 		// There should be a.aCount additional values pushed on stack right now.
 		// So our array should be at [rsp+a.aCount*8]
-		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v*8]", pointer, a.aCount))
+		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v*8]", pointer, a.aCount*elementSize))
 
-		for i := 0; i < a.aCount; i++ {
-
+		for i := 0; i < a.aCount*elementSize; i++ {
 			// Pop our value from the stack
 			asm.addLine("pop", value)
-
 			asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", pointer, i*8+16, value))
-			// Save the array pointer back to the stack
-
 		}
 	}
 
@@ -522,7 +529,34 @@ func expressionsToTypes(expressions []Expression) []ComplexType {
 	return types
 }
 
+func generateStructExprCode(asm *ASM, s *SymbolTable, f FunCall) {
+
+	// First generate code for all expressions, THEN put them in function parameter registers!
+	// To avoid register overwriting by functions!
+	for i := len(f.args) - 1; i >= 0; i-- {
+		e := f.args[i]
+		e.generateCode(asm, s)
+
+		// Multiple return values are already on the stack, single ones not!
+		if e.getResultCount() == 1 {
+			switch e.getExpressionTypes()[0].t {
+			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+				asm.addLine("push", getReturnRegister(TYPE_INT))
+			case TYPE_FLOAT:
+				tmpR, _ := getRegister(TYPE_INT)
+				asm.addLine("movq", fmt.Sprintf("%v, %v", tmpR, getReturnRegister(TYPE_FLOAT)))
+				asm.addLine("push", tmpR)
+			}
+		}
+	}
+}
+
 func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
+
+	if f.createStruct {
+		generateStructExprCode(asm, s, f)
+		return
+	}
 
 	intRegisters := getFunctionRegisters(TYPE_INT)
 	intRegIndex := 0
@@ -531,31 +565,38 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 
 	// In case we have multiple return values, we want to provide a pointer to the stack space to write to
 	// as very first argument to the function. So we skip the first register here on purpose!
-	if len(f.retTypes) > 1 {
-		intRegIndex++
-	}
 
 	// Make space on (our) stack, if f has multiple return values!
 	// The return stack space is now BEFORE the parameter stack space! So we can just pop used parameters
 	// from the stack after the function call.
-	if len(f.retTypes) > 1 {
-		asm.addLine("sub", fmt.Sprintf("rsp, %v", 8*len(f.retTypes)))
-		// rsp already points to one return stack space right now, so we only offset by count-1
-		//asm.addLine("lea", fmt.Sprintf("rdi, [rsp+%v]", 8*(len(f.retTypes)-1)))
-		asm.addLine("lea", fmt.Sprintf("rdi, [rsp]"))
+	returnMemCount := typesToMemCount(f.retTypes, s)
+	if returnMemCount > 1 {
+		intRegIndex++
+		asm.addLine("sub", fmt.Sprintf("rsp, %v", 8*returnMemCount))
+		asm.addLine("lea", fmt.Sprintf("%v, [rsp]", getFunctionRegisters(TYPE_INT)[0]))
+		// We cannot guarantee, that no argument expression overwrites rdi...
+		asm.addLine("push", getFunctionRegisters(TYPE_INT)[0])
 	}
+	// We need this to refer to rdi later... Just if we have multiple return values and
+	// have to make sure rdi is not overwritten when evaluating argument expressions.
+	argsOnStack := 0
 
 	// Expect value in rax/xmm0 instead of stack.
 	// For floating point, the first parameter is already xmm0, so we are done.
 	// Int must be moved into rax.
-	if len(f.args) == 1 && f.args[0].getResultCount() == 1 {
+	if len(f.args) == 1 && f.args[0].getExpressionTypes()[0].getMemCount(s) == 1 {
 		f.args[0].generateCode(asm, s)
 
-		switch f.args[0].getExpressionTypes()[0].t {
+		// If we have a struct on hand, we have to find out, what type the member is!
+		// We already know, that we have exactly ONE value.
+
+		switch f.args[0].getExpressionTypes()[0].getMemTypes(s)[0] {
 		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
-			asm.addLine("mov", intRegisters[intRegIndex]+", rax")
+			asm.addLine("mov", fmt.Sprintf("%v, %v", intRegisters[intRegIndex], getReturnRegister(TYPE_INT)))
 			intRegIndex++
 		case TYPE_FLOAT:
+			// For float, xmm0 is both the expected return and the first parameter. So everything is fine!
+			// Even for multiple return values, as this is a pointer to the stack, which is an int-parameter.
 			floatRegIndex++
 		}
 
@@ -567,9 +608,14 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 			e := f.args[i]
 			e.generateCode(asm, s)
 
+			resultMemory := e.getExpressionTypes()[0].getMemCount(s)
+
 			// Multiple return values are already on the stack, single ones not!
-			if e.getResultCount() == 1 {
-				switch e.getExpressionTypes()[0].t {
+			if e.getResultCount() == 1 && resultMemory == 1 {
+
+				// If we have a struct on hand, we have to find out, what type the member is!
+				// We already know, that we have exactly ONE value.
+				switch e.getExpressionTypes()[0].getMemTypes(s)[0] {
 				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
@@ -580,26 +626,38 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 			}
 		}
 
-		// Iterate in reverse order to correctly pop from stack!
 		for _, e := range f.args {
 			for _, t := range e.getExpressionTypes() {
-				switch t.t {
-				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
-					// All further values stay on the stack and are not assigned to registers!
-					if intRegIndex < len(intRegisters) {
-						asm.addLine("pop", intRegisters[intRegIndex])
-						intRegIndex++
-					}
-				case TYPE_FLOAT:
-					if floatRegIndex < len(floatRegisters) {
-						tmpR, _ := getRegister(TYPE_INT)
-						asm.addLine("pop", tmpR)
-						asm.addLine("movq", fmt.Sprintf("%v, %v", floatRegisters[floatRegIndex], tmpR))
-						floatRegIndex++
+
+				for _, endType := range t.getMemTypes(s) {
+					switch endType {
+					case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+						// All further values stay on the stack and are not assigned to registers!
+						if intRegIndex < len(intRegisters) {
+							asm.addLine("pop", intRegisters[intRegIndex])
+							intRegIndex++
+						} else {
+							argsOnStack++
+						}
+					case TYPE_FLOAT:
+						if floatRegIndex < len(floatRegisters) {
+							tmpR, _ := getRegister(TYPE_INT)
+							asm.addLine("pop", tmpR)
+							asm.addLine("movq", fmt.Sprintf("%v, %v", floatRegisters[floatRegIndex], tmpR))
+							floatRegIndex++
+						} else {
+							argsOnStack++
+						}
 					}
 				}
+
 			}
 		}
+	}
+
+	// Reset rdi!
+	if returnMemCount > 1 {
+		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v]", getFunctionRegisters(TYPE_INT)[0], argsOnStack*8))
 	}
 
 	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args), false); ok {
@@ -614,16 +672,24 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		asm.setFunIsUsed(entry.jumpLabel, true)
 
 		paramCount := len(entry.paramTypes)
-		if len(f.retTypes) > 1 {
+		if returnMemCount > 1 {
 			paramCount++
 		}
 
 		// Remove the stack space used for the parameters for the function by resetting rsp by the
 		// amount of stack space we used.
-		paramStackCount := paramCount - intRegIndex - floatRegIndex
+		if argsOnStack > 0 {
 
-		if paramStackCount > 0 {
-			asm.addLine("add", fmt.Sprintf("rsp, %v    ; Remove function parameters from stack", 8*paramStackCount))
+			freeStackSpace := 8 * argsOnStack
+			if returnMemCount > 1 {
+				freeStackSpace += 8
+			}
+
+			asm.addLine("add", fmt.Sprintf("rsp, %v    ; Remove function parameters from stack", freeStackSpace))
+		} else {
+			if returnMemCount > 1 {
+				asm.addLine("add", "rsp, 8")
+			}
 		}
 
 	} else {
@@ -661,21 +727,16 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 	// Just to get it from the stack into the variable.
 	valueRegister, _ := getRegister(TYPE_INT)
 	for _, v := range a.variables {
-		asm.addLine("pop", valueRegister)
+		//asm.addLine("pop", valueRegister)
 
 		// This can not/should not fail!
 		entry, _ := s.getVar(v.vName)
 
-		sign := "+"
-		if entry.offset < 0 {
-			sign = ""
-		}
-
 		if len(v.indexExpressions) > 0 {
 			index, address := getRegister(TYPE_INT)
 
-			asm.addLine("mov", fmt.Sprintf("%v, [rbp%v%v]", address, sign, entry.offset))
-			asm.addLine("push", valueRegister)
+			asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", address, entry.offset))
+			//asm.addLine("push", valueRegister)
 
 			// We go through the indexing to determine the last index and address to write to!
 			for _, indexExpression := range v.indexExpressions {
@@ -689,11 +750,20 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 				asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+16]", address, address, index))
 			}
 
-			asm.addLine("pop", valueRegister)
-			asm.addLine("mov", fmt.Sprintf("[%v], %v", address, valueRegister))
+			for i := 0; i < v.vType.getMemCount(s); i++ {
+				asm.addLine("pop", valueRegister)
+				asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", address, i*8, valueRegister))
+			}
 
 		} else {
-			asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, valueRegister))
+
+			// For multiple memory locations, we have to fill all of them.
+			// The corresponding values are expected on the stack!
+			for i := 0; i < v.vType.getMemCount(s); i++ {
+				asm.addLine("pop", valueRegister)
+				asm.addLine("mov", fmt.Sprintf("[%v+rbp-%v], %v", entry.offset, i*8, valueRegister))
+			}
+
 		}
 
 	}
@@ -919,6 +989,7 @@ func (b Block) extractAllFunctionVariables(isRoot bool) (vars []FunctionVar) {
 		case Assignment:
 		case Function:
 		case Return:
+		case StructDef:
 		default:
 			panic(fmt.Sprintf("Unknown statement '%v' for function variable extraction, ", st))
 		}
@@ -1013,34 +1084,26 @@ func varOnStack(v FunctionVar, intStackVars, floatStackVars map[string]bool) boo
 	return false
 }
 
-func (b Block) assignVariableStackOffset(parameters []Variable, isMultiReturn bool) int {
-	// Local variables go down in the stack, so offsets are calculated  -= 8
-	// We jump over our saved rdi and rsi so we start with -16 as offset
-	localVarOffset := -16
-	// Function parameters go up in the stack, so offsets are positiv
-	// We jump over our saved rbp, so our offset starts with +16
-	stackParamOffset := 16
-
-	// If we have a multi-return function, we have to assign the stack pointer manually
-	// and have to account for the additional offset!
-	if isMultiReturn {
-		localVarOffset -= 8
-	}
-
-	intStackVars, floatStackVars := getParametersOnStack(parameters, isMultiReturn)
+// assignVariableStackOffset just makes sure, that every single local variable
+// has a defined stack position for the rest of its scope!
+// If we are within a function that has multiple return values, this offset needs to be
+// one further, as we need this pointer for return values additionally.
+func (b Block) assignVariableStackOffset(isMultiReturn bool) int {
 
 	// This includes function parameters!
 	allVariables := b.extractAllFunctionVariables(true)
-
-	for _, v := range allVariables {
-		if varOnStack(v, intStackVars, floatStackVars) {
-			v.symbolTable.setVarAsmOffset(v.name, stackParamOffset)
-			stackParamOffset += 8
-		} else {
-			v.symbolTable.setVarAsmOffset(v.name, localVarOffset)
-			localVarOffset -= 8
-		}
+	// Local variables go down in the stack, so offsets are calculated  -= 8
+	// We jump over our saved rdi and rsi so we start with -16 as offset
+	localVarOffset := -16
+	if isMultiReturn {
+		localVarOffset -= 8
 	}
+	for _, v := range allVariables {
+		v.symbolTable.setVarAsmOffset(v.name, localVarOffset)
+		entry, _ := v.symbolTable.getVar(v.name)
+		localVarOffset -= entry.sType.getMemCount(v.symbolTable) * 8
+	}
+
 	// +16 because the initial -16 do not count as we calculate the offset for local variables with rsp not rbp.
 	// We negate the resulting number to return a positive amount of space we need, not the actual stack-offset!
 	return -(localVarOffset + 16)
@@ -1068,7 +1131,10 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	epilogueLabel := asm.nextLabelName()
 	s.setFunEpilogueLabel(f.fName, epilogueLabel, variablesToTypes(f.parameters))
 
-	localVarOffset := f.block.assignVariableStackOffset(f.parameters, len(f.returnTypes) > 1)
+	// If a struct is returned, we can not just count the type count, but need to drop one level deeper.
+	returnMemCount := typesToMemCount(f.returnTypes, s)
+
+	localVarOffset := f.block.assignVariableStackOffset(returnMemCount > 1)
 
 	// Prologue:
 	addFunctionPrologue(asm, localVarOffset)
@@ -1079,30 +1145,47 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	floatRegIndex := 0
 
 	// Save stack pointer for return values
-	if len(f.returnTypes) > 1 {
+	if returnMemCount > 1 {
 		asm.addLine("mov", fmt.Sprintf("[rbp%v], %v", -16, intRegisters[intRegIndex]))
 		intRegIndex++
 		s.setFunReturnStackPointer(f.fName, -16, variablesToTypes(f.parameters))
 	}
 
 	// Create local variables for all function parameters
+	// Function parameters go up in the stack, so offsets are positiv
+	// We jump over our saved rbp, so our offset starts with +16
+	// This is because they were put on the stack before the function was called. So they are referenced
+	// upwards.
+	stackParamOffset := 16
+	regI, _ := getRegister(TYPE_INT)
+	regF, _ := getRegister(TYPE_FLOAT)
 	for _, v := range f.parameters {
 
 		entry, _ := f.block.symbolTable.getVar(v.vName)
-		sign := "+"
-		if entry.offset < 0 {
-			sign = ""
-		}
-		switch v.vType.t {
-		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
-			if intRegIndex < len(intRegisters) {
-				asm.addLine("mov", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, intRegisters[intRegIndex]))
-				intRegIndex++
-			}
-		case TYPE_FLOAT:
-			if floatRegIndex < len(floatRegisters) {
-				asm.addLine("movq", fmt.Sprintf("[rbp%v%v], %v", sign, entry.offset, floatRegisters[floatRegIndex]))
-				floatRegIndex++
+
+		// Get values both from registers and from stack if necessary! Just fill the struct with expected values!
+		initialOffset := entry.offset
+		for i, mt := range v.vType.getMemTypes(s) {
+			switch mt {
+			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+				if intRegIndex < len(intRegisters) {
+					asm.addLine("mov", fmt.Sprintf("[%v+rbp], %v", initialOffset-i*8, intRegisters[intRegIndex]))
+					intRegIndex++
+				} else {
+					// Copy from stack to local stack position instead of register!
+					asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", regI, stackParamOffset))
+					asm.addLine("mov", fmt.Sprintf("[%v+rbp], %v", initialOffset-i*8, regI))
+					stackParamOffset += 8
+				}
+			case TYPE_FLOAT:
+				if floatRegIndex < len(floatRegisters) {
+					asm.addLine("movq", fmt.Sprintf("[%v+rbp], %v", initialOffset-i*8, floatRegisters[floatRegIndex]))
+					floatRegIndex++
+				} else {
+					asm.addLine("movq", fmt.Sprintf("%v, [%v+rbp]", regF, stackParamOffset))
+					asm.addLine("movq", fmt.Sprintf("[%v+rbp], %v", initialOffset-i*8, regF))
+					stackParamOffset += 8
+				}
 			}
 		}
 	}
@@ -1134,7 +1217,9 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 		panic("Code generation error. Function not in symbol table.")
 	}
 
-	switch len(entry.returnTypes) {
+	returnMemCount := typesToMemCount(entry.returnTypes, s)
+
+	switch returnMemCount {
 	case 0:
 		// Explicitely do nothing :)
 	case 1:
@@ -1148,7 +1233,7 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 			e.generateCode(asm, s)
 
 			// Make sure everything is actually on the stack!
-			if e.getResultCount() == 1 {
+			if e.getResultCount() == 1 && e.getExpressionTypes()[0].getMemCount(s) == 1 {
 				switch e.getExpressionTypes()[0].t {
 				case TYPE_INT:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
@@ -1167,7 +1252,7 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 		asm.addLine("mov", fmt.Sprintf("%v, [rbp%v]", stackPointerReg, entry.returnStackPointerOffset))
 
 		offset := 0
-		for _ = range entry.returnTypes {
+		for i := 0; i < typesToMemCount(entry.returnTypes, s); i++ {
 			asm.addLine("pop", tmpR)
 			asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", stackPointerReg, offset, tmpR))
 			offset += 8
@@ -1177,10 +1262,14 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("jmp", entry.epilogueLabel)
 }
 
+func (st StructDef) generateCode(asm *ASM, s *SymbolTable) {
+
+}
+
 func (ast AST) addPrintCharFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	params := []ComplexType{ComplexType{TYPE_INT, "", nil}}
 	functionName := "printChar"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
@@ -1226,7 +1315,7 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 func (ast AST) addPrintIntFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	params := []ComplexType{ComplexType{TYPE_INT, "", nil}}
 	entry, ok := ast.globalSymbolTable.getFun("printChar", params, true)
 	if !ok {
 		panic("Code generation error. printChar can not be found")
@@ -1309,7 +1398,7 @@ func (ast AST) addPrintIntFunction(asm *ASM) {
 func (ast AST) addPrintIntLnFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	params := []ComplexType{ComplexType{TYPE_INT, "", nil}}
 	functionName := "println"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
@@ -1355,8 +1444,8 @@ func (ast AST) addPrintIntLnFunction(asm *ASM) {
 func (ast AST) addPrintFloatFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	paramsI := []ComplexType{ComplexType{TYPE_INT, nil}}
-	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+	paramsI := []ComplexType{ComplexType{TYPE_INT, "", nil}}
+	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}
 	functionName := "print"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, paramsF, true)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, paramsF, true)
@@ -1460,8 +1549,8 @@ func (ast AST) addPrintFloatFunction(asm *ASM) {
 func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
-	paramsI := []ComplexType{ComplexType{TYPE_INT, nil}}
-	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+	paramsI := []ComplexType{ComplexType{TYPE_INT, "", nil}}
+	paramsF := []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}
 	functionName := "println"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, paramsF, true)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, paramsF, true)
@@ -1506,7 +1595,7 @@ func (ast AST) addPrintFloatLnFunction(asm *ASM) {
 
 func (ast AST) addArrayLenFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}
 	functionName := "len"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1533,7 +1622,7 @@ func (ast AST) addArrayLenFunction(asm *ASM) {
 
 func (ast AST) addArrayCapFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}
 	functionName := "cap"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1560,7 +1649,7 @@ func (ast AST) addArrayCapFunction(asm *ASM) {
 
 func (ast AST) addIntFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_FLOAT, nil}}
+	params := []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}
 	functionName := "int"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
@@ -1587,7 +1676,7 @@ func (ast AST) addIntFunction(asm *ASM) {
 
 func (ast AST) addFloatFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_INT, nil}}
+	params := []ComplexType{ComplexType{TYPE_INT, "", nil}}
 	functionName := "float"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
@@ -1614,7 +1703,7 @@ func (ast AST) addFloatFunction(asm *ASM) {
 
 func (ast AST) addArrayFreeFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}
 	functionName := "free"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1654,7 +1743,7 @@ func (ast AST) addArrayFreeFunction(asm *ASM) {
 
 func (ast AST) addArrayResetFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}
 	functionName := "reset"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1684,7 +1773,7 @@ func (ast AST) addArrayResetFunction(asm *ASM) {
 
 func (ast AST) addArrayClearFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
-	params := []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}
+	params := []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}
 	functionName := "clear"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
@@ -1723,14 +1812,14 @@ func (ast AST) addArrayClearFunction(asm *ASM) {
 func (ast AST) addArrayExtendFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{
-		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
-		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
+		ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
+		ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
 	}
 	functionName := "extend"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
-	entry, ok := ast.globalSymbolTable.getFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, false)
+	entry, ok := ast.globalSymbolTable.getFun("free", []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}, false)
 	if !ok {
 		panic("Code generation error. free can not be found")
 	}
@@ -1850,14 +1939,14 @@ func (ast AST) addArrayExtendFunction(asm *ASM) {
 func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{
-		ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}},
-		ComplexType{TYPE_WHATEVER, nil},
+		ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}},
+		ComplexType{TYPE_WHATEVER, "", nil},
 	}
 	functionName := "append"
 	isInline := ast.globalSymbolTable.funIsInline(functionName, params, false)
 	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, false)
 
-	entry, ok := ast.globalSymbolTable.getFun("free", []ComplexType{ComplexType{TYPE_ARRAY, &ComplexType{TYPE_WHATEVER, nil}}}, false)
+	entry, ok := ast.globalSymbolTable.getFun("free", []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}, false)
 	if !ok {
 		panic("Code generation error. free can not be found")
 	}
@@ -2005,11 +2094,10 @@ func (ast AST) generateCode() ASM {
 	ast.addArrayExtendFunction(&asm)
 	ast.addArrayAppendFunction(&asm)
 
-	//asm.addFun("_start")
 	asm.addRawLine("global _start")
 	asm.addRawLine("_start:")
 
-	stackOffset := ast.block.assignVariableStackOffset([]Variable{}, false)
+	stackOffset := ast.block.assignVariableStackOffset(false)
 	// To make the stack later 16bit aligned. Not really sure if thats the issue, to be honest...
 	if stackOffset == 0 {
 		stackOffset = 8
