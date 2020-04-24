@@ -253,7 +253,7 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 func generateArrayAccessCode(indexExpressions []Expression, asm *ASM, s *SymbolTable) {
 
 	for _, indexExpression := range indexExpressions {
-		address, _ := getRegister(TYPE_INT)
+		address, elementSize := getRegister(TYPE_INT)
 		// address = rax
 		asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
 		// Save the address
@@ -261,7 +261,9 @@ func generateArrayAccessCode(indexExpressions []Expression, asm *ASM, s *SymbolT
 		// The index will be in rax.
 		indexExpression.generateCode(asm, s)
 		asm.addLine("pop", address)
-		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+16]", getReturnRegister(TYPE_INT), address, getReturnRegister(TYPE_INT)))
+		asm.addLine("mov", fmt.Sprintf("%v, [%v+16]", elementSize, address))
+		asm.addLine("imul", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_INT), elementSize))
+		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+24]", getReturnRegister(TYPE_INT), address, getReturnRegister(TYPE_INT)))
 	}
 }
 
@@ -439,7 +441,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("mov", "rax, sys_mmap")
 	// Null pointer
 	asm.addLine("mov", "rdi, 0x00")
-	asm.addLine("mov", fmt.Sprintf("rsi, %v", a.aCount*elementSize*8+16))
+	asm.addLine("mov", fmt.Sprintf("rsi, %v", a.aCount*elementSize*8+24))
 	// PROT_READ | PROT_WRITE
 	asm.addLine("mov", "rdx, 0x03")
 	// MAP_PRIVATE | MAP_ANONYMOUS
@@ -460,7 +462,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		// rdi is now the highest available address
 		asm.addLine("mov", "rdi, rax")
 		// Number of memory blocks we want to clear
-		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount*elementSize+2))
+		asm.addLine("mov", fmt.Sprintf("rcx, %v", a.aCount*elementSize+3))
 
 		// rax == What to write into memory (default). So we fill it up with 0s
 		asm.addLine("xor", "rax, rax")
@@ -497,7 +499,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 		for i := 0; i < a.aCount*elementSize; i++ {
 			// Pop our value from the stack
 			asm.addLine("pop", value)
-			asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", pointer, i*8+16, value))
+			asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", pointer, i*8+24, value))
 		}
 	}
 
@@ -509,6 +511,10 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
 	// len into second position
 	asm.addLine("mov", fmt.Sprintf("[%v+8], %v", pointer, register))
+
+	// Element size into the third position
+	asm.addLine("mov", fmt.Sprintf("%v, %v", register, a.aType.getMemCount(s)))
+	asm.addLine("mov", fmt.Sprintf("[%v+16], %v", pointer, register))
 
 	asm.addLine("mov", "rax, "+pointer)
 
@@ -747,7 +753,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 				asm.addLine("pop", address)
 
 				// Go one level down.
-				asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+16]", address, address, index))
+				asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+24]", address, address, index))
 			}
 
 			for i := 0; i < v.vType.getMemCount(s); i++ {
@@ -915,7 +921,7 @@ func (l RangedLoop) generateCode(asm *ASM, s *SymbolTable) {
 	// load i
 	asm.addLine("mov", fmt.Sprintf("r10, [rbp%v%v]", signI, entryI.offset))
 	// calculate a[i]
-	asm.addLine("mov", "r10, [rax+r10*8+16]")
+	asm.addLine("mov", "r10, [rax+r10*8+24]")
 
 	// assign element variable
 	asm.addLine("mov", fmt.Sprintf("[rbp%v%v], r10", signE, entryE.offset))
@@ -1790,8 +1796,8 @@ func (ast AST) addArrayClearFunction(asm *ASM) {
 	tmpR, _ := getRegister(TYPE_INT)
 	asm.addLine("mov", tmpR+", 0")
 	asm.addLine("mov", "[rdi+8], "+tmpR)
-	// Skip the cap and len parts
-	asm.addLine("add", "rdi, 16")
+	// Skip the cap, len and size parts
+	asm.addLine("add", "rdi, 24")
 	// rax == What to write into memory (default). So we fill it up with 0s
 	asm.addLine("xor", "rax, rax")
 	// store the value of rax into what rdi points to at every position and decrement rcx.
@@ -1851,10 +1857,14 @@ func (ast AST) addArrayExtendFunction(asm *ASM) {
 	asm.addLine("push", "r9")
 	asm.addLine("mov", "r10, r9")
 
-	// Add space for cap and len
-	asm.addLine("add", "r10, 2")
-	// Multiply by size of array element.
+	// Add space for cap, len and element size
+	asm.addLine("add", "r10, 3")
+	// Multiply by size of array element: 8 * size * count
+	asm.addLine("mov", "r11, [rdi+16]")
+	asm.addLine("imul", "r10, r11")
 	asm.addLine("imul", "r10, 8")
+	// Save element size
+	asm.addLine("push", "r11")
 
 	// Create new memory block
 	asm.addLine("mov", "rax, sys_mmap")
@@ -1871,8 +1881,11 @@ func (ast AST) addArrayExtendFunction(asm *ASM) {
 	asm.addLine("jl", "exit")
 
 	// Write capacity of new array
+	asm.addLine("pop", "r11")
 	asm.addLine("pop", "r9")
 	asm.addLine("mov", "[rax], r9")
+	// Write element size (same as before)
+	asm.addLine("mov", "[rax+16], r11")
 
 	// Copy memory from array 1 over to new array
 	// Old array 1
@@ -1882,10 +1895,10 @@ func (ast AST) addArrayExtendFunction(asm *ASM) {
 	asm.addLine("mov", "r8, [r11+8]")
 	// So we can use r8 later without having to re-calculate
 	asm.addLine("mov", "rcx, r8")
-	// Destination address (after cap+len)
-	asm.addLine("lea", "rdi, [rax+16]")
-	// Source address (after cap+len)
-	asm.addLine("lea", "rsi, [r11+16]")
+	// Destination address (after cap+len+size)
+	asm.addLine("lea", "rdi, [rax+24]")
+	// Source address (after cap+len+size)
+	asm.addLine("lea", "rsi, [r11+24]")
 	// Copy data over
 	asm.addLine("rep", "movsq")
 
@@ -1913,15 +1926,14 @@ func (ast AST) addArrayExtendFunction(asm *ASM) {
 	asm.addLine("mov", "rcx, [r11+8]")
 	asm.addLine("imul", "r8, 8")
 	// Destination address (after array1+cap+len)
-	asm.addLine("lea", "rdi, [rax+r8+16]")
+	asm.addLine("lea", "rdi, [rax+r8+24]")
 	// Source address (after cap+len)
-	asm.addLine("lea", "rsi, [r11+16]")
+	asm.addLine("lea", "rsi, [r11+24]")
 	// Copy data over
 	asm.addLine("rep", "movsq")
 
 	// Write new current length!
 	asm.addLine("pop", "r9")
-	//asm.addLine("mov", "[rax], r9")
 	asm.addLine("mov", "[rax+8], r9")
 
 	if !isInline {
@@ -1958,7 +1970,7 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asm.addLabel("; " + functionName + " element")
 	asm.addFun(asmName, isInline)
 
-	// Determine size of the new memory block. len1 + len2
+	// Determine size of the new memory block. len1 + 1 for the new element
 	asm.addLine("mov", "r9, [rdi+8]")
 	asm.addLine("add", "r9, 1")
 	asm.addLine("push", "rsi")
@@ -1977,10 +1989,14 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asm.addLine("push", "r9")
 	asm.addLine("mov", "r10, r9")
 
-	// Add space for cap and len
-	asm.addLine("add", "r10, 2")
-	// Multiply by size of array element.
+	// Add space for cap, len and element size
+	asm.addLine("add", "r10, 3")
+	// Multiply by size of array element: 8 * size * count
+	asm.addLine("mov", "r11, [rdi+16]")
+	asm.addLine("imul", "r10, r11")
 	asm.addLine("imul", "r10, 8")
+	// Save element size
+	asm.addLine("push", "r11")
 
 	// Create new memory block
 	asm.addLine("mov", "rax, sys_mmap")
@@ -1997,8 +2013,11 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	asm.addLine("jl", "exit")
 
 	// Write capacity of new array
+	asm.addLine("pop", "r11")
 	asm.addLine("pop", "r9")
 	asm.addLine("mov", "[rax], r9")
+	// Write element size (same as before)
+	asm.addLine("mov", "[rax+16], r11")
 
 	// Copy memory from array 1 over to new array
 	// Old array 1
@@ -2009,9 +2028,9 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	// So we can use r8 later without having to re-calculate
 	asm.addLine("mov", "rcx, r8")
 	// Destination address (after cap+len)
-	asm.addLine("lea", "rdi, [rax+16]")
+	asm.addLine("lea", "rdi, [rax+24]")
 	// Source address (after cap+len)
-	asm.addLine("lea", "rsi, [r11+16]")
+	asm.addLine("lea", "rsi, [r11+24]")
 	// Copy data over
 	asm.addLine("rep", "movsq")
 
@@ -2037,7 +2056,7 @@ func (ast AST) addArrayAppendFunction(asm *ASM) {
 	// Write actual element into the array at current length position
 	asm.addLine("mov", "r9, r8")
 	asm.addLine("imul", "r9, 8")
-	asm.addLine("mov", "[rax+r9+16], r11")
+	asm.addLine("mov", "[rax+r9+24], r11")
 
 	// Write new current length!
 	asm.addLine("inc", "r8")
