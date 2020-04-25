@@ -170,7 +170,7 @@ type Statement interface {
 type Expression interface {
 	Node
 	expression()
-	getExpressionTypes() []ComplexType
+	getExpressionTypes(s *SymbolTable) []ComplexType
 	getResultCount() int
 	isDirectlyAccessed() bool
 	getDirectAccess() []DirectAccess
@@ -185,7 +185,8 @@ type DirectAccess struct {
 	// If indexed, this is the index expression
 	indexExpression Expression
 	// If struct access by qualified name, this is the qualified name
-	accessName string
+	accessName   string
+	line, column int
 }
 
 type Variable struct {
@@ -259,36 +260,57 @@ func (e FunCall) startPos() (int, int) {
 	return e.line, e.column
 }
 
-func (e Constant) getExpressionTypes() []ComplexType {
+func getAccessedType(c ComplexType, access []DirectAccess, s *SymbolTable) ComplexType {
+	for _, da := range access {
+		if da.indexed {
+			c = *c.subType
+		} else {
+			entry, _ := s.getType(c.tName)
+			for _, m := range entry.members {
+				if da.accessName == m.memName {
+					c = m.memType
+					break
+				}
+			}
+		}
+	}
+	return c
+}
+
+func (e Constant) getExpressionTypes(s *SymbolTable) []ComplexType {
 	return []ComplexType{ComplexType{e.cType, "", nil}}
 }
-func (e Array) getExpressionTypes() []ComplexType {
-	t := e.aType
-	for _, da := range e.directAccess {
-		// TODO: Else case with struct access!
-		if da.indexed {
-			t = *t.subType
-		}
-	}
-	return []ComplexType{t}
+func (e Array) getExpressionTypes(s *SymbolTable) []ComplexType {
+	//	t := e.aType
+	//	for _, da := range e.directAccess {
+	//		// TODO: Else case with struct access!
+	//		if da.indexed {
+	//			t = *t.subType
+	//		}
+	//	}
+	//	return []ComplexType{t}
+
+	return []ComplexType{getAccessedType(e.aType, e.directAccess, s)}
 }
-func (e Variable) getExpressionTypes() []ComplexType {
-	t := e.vType
-	for _, da := range e.directAccess {
-		// TODO: Else case with struct access!
-		if da.indexed {
-			t = *t.subType
-		}
-	}
-	return []ComplexType{t}
+
+func (e Variable) getExpressionTypes(s *SymbolTable) []ComplexType {
+	//	t := e.vType
+	//	for _, da := range e.directAccess {
+	//		// TODO: Else case with struct access!
+	//		if da.indexed {
+	//			t = *t.subType
+	//		}
+	//	}
+
+	return []ComplexType{getAccessedType(e.vType, e.directAccess, s)}
 }
-func (e UnaryOp) getExpressionTypes() []ComplexType {
+func (e UnaryOp) getExpressionTypes(s *SymbolTable) []ComplexType {
 	return []ComplexType{e.opType}
 }
-func (e BinaryOp) getExpressionTypes() []ComplexType {
+func (e BinaryOp) getExpressionTypes(s *SymbolTable) []ComplexType {
 	return []ComplexType{e.opType}
 }
-func (e FunCall) getExpressionTypes() []ComplexType {
+func (e FunCall) getExpressionTypes(s *SymbolTable) []ComplexType {
 
 	if len(e.retTypes) != 1 {
 		return e.retTypes
@@ -296,14 +318,16 @@ func (e FunCall) getExpressionTypes() []ComplexType {
 
 	// Only an expression with exactly 1 result can be indexed!
 	// So we return the simple result first and go down indexing types here.
-	t := e.retTypes[0]
-	for _, da := range e.directAccess {
-		// TODO: Else case with struct access!
-		if da.indexed {
-			t = *t.subType
-		}
-	}
-	return []ComplexType{t}
+	//	t := e.retTypes[0]
+	//	for _, da := range e.directAccess {
+	//		// TODO: Else case with struct access!
+	//		if da.indexed {
+	//			t = *t.subType
+	//		}
+	//	}
+	//	return []ComplexType{t}
+
+	return []ComplexType{getAccessedType(e.retTypes[0], e.directAccess, s)}
 }
 
 func (e Constant) getResultCount() int {
@@ -580,6 +604,8 @@ func (v Type) String() string {
 		return "bool"
 	case TYPE_ARRAY:
 		return "array"
+	case TYPE_STRUCT:
+		return "struct"
 	case TYPE_WHATEVER:
 		return "anything"
 	}
@@ -910,12 +936,12 @@ func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, boo
 	return t.line, t.column, true
 }
 
-func parseIndexAccess(tokens *TokenChannel) (indexExpressions []DirectAccess, err error) {
+func parseDirectAccess(tokens *TokenChannel) (indexExpressions []DirectAccess, err error) {
 
 	// If it comes to it, we parse infinite [] expressions :)
 	for {
 		// Parse indexed expressions ...[..]
-		if _, _, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); ok {
+		if row, col, ok := tokens.expect(TOKEN_SQUARE_OPEN, "["); ok {
 
 			e, parseErr := parseExpression(tokens)
 			if errors.Is(parseErr, ErrCritical) {
@@ -930,9 +956,23 @@ func parseIndexAccess(tokens *TokenChannel) (indexExpressions []DirectAccess, er
 				return
 			}
 
-			indexExpressions = append(indexExpressions, DirectAccess{true, e, ""})
+			indexExpressions = append(indexExpressions, DirectAccess{true, e, "", row, col})
 		} else {
-			break
+			// Parse struct access with qualified name.
+			if _, _, ok := tokens.expect(TOKEN_DOT, "."); ok {
+
+				name, row, col, ok := tokens.expectType(TOKEN_IDENTIFIER)
+				if !ok {
+					err = fmt.Errorf("%w[%v:%v] - Expected struct member name after '.'",
+						ErrCritical, row, col,
+					)
+					return
+				}
+
+				indexExpressions = append(indexExpressions, DirectAccess{false, nil, name, row, col})
+			} else {
+				break
+			}
 		}
 	}
 	return
@@ -952,7 +992,7 @@ func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 		return
 	}
 
-	directAccess, parseErr := parseIndexAccess(tokens)
+	directAccess, parseErr := parseDirectAccess(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return
@@ -1320,7 +1360,7 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 		expression = finalExpression
 	}
 
-	directAccess, parseErr := parseIndexAccess(tokens)
+	directAccess, parseErr := parseDirectAccess(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return

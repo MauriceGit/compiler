@@ -260,7 +260,7 @@ func analyzeUnaryOp(unaryOp UnaryOp, symbolTable *SymbolTable) (Expression, erro
 	if expression.getResultCount() != 1 {
 		return nil, fmt.Errorf("%w[%v:%v] - Unary expression can only handle one result", ErrCritical, unaryOp.line, unaryOp.column)
 	}
-	t := expression.getExpressionTypes()[0]
+	t := expression.getExpressionTypes(symbolTable)[0]
 
 	switch unaryOp.operator {
 	case OP_NEGATIVE:
@@ -311,11 +311,11 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		)
 	}
 
-	tLeft := binaryOp.leftExpr.getExpressionTypes()[0]
-	tRight := binaryOp.rightExpr.getExpressionTypes()[0]
+	tLeft := binaryOp.leftExpr.getExpressionTypes(symbolTable)[0]
+	tRight := binaryOp.rightExpr.getExpressionTypes(symbolTable)[0]
 
 	// Check types only after we possibly rearranged the expression!
-	if binaryOp.leftExpr.getExpressionTypes()[0] != binaryOp.rightExpr.getExpressionTypes()[0] {
+	if binaryOp.leftExpr.getExpressionTypes(symbolTable)[0] != binaryOp.rightExpr.getExpressionTypes(symbolTable)[0] {
 		return binaryOp, fmt.Errorf(
 			"%w[%v:%v] - BinaryOp '%v' expected same type, got: '%v', '%v'",
 			ErrCritical, binaryOp.line, binaryOp.column, binaryOp.operator, tLeft, tRight,
@@ -379,7 +379,7 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	return binaryOp, nil
 }
 
-func analyzeIndexedAccess(t ComplexType, directAccess []DirectAccess, symbolTable *SymbolTable) ([]DirectAccess, error) {
+func analyzeDirectAccess(t ComplexType, directAccess []DirectAccess, symbolTable *SymbolTable) ([]DirectAccess, error) {
 
 	for i, access := range directAccess {
 		if access.indexed {
@@ -401,16 +401,17 @@ func analyzeIndexedAccess(t ComplexType, directAccess []DirectAccess, symbolTabl
 			if tmpE != nil {
 				return nil, tmpE
 			}
-			directAccess[i] = DirectAccess{true, newIndexExpression, ""}
+			directAccess[i].indexExpression = newIndexExpression
 
-			if len(newIndexExpression.getExpressionTypes()) != 1 {
+			ts := newIndexExpression.getExpressionTypes(symbolTable)
+			if len(ts) != 1 || ts[0].getMemCount(symbolTable) != 1 {
 				row, col := access.indexExpression.startPos()
 				return nil, fmt.Errorf("%w[%v:%v] - Index expression can only have one value",
 					ErrCritical, row, col,
 				)
 			}
 
-			if newIndexExpression.getExpressionTypes()[0].t != TYPE_INT {
+			if ts[0].t != TYPE_INT {
 				row, col := access.indexExpression.startPos()
 				return nil, fmt.Errorf("%w[%v:%v] - Index expression must be int",
 					ErrCritical, row, col,
@@ -418,6 +419,35 @@ func analyzeIndexedAccess(t ComplexType, directAccess []DirectAccess, symbolTabl
 			}
 
 			t = *t.subType
+		} else {
+
+			if t.t != TYPE_STRUCT {
+				return nil, fmt.Errorf("%w[%v:%v] - Qualified name access only works on structs",
+					ErrCritical, access.line, access.column,
+				)
+			}
+
+			entry, ok := symbolTable.getType(t.tName)
+			if !ok {
+				return nil, fmt.Errorf("%w[%v:%v] - Struct type '%v' used before declaration",
+					ErrCritical, access.line, access.column, t.tName,
+				)
+			}
+
+			memberIndex := -1
+			for j, m := range entry.members {
+				if m.memName == access.accessName {
+					memberIndex = j
+					break
+				}
+			}
+			if memberIndex == -1 {
+				return nil, fmt.Errorf("%w[%v:%v] - '%v' is not a member of struct '%v'",
+					ErrCritical, access.line, access.column, access.accessName, t.tName,
+				)
+			}
+
+			t = entry.members[memberIndex].memType
 		}
 	}
 
@@ -508,10 +538,10 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 			return fun, parseErr
 		}
 		fun.args[i] = newE
-		expressionTypes = append(expressionTypes, newE.getExpressionTypes()...)
+		expressionTypes = append(expressionTypes, newE.getExpressionTypes(symbolTable)...)
 	}
 
-	funEntry, funOk := symbolTable.getFun(fun.funName, expressionsToTypes(fun.args), false)
+	funEntry, funOk := symbolTable.getFun(fun.funName, expressionsToTypes(fun.args, symbolTable), false)
 	typeEntry, typeOk := symbolTable.getType(fun.funName)
 
 	if funOk && typeOk {
@@ -523,9 +553,9 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 	switch {
 	case funOk:
 		paramTypes = funEntry.paramTypes
-		symbolTable.setFunIsUsed(fun.funName, expressionsToTypes(fun.args), true)
+		symbolTable.setFunIsUsed(fun.funName, expressionsToTypes(fun.args, symbolTable), true)
 
-		returnTypes, err := analyzeFunCallReturnTypes(fun, expressionsToTypes(fun.args), symbolTable)
+		returnTypes, err := analyzeFunCallReturnTypes(fun, expressionsToTypes(fun.args, symbolTable), symbolTable)
 		if err != nil {
 			return fun, err
 		}
@@ -561,7 +591,7 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 				ErrCritical, fun.line, fun.column,
 			)
 		}
-		newDirectAccess, err := analyzeIndexedAccess(fun.retTypes[0], fun.directAccess, symbolTable)
+		newDirectAccess, err := analyzeDirectAccess(fun.retTypes[0], fun.directAccess, symbolTable)
 		if err != nil {
 			return fun, err
 		}
@@ -582,9 +612,9 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 		}
 		a.aExpressions[i] = newE
 		if i == 0 && a.aType.t == TYPE_UNKNOWN {
-			arrayType = ComplexType{TYPE_ARRAY, "", &newE.getExpressionTypes()[0]}
+			arrayType = ComplexType{TYPE_ARRAY, "", &newE.getExpressionTypes(symbolTable)[0]}
 		}
-		if !equalType(newE.getExpressionTypes()[0], *arrayType.subType, true) {
+		if !equalType(newE.getExpressionTypes(symbolTable)[0], *arrayType.subType, true) {
 			return a, fmt.Errorf("%w[%v:%v] - Not all expressions in array declaration have the same type",
 				ErrCritical, a.line, a.column,
 			)
@@ -607,7 +637,7 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 	}
 
 	if a.isDirectlyAccessed() {
-		newDirectAccess, err := analyzeIndexedAccess(a.aType, a.directAccess, symbolTable)
+		newDirectAccess, err := analyzeDirectAccess(a.aType, a.directAccess, symbolTable)
 		if err != nil {
 			return a, err
 		}
@@ -623,7 +653,7 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 		e.vType = vTable.sType
 
 		if e.isDirectlyAccessed() {
-			newDirectAccess, err := analyzeIndexedAccess(e.vType, e.directAccess, symbolTable)
+			newDirectAccess, err := analyzeDirectAccess(e.vType, e.directAccess, symbolTable)
 			if err != nil {
 				return e, err
 			}
@@ -678,7 +708,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 			return assignment, err
 		}
 
-		tmpTypes := expression.getExpressionTypes()
+		tmpTypes := expression.getExpressionTypes(symbolTable)
 		expressionTypes = append(expressionTypes, tmpTypes...)
 		assignment.expressions[i] = expression
 
@@ -765,7 +795,7 @@ func analyzeCondition(condition Condition, symbolTable *SymbolTable) (Condition,
 			ErrCritical, row, col, e.getResultCount(),
 		)
 	}
-	t := e.getExpressionTypes()[0]
+	t := e.getExpressionTypes(symbolTable)[0]
 	if t.t != TYPE_BOOL {
 		row, col := e.startPos()
 		return condition, fmt.Errorf(
@@ -820,14 +850,14 @@ func analyzeSwitch(sc Switch, symbolTable *SymbolTable) (Switch, error) {
 				)
 			}
 			if valueSwitch {
-				if e.getExpressionTypes()[0].t != TYPE_INT {
+				if e.getExpressionTypes(symbolTable)[0].t != TYPE_INT {
 					row, col := e.startPos()
 					return sc, fmt.Errorf("%w[%v:%v] - value switch only accepts integers as cases",
 						ErrCritical, row, col,
 					)
 				}
 			} else {
-				if e.getExpressionTypes()[0].t != TYPE_BOOL {
+				if e.getExpressionTypes(symbolTable)[0].t != TYPE_BOOL {
 					row, col := e.startPos()
 					return sc, fmt.Errorf("%w[%v:%v] - general switch only accepts bools as cases",
 						ErrCritical, row, col,
@@ -873,7 +903,7 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 			return loop, err
 		}
 
-		for _, t := range expression.getExpressionTypes() {
+		for _, t := range expression.getExpressionTypes(symbolTable) {
 			if t.t != TYPE_BOOL {
 				row, col := expression.startPos()
 				return loop, fmt.Errorf(
@@ -922,7 +952,7 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 	if rangeExpression.getResultCount() != 1 {
 		return loop, fmt.Errorf("%w[%v:%v] - RangedLoop can only iterate one array at a time", ErrCritical, loop.line, loop.column)
 	}
-	rangeType := rangeExpression.getExpressionTypes()[0]
+	rangeType := rangeExpression.getExpressionTypes(symbolTable)[0]
 
 	if !equalType(rangeType, ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}, false) {
 		return loop, fmt.Errorf("%w[%v:%v] - RangedLoop can only iterate arrays", ErrCritical, loop.line, loop.column)
@@ -1006,7 +1036,7 @@ func analyzeReturn(ret Return, symbolTable *SymbolTable) (Return, error) {
 			return ret, err
 		}
 		row, col := e.startPos()
-		for _, t := range newE.getExpressionTypes() {
+		for _, t := range newE.getExpressionTypes(symbolTable) {
 
 			if typeIndex >= len(symbolTable.activeFunctionReturn) {
 				return ret, fmt.Errorf("%w[%v:%v] - Too many expressions returned. Expected %v",

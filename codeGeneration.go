@@ -302,7 +302,8 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 
 	if len(v.directAccess) > 0 {
 		generateDirectAccessCode(v.directAccess, asm, s)
-		if v.vType.subType.t == TYPE_FLOAT {
+
+		if v.getExpressionTypes(s)[0].t == TYPE_FLOAT {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 		}
 	}
@@ -318,7 +319,7 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	if u.getResultCount() != 1 {
 		panic("Code generation error: Unary expression can only handle one result")
 	}
-	t := u.getExpressionTypes()[0]
+	t := u.getExpressionTypes(s)[0]
 
 	switch t.t {
 	case TYPE_BOOL:
@@ -394,7 +395,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	if b.rightExpr.getResultCount() != 1 {
 		panic("Code generation error: Binary expression can only handle one result each")
 	}
-	t := b.leftExpr.getExpressionTypes()[0]
+	t := b.leftExpr.getExpressionTypes(s)[0]
 
 	b.rightExpr.generateCode(asm, s)
 
@@ -476,9 +477,9 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 			// Calculate expression
 			e.generateCode(asm, s)
 			// Multiple return values are already on the stack, single ones not!
-			if e.getResultCount() == 1 && e.getExpressionTypes()[0].getMemCount(s) == 1 {
+			if e.getResultCount() == 1 && e.getExpressionTypes(s)[0].getMemCount(s) == 1 {
 
-				switch e.getExpressionTypes()[0].getMemTypes(s)[0] {
+				switch e.getExpressionTypes(s)[0].getMemTypes(s)[0] {
 				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
@@ -522,17 +523,17 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
 	if len(a.directAccess) > 0 {
 		generateDirectAccessCode(a.directAccess, asm, s)
-		if a.getExpressionTypes()[0].t == TYPE_FLOAT {
+		if a.getExpressionTypes(s)[0].t == TYPE_FLOAT {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 		}
 	}
 
 }
 
-func expressionsToTypes(expressions []Expression) []ComplexType {
+func expressionsToTypes(expressions []Expression, s *SymbolTable) []ComplexType {
 	var types []ComplexType
 	for _, e := range expressions {
-		types = append(types, e.getExpressionTypes()...)
+		types = append(types, e.getExpressionTypes(s)...)
 	}
 	return types
 }
@@ -547,7 +548,7 @@ func generateStructExprCode(asm *ASM, s *SymbolTable, f FunCall) {
 
 		// Multiple return values are already on the stack, single ones not!
 		if e.getResultCount() == 1 {
-			switch e.getExpressionTypes()[0].t {
+			switch e.getExpressionTypes(s)[0].t {
 			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 				asm.addLine("push", getReturnRegister(TYPE_INT))
 			case TYPE_FLOAT:
@@ -592,13 +593,13 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 	// Expect value in rax/xmm0 instead of stack.
 	// For floating point, the first parameter is already xmm0, so we are done.
 	// Int must be moved into rax.
-	if len(f.args) == 1 && f.args[0].getExpressionTypes()[0].getMemCount(s) == 1 {
+	if len(f.args) == 1 && f.args[0].getExpressionTypes(s)[0].getMemCount(s) == 1 {
 		f.args[0].generateCode(asm, s)
 
 		// If we have a struct on hand, we have to find out, what type the member is!
 		// We already know, that we have exactly ONE value.
 
-		switch f.args[0].getExpressionTypes()[0].getMemTypes(s)[0] {
+		switch f.args[0].getExpressionTypes(s)[0].getMemTypes(s)[0] {
 		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 			asm.addLine("mov", fmt.Sprintf("%v, %v", intRegisters[intRegIndex], getReturnRegister(TYPE_INT)))
 			intRegIndex++
@@ -616,14 +617,14 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 			e := f.args[i]
 			e.generateCode(asm, s)
 
-			resultMemory := e.getExpressionTypes()[0].getMemCount(s)
+			resultMemory := e.getExpressionTypes(s)[0].getMemCount(s)
 
 			// Multiple return values are already on the stack, single ones not!
 			if e.getResultCount() == 1 && resultMemory == 1 {
 
 				// If we have a struct on hand, we have to find out, what type the member is!
 				// We already know, that we have exactly ONE value.
-				switch e.getExpressionTypes()[0].getMemTypes(s)[0] {
+				switch e.getExpressionTypes(s)[0].getMemTypes(s)[0] {
 				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
@@ -635,7 +636,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		}
 
 		for _, e := range f.args {
-			for _, t := range e.getExpressionTypes() {
+			for _, t := range e.getExpressionTypes(s) {
 
 				for _, endType := range t.getMemTypes(s) {
 					switch endType {
@@ -668,7 +669,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		asm.addLine("mov", fmt.Sprintf("%v, [rsp+%v]", getFunctionRegisters(TYPE_INT)[0], argsOnStack*8))
 	}
 
-	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args), false); ok {
+	if entry, ok := s.getFun(f.funName, expressionsToTypes(f.args, s), false); ok {
 
 		if !entry.inline {
 			asm.addLine("call", entry.jumpLabel)
@@ -721,7 +722,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		e.generateCode(asm, s)
 		// Multiple return values are already on the stack, single ones not!
 		if e.getResultCount() == 1 {
-			switch e.getExpressionTypes()[0].t {
+			switch e.getExpressionTypes(s)[0].t {
 			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
 				asm.addLine("push", getReturnRegister(TYPE_INT))
 			case TYPE_FLOAT:
@@ -786,7 +787,7 @@ func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
 	elseLabel := asm.nextLabelName()
 	endLabel := asm.nextLabelName()
 
-	switch c.expression.getExpressionTypes()[0].t {
+	switch c.expression.getExpressionTypes(s)[0].t {
 	case TYPE_BOOL, TYPE_INT:
 		register = getReturnRegister(TYPE_INT)
 	case TYPE_FLOAT:
@@ -868,7 +869,7 @@ func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
 	for _, e := range l.expressions {
 		e.generateCode(asm, &l.block.symbolTable)
 
-		switch e.getExpressionTypes()[0].t {
+		switch e.getExpressionTypes(s)[0].t {
 		case TYPE_INT, TYPE_BOOL:
 			register = getReturnRegister(TYPE_INT)
 		case TYPE_FLOAT:
@@ -1241,8 +1242,8 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 			e.generateCode(asm, s)
 
 			// Make sure everything is actually on the stack!
-			if e.getResultCount() == 1 && e.getExpressionTypes()[0].getMemCount(s) == 1 {
-				switch e.getExpressionTypes()[0].t {
+			if e.getResultCount() == 1 && e.getExpressionTypes(s)[0].getMemCount(s) == 1 {
+				switch e.getExpressionTypes(s)[0].t {
 				case TYPE_INT:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
