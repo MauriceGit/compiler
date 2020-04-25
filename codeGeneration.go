@@ -250,20 +250,22 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 
 // We don't know where we were before and what expression needs to be indexed.
 // All we care about, is that the array pointer is in rax and the resulting value will also be in rax!
-func generateArrayAccessCode(indexExpressions []Expression, asm *ASM, s *SymbolTable) {
+func generateDirectAccessCode(directAccess []DirectAccess, asm *ASM, s *SymbolTable) {
 
-	for _, indexExpression := range indexExpressions {
-		address, elementSize := getRegister(TYPE_INT)
-		// address = rax
-		asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
-		// Save the address
-		asm.addLine("push", address)
-		// The index will be in rax.
-		indexExpression.generateCode(asm, s)
-		asm.addLine("pop", address)
-		asm.addLine("mov", fmt.Sprintf("%v, [%v+16]", elementSize, address))
-		asm.addLine("imul", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_INT), elementSize))
-		asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+24]", getReturnRegister(TYPE_INT), address, getReturnRegister(TYPE_INT)))
+	for _, access := range directAccess {
+		if access.indexed {
+			address, elementSize := getRegister(TYPE_INT)
+			// address = rax
+			asm.addLine("mov", fmt.Sprintf("%v, %v", address, getReturnRegister(TYPE_INT)))
+			// Save the address
+			asm.addLine("push", address)
+			// The index will be in rax.
+			access.indexExpression.generateCode(asm, s)
+			asm.addLine("pop", address)
+			asm.addLine("mov", fmt.Sprintf("%v, [%v+16]", elementSize, address))
+			asm.addLine("imul", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_INT), elementSize))
+			asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+24]", getReturnRegister(TYPE_INT), address, getReturnRegister(TYPE_INT)))
+		}
 	}
 }
 
@@ -298,8 +300,8 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	}
 
-	if len(v.indexExpressions) > 0 {
-		generateArrayAccessCode(v.indexExpressions, asm, s)
+	if len(v.directAccess) > 0 {
+		generateDirectAccessCode(v.directAccess, asm, s)
 		if v.vType.subType.t == TYPE_FLOAT {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 		}
@@ -518,8 +520,8 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
 	asm.addLine("mov", "rax, "+pointer)
 
-	if len(a.indexExpressions) > 0 {
-		generateArrayAccessCode(a.indexExpressions, asm, s)
+	if len(a.directAccess) > 0 {
+		generateDirectAccessCode(a.directAccess, asm, s)
 		if a.getExpressionTypes()[0].t == TYPE_FLOAT {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 		}
@@ -702,8 +704,8 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		panic("Code generation error: Unknown function called")
 	}
 
-	if len(f.indexExpressions) > 0 {
-		generateArrayAccessCode(f.indexExpressions, asm, s)
+	if len(f.directAccess) > 0 {
+		generateDirectAccessCode(f.directAccess, asm, s)
 		if f.retTypes[0].subType.t == TYPE_FLOAT {
 			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
 		}
@@ -738,22 +740,22 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		// This can not/should not fail!
 		entry, _ := s.getVar(v.vName)
 
-		if len(v.indexExpressions) > 0 {
+		if len(v.directAccess) > 0 {
 			index, address := getRegister(TYPE_INT)
 
 			asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", address, entry.offset))
-			//asm.addLine("push", valueRegister)
 
 			// We go through the indexing to determine the last index and address to write to!
-			for _, indexExpression := range v.indexExpressions {
+			for _, access := range v.directAccess {
+				if access.indexed {
+					asm.addLine("push", address)
+					access.indexExpression.generateCode(asm, s)
+					asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
+					asm.addLine("pop", address)
 
-				asm.addLine("push", address)
-				indexExpression.generateCode(asm, s)
-				asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
-				asm.addLine("pop", address)
-
-				// Go one level down.
-				asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+24]", address, address, index))
+					// Go one level down.
+					asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+24]", address, address, index))
+				}
 			}
 
 			for i := 0; i < v.vType.getMemCount(s); i++ {

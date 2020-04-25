@@ -10,21 +10,23 @@ func (e Constant) eq(e2 Constant) bool {
 }
 
 func compareIndexExpression(e1, e2 Expression) (bool, string) {
-	if e1.isIndexedExpression() != e2.isIndexedExpression() {
+	if e1.isDirectlyAccessed() != e2.isDirectlyAccessed() {
 		return false, "Only one expression is accessed with index"
 	}
-	if e1.isIndexedExpression() {
-		e1IndexExpresssions := e1.getIndexExpressions()
-		e2IndexExpresssions := e2.getIndexExpressions()
-		if len(e1IndexExpresssions) != len(e2IndexExpresssions) {
+	if e1.isDirectlyAccessed() {
+		e1Access := e1.getDirectAccess()
+		e2Access := e2.getDirectAccess()
+		if len(e1Access) != len(e2Access) {
 			return false, fmt.Sprintf("Expressions are indexed different times: %v != %v",
-				len(e1IndexExpresssions), len(e2IndexExpresssions),
+				len(e1Access), len(e2Access),
 			)
 		}
 
-		for i, indexExpression := range e1IndexExpresssions {
-			if ok, err := compareExpression(indexExpression, e2IndexExpresssions[i]); !ok {
-				return false, err
+		for i, access := range e1Access {
+			if access.indexed {
+				if ok, err := compareExpression(access.indexExpression, e2Access[i].indexExpression); !ok {
+					return false, err
+				}
 			}
 		}
 
@@ -232,7 +234,7 @@ func testAST(code []byte, expected AST, t *testing.T) {
 func newVar(value string, shadow bool) Variable {
 	return Variable{ComplexType{TYPE_UNKNOWN, "", nil}, value, shadow, nil, 0, 0}
 }
-func newIndexedVar(value string, e []Expression) Variable {
+func newIndexedVar(value string, e []DirectAccess) Variable {
 	return Variable{ComplexType{TYPE_UNKNOWN, "", nil}, value, false, e, 0, 0}
 }
 func newParam(t ComplexType, value string) Variable {
@@ -284,13 +286,13 @@ func newSimpleTypeList(ts []Type) (tcs []ComplexType) {
 func addIndexAccess(e, indexExpression Expression) Expression {
 	switch ne := e.(type) {
 	case Variable:
-		ne.indexExpressions = append(ne.indexExpressions, indexExpression)
+		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, ""})
 		return ne
 	case Array:
-		ne.indexExpressions = append(ne.indexExpressions, indexExpression)
+		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, ""})
 		return ne
 	case FunCall:
-		ne.indexExpressions = append(ne.indexExpressions, indexExpression)
+		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, ""})
 		return ne
 	default:
 		fmt.Println("This expression can not have indexed access")

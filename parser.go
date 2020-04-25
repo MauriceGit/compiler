@@ -172,20 +172,28 @@ type Expression interface {
 	expression()
 	getExpressionTypes() []ComplexType
 	getResultCount() int
-	isIndexedExpression() bool
-	getIndexExpressions() []Expression
+	isDirectlyAccessed() bool
+	getDirectAccess() []DirectAccess
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // EXPRESSIONS
 /////////////////////////////////////////////////////////////////////////////////////////////////
+// This can either be an index access or a struct . access
+type DirectAccess struct {
+	indexed bool
+	// If indexed, this is the index expression
+	indexExpression Expression
+	// If struct access by qualified name, this is the qualified name
+	accessName string
+}
 
 type Variable struct {
-	vType            ComplexType
-	vName            string
-	vShadow          bool
-	indexExpressions []Expression
-	line, column     int
+	vType        ComplexType
+	vName        string
+	vShadow      bool
+	directAccess []DirectAccess
+	line, column int
 }
 type Constant struct {
 	cType        Type
@@ -193,11 +201,11 @@ type Constant struct {
 	line, column int
 }
 type Array struct {
-	aType            ComplexType
-	aCount           int
-	aExpressions     []Expression
-	indexExpressions []Expression
-	line, column     int
+	aType        ComplexType
+	aCount       int
+	aExpressions []Expression
+	directAccess []DirectAccess
+	line, column int
 }
 type BinaryOp struct {
 	operator  Operator
@@ -219,11 +227,11 @@ type FunCall struct {
 	funName string
 	// as struct creation and funCalls have the same syntax, we set this flag, weather we have a
 	// function call or a struct creation. Analysis and code generation may differ.
-	createStruct     bool
-	args             []Expression
-	retTypes         []ComplexType
-	indexExpressions []Expression
-	line, column     int
+	createStruct bool
+	args         []Expression
+	retTypes     []ComplexType
+	directAccess []DirectAccess
+	line, column int
 }
 
 func (_ Variable) expression() {}
@@ -256,15 +264,21 @@ func (e Constant) getExpressionTypes() []ComplexType {
 }
 func (e Array) getExpressionTypes() []ComplexType {
 	t := e.aType
-	for _ = range e.indexExpressions {
-		t = *t.subType
+	for _, da := range e.directAccess {
+		// TODO: Else case with struct access!
+		if da.indexed {
+			t = *t.subType
+		}
 	}
 	return []ComplexType{t}
 }
 func (e Variable) getExpressionTypes() []ComplexType {
 	t := e.vType
-	for _ = range e.indexExpressions {
-		t = *t.subType
+	for _, da := range e.directAccess {
+		// TODO: Else case with struct access!
+		if da.indexed {
+			t = *t.subType
+		}
 	}
 	return []ComplexType{t}
 }
@@ -283,8 +297,11 @@ func (e FunCall) getExpressionTypes() []ComplexType {
 	// Only an expression with exactly 1 result can be indexed!
 	// So we return the simple result first and go down indexing types here.
 	t := e.retTypes[0]
-	for _ = range e.indexExpressions {
-		t = *t.subType
+	for _, da := range e.directAccess {
+		// TODO: Else case with struct access!
+		if da.indexed {
+			t = *t.subType
+		}
 	}
 	return []ComplexType{t}
 }
@@ -308,42 +325,42 @@ func (e FunCall) getResultCount() int {
 	return len(e.retTypes)
 }
 
-func (e Constant) isIndexedExpression() bool {
+func (e Constant) isDirectlyAccessed() bool {
 	return false
 }
-func (e Array) isIndexedExpression() bool {
-	return len(e.indexExpressions) > 0
+func (e Array) isDirectlyAccessed() bool {
+	return len(e.directAccess) > 0
 }
-func (e Variable) isIndexedExpression() bool {
-	return len(e.indexExpressions) > 0
+func (e Variable) isDirectlyAccessed() bool {
+	return len(e.directAccess) > 0
 }
-func (e UnaryOp) isIndexedExpression() bool {
+func (e UnaryOp) isDirectlyAccessed() bool {
 	return false
 }
-func (e BinaryOp) isIndexedExpression() bool {
+func (e BinaryOp) isDirectlyAccessed() bool {
 	return false
 }
-func (e FunCall) isIndexedExpression() bool {
-	return len(e.indexExpressions) > 0
+func (e FunCall) isDirectlyAccessed() bool {
+	return len(e.directAccess) > 0
 }
 
-func (e Constant) getIndexExpressions() []Expression {
+func (e Constant) getDirectAccess() []DirectAccess {
 	return nil
 }
-func (e Array) getIndexExpressions() []Expression {
-	return e.indexExpressions
+func (e Array) getDirectAccess() []DirectAccess {
+	return e.directAccess
 }
-func (e Variable) getIndexExpressions() []Expression {
-	return e.indexExpressions
+func (e Variable) getDirectAccess() []DirectAccess {
+	return e.directAccess
 }
-func (e UnaryOp) getIndexExpressions() []Expression {
+func (e UnaryOp) getDirectAccess() []DirectAccess {
 	return nil
 }
-func (e BinaryOp) getIndexExpressions() []Expression {
+func (e BinaryOp) getDirectAccess() []DirectAccess {
 	return nil
 }
-func (e FunCall) getIndexExpressions() []Expression {
-	return e.indexExpressions
+func (e FunCall) getDirectAccess() []DirectAccess {
+	return e.directAccess
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -522,14 +539,14 @@ func (c ComplexType) String() string {
 }
 
 func (v Variable) String() string {
-	if !v.isIndexedExpression() {
+	if !v.isDirectlyAccessed() {
 		shadowString := ""
 		if v.vShadow {
 			shadowString = "shadow "
 		}
 		return fmt.Sprintf("%v%v(%v)", shadowString, v.vType.t, v.vName)
 	}
-	return fmt.Sprintf("%v(%v[%v])", v.vType.subType, v.vName, v.indexExpressions)
+	return fmt.Sprintf("%v(%v[%v])", v.vType.subType, v.vName, v.directAccess)
 }
 func (c Constant) String() string {
 	return fmt.Sprintf("%v(%v)", c.cType, c.cValue)
@@ -893,7 +910,7 @@ func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, boo
 	return t.line, t.column, true
 }
 
-func parseIndexAccess(tokens *TokenChannel) (indexExpressions []Expression, err error) {
+func parseIndexAccess(tokens *TokenChannel) (indexExpressions []DirectAccess, err error) {
 
 	// If it comes to it, we parse infinite [] expressions :)
 	for {
@@ -913,7 +930,7 @@ func parseIndexAccess(tokens *TokenChannel) (indexExpressions []Expression, err 
 				return
 			}
 
-			indexExpressions = append(indexExpressions, e)
+			indexExpressions = append(indexExpressions, DirectAccess{true, e, ""})
 		} else {
 			break
 		}
@@ -935,12 +952,12 @@ func parseVariable(tokens *TokenChannel) (variable Variable, err error) {
 		return
 	}
 
-	indexExpressions, parseErr := parseIndexAccess(tokens)
+	directAccess, parseErr := parseIndexAccess(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return
 	}
-	variable.indexExpressions = indexExpressions
+	variable.directAccess = directAccess
 
 	variable.vType = ComplexType{TYPE_UNKNOWN, "", nil}
 	variable.vName = vName
@@ -1303,22 +1320,22 @@ func parseExpression(tokens *TokenChannel) (expression Expression, err error) {
 		expression = finalExpression
 	}
 
-	indexExpressions, parseErr := parseIndexAccess(tokens)
+	directAccess, parseErr := parseIndexAccess(tokens)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return
 	}
 
-	if parseErr == nil && len(indexExpressions) > 0 {
+	if parseErr == nil && len(directAccess) > 0 {
 		switch e := expression.(type) {
 		case Variable:
-			e.indexExpressions = indexExpressions
+			e.directAccess = directAccess
 			expression = e
 		case Array:
-			e.indexExpressions = indexExpressions
+			e.directAccess = directAccess
 			expression = e
 		case FunCall:
-			e.indexExpressions = indexExpressions
+			e.directAccess = directAccess
 			expression = e
 		default:
 			row, col := expression.startPos()

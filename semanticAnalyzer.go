@@ -379,48 +379,49 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 	return binaryOp, nil
 }
 
-func analyzeIndexedAccess(t ComplexType, indexExpressions []Expression, symbolTable *SymbolTable) ([]Expression, error) {
+func analyzeIndexedAccess(t ComplexType, directAccess []DirectAccess, symbolTable *SymbolTable) ([]DirectAccess, error) {
 
-	for i, indexExpression := range indexExpressions {
+	for i, access := range directAccess {
+		if access.indexed {
+			if t.t != TYPE_ARRAY {
+				row, col := access.indexExpression.startPos()
+				return nil, fmt.Errorf("%w[%v:%v] - Indexing only works on arrays, ... got %v",
+					ErrCritical, row, col, t.t,
+				)
+			}
 
-		if t.t != TYPE_ARRAY {
-			row, col := indexExpression.startPos()
-			return nil, fmt.Errorf("%w[%v:%v] - Indexing only works on arrays, ... got %v",
-				ErrCritical, row, col, t.t,
-			)
+			if t.subType == nil {
+				row, col := access.indexExpression.startPos()
+				return nil, fmt.Errorf("%w[%v:%v] - Indexing only works on arrays, got %v",
+					ErrCritical, row, col, t.t,
+				)
+			}
+
+			newIndexExpression, tmpE := analyzeExpression(access.indexExpression, symbolTable)
+			if tmpE != nil {
+				return nil, tmpE
+			}
+			directAccess[i] = DirectAccess{true, newIndexExpression, ""}
+
+			if len(newIndexExpression.getExpressionTypes()) != 1 {
+				row, col := access.indexExpression.startPos()
+				return nil, fmt.Errorf("%w[%v:%v] - Index expression can only have one value",
+					ErrCritical, row, col,
+				)
+			}
+
+			if newIndexExpression.getExpressionTypes()[0].t != TYPE_INT {
+				row, col := access.indexExpression.startPos()
+				return nil, fmt.Errorf("%w[%v:%v] - Index expression must be int",
+					ErrCritical, row, col,
+				)
+			}
+
+			t = *t.subType
 		}
-
-		if t.subType == nil {
-			row, col := indexExpression.startPos()
-			return nil, fmt.Errorf("%w[%v:%v] - Indexing only works on arrays, got %v",
-				ErrCritical, row, col, t.t,
-			)
-		}
-
-		newIndexExpression, tmpE := analyzeExpression(indexExpression, symbolTable)
-		if tmpE != nil {
-			return nil, tmpE
-		}
-		indexExpressions[i] = newIndexExpression
-
-		if len(newIndexExpression.getExpressionTypes()) != 1 {
-			row, col := indexExpression.startPos()
-			return nil, fmt.Errorf("%w[%v:%v] - Index expression can only have one value",
-				ErrCritical, row, col,
-			)
-		}
-
-		if newIndexExpression.getExpressionTypes()[0].t != TYPE_INT {
-			row, col := indexExpression.startPos()
-			return nil, fmt.Errorf("%w[%v:%v] - Index expression must be int",
-				ErrCritical, row, col,
-			)
-		}
-
-		t = *t.subType
 	}
 
-	return indexExpressions, nil
+	return directAccess, nil
 }
 
 // Sometimes we need a bit of special handling to work with system-side generic functions
@@ -554,17 +555,17 @@ func analyzeFunCall(fun FunCall, symbolTable *SymbolTable) (FunCall, error) {
 		}
 	}
 
-	if len(fun.indexExpressions) > 0 {
+	if len(fun.directAccess) > 0 {
 		if fun.getResultCount() != 1 {
 			return fun, fmt.Errorf("%w[%v:%v] - Indexing is only allowed for single return functions",
 				ErrCritical, fun.line, fun.column,
 			)
 		}
-		newIndexExpressions, err := analyzeIndexedAccess(fun.retTypes[0], fun.indexExpressions, symbolTable)
+		newDirectAccess, err := analyzeIndexedAccess(fun.retTypes[0], fun.directAccess, symbolTable)
 		if err != nil {
 			return fun, err
 		}
-		fun.indexExpressions = newIndexExpressions
+		fun.directAccess = newDirectAccess
 	}
 
 	return fun, nil
@@ -605,12 +606,12 @@ func analyzeArrayDecl(a Array, symbolTable *SymbolTable) (Array, error) {
 		return a, fmt.Errorf("%w[%v:%v] - %v", ErrCritical, a.line, a.column, e.Error())
 	}
 
-	if a.isIndexedExpression() {
-		newIndexExpressions, err := analyzeIndexedAccess(a.aType, a.indexExpressions, symbolTable)
+	if a.isDirectlyAccessed() {
+		newDirectAccess, err := analyzeIndexedAccess(a.aType, a.directAccess, symbolTable)
 		if err != nil {
 			return a, err
 		}
-		a.indexExpressions = newIndexExpressions
+		a.directAccess = newDirectAccess
 	}
 
 	return a, nil
@@ -621,12 +622,12 @@ func analyzeVariable(e Variable, symbolTable *SymbolTable) (Variable, error) {
 	if vTable, ok := symbolTable.getVar(e.vName); ok {
 		e.vType = vTable.sType
 
-		if e.isIndexedExpression() {
-			newIndexExpressions, err := analyzeIndexedAccess(e.vType, e.indexExpressions, symbolTable)
+		if e.isDirectlyAccessed() {
+			newDirectAccess, err := analyzeIndexedAccess(e.vType, e.directAccess, symbolTable)
 			if err != nil {
 				return e, err
 			}
-			e.indexExpressions = newIndexExpressions
+			e.directAccess = newDirectAccess
 		}
 
 	} else {
@@ -714,14 +715,16 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 			if !v.vShadow {
 
 				var variableType ComplexType = vTable.sType
-				for _ = range v.indexExpressions {
-					if variableType.t != TYPE_ARRAY {
-						return assignment, fmt.Errorf(
-							"%w[%v:%v] - Variable %v is not an array and can not be indexed",
-							ErrCritical, v.line, v.column, v.vName,
-						)
+				for _, da := range v.directAccess {
+					if da.indexed {
+						if variableType.t != TYPE_ARRAY {
+							return assignment, fmt.Errorf(
+								"%w[%v:%v] - Variable %v is not an array and can not be indexed",
+								ErrCritical, v.line, v.column, v.vName,
+							)
+						}
+						variableType = *variableType.subType
 					}
-					variableType = *variableType.subType
 				}
 
 				if !equalType(variableType, expressionType, true) {
@@ -731,7 +734,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 					)
 				}
 			} else {
-				if v.isIndexedExpression() {
+				if v.isDirectlyAccessed() {
 					return assignment, fmt.Errorf("%w[%v:%v] - An indexed array write can not shadow its source",
 						ErrCritical, v.line, v.column,
 					)
@@ -740,7 +743,7 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 				symbolTable.setVar(v.vName, expressionType, false)
 			}
 		} else {
-			symbolTable.setVar(v.vName, expressionType, v.isIndexedExpression())
+			symbolTable.setVar(v.vName, expressionType, v.isDirectlyAccessed())
 		}
 
 		assignment.variables[i].vType = expressionType
