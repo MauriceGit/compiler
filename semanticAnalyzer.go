@@ -1085,9 +1085,15 @@ func analyzeStructDef(st StructDef, symbolTable *SymbolTable) (StructDef, error)
 	}
 
 	// Go through the complex type of each member and check, that all types are well defined.
-	for _, m := range st.members {
+	for i, m := range st.members {
 		if e := analyzeType(m.memType, symbolTable); e != nil {
 			return st, fmt.Errorf("%w[%v:%v] - %v", ErrCritical, st.line, st.column, e.Error())
+		}
+		// Check against the remaining members, that each member name is unique!
+		for j := i + 1; j < len(st.members); j++ {
+			if m.memName == st.members[j].memName {
+				return st, fmt.Errorf("%w[%v:%v] - The struct member '%v' is defined multiple times", ErrCritical, st.line, st.column, m.memName)
+			}
 		}
 	}
 
