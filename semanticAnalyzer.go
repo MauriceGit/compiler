@@ -381,7 +381,15 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 
 func analyzeDirectAccess(t ComplexType, directAccess []DirectAccess, symbolTable *SymbolTable) ([]DirectAccess, error) {
 
+	// If any of the accesses are an Array, we switch to heap memory and have to negate the offset in memory!
+	isHeapMemory := false
+
 	for i, access := range directAccess {
+
+		if !isHeapMemory && t.t == TYPE_ARRAY {
+			isHeapMemory = true
+		}
+
 		if access.indexed {
 			if t.t != TYPE_ARRAY {
 				row, col := access.indexExpression.startPos()
@@ -435,9 +443,11 @@ func analyzeDirectAccess(t ComplexType, directAccess []DirectAccess, symbolTable
 			}
 
 			memberIndex := -1
+			memberOffset := 0
 			for j, m := range entry.members {
 				if m.memName == access.accessName {
 					memberIndex = j
+					memberOffset = m.offset
 					break
 				}
 			}
@@ -446,6 +456,12 @@ func analyzeDirectAccess(t ComplexType, directAccess []DirectAccess, symbolTable
 					ErrCritical, access.line, access.column, access.accessName, t.tName,
 				)
 			}
+
+			if isHeapMemory {
+				memberOffset = -memberOffset
+			}
+
+			directAccess[i].structOffset = memberOffset
 
 			t = entry.members[memberIndex].memType
 		}
@@ -1084,6 +1100,7 @@ func analyzeStructDef(st StructDef, symbolTable *SymbolTable) (StructDef, error)
 		return st, fmt.Errorf("%w[%v:%v] - A Struct can not have zero members", ErrCritical, st.line, st.column)
 	}
 
+	offset := 0
 	// Go through the complex type of each member and check, that all types are well defined.
 	for i, m := range st.members {
 		if e := analyzeType(m.memType, symbolTable); e != nil {
@@ -1095,6 +1112,9 @@ func analyzeStructDef(st StructDef, symbolTable *SymbolTable) (StructDef, error)
 				return st, fmt.Errorf("%w[%v:%v] - The struct member '%v' is defined multiple times", ErrCritical, st.line, st.column, m.memName)
 			}
 		}
+
+		st.members[i].offset = offset
+		offset += m.memType.getMemCount(symbolTable)
 	}
 
 	symbolTable.setType(st.name, st.members)

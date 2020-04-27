@@ -185,7 +185,9 @@ type DirectAccess struct {
 	// If indexed, this is the index expression
 	indexExpression Expression
 	// If struct access by qualified name, this is the qualified name
-	accessName   string
+	accessName string
+	// If struct, we also need the offset within the struct!
+	structOffset int
 	line, column int
 }
 
@@ -392,6 +394,7 @@ func (e FunCall) getDirectAccess() []DirectAccess {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 type StructMem struct {
 	memName string
+	offset  int
 	memType ComplexType
 }
 type StructDef struct {
@@ -556,9 +559,14 @@ func (o Operator) String() string {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (c ComplexType) String() string {
-	if c.t == TYPE_ARRAY {
+
+	switch c.t {
+	case TYPE_ARRAY:
 		return fmt.Sprintf("array[%v]", c.subType)
+	case TYPE_STRUCT:
+		return fmt.Sprintf("struct[%v]", c.tName)
 	}
+
 	return fmt.Sprintf("%v", c.t.String())
 }
 
@@ -956,7 +964,7 @@ func parseDirectAccess(tokens *TokenChannel) (indexExpressions []DirectAccess, e
 				return
 			}
 
-			indexExpressions = append(indexExpressions, DirectAccess{true, e, "", row, col})
+			indexExpressions = append(indexExpressions, DirectAccess{true, e, "", 0, row, col})
 		} else {
 			// Parse struct access with qualified name.
 			if _, _, ok := tokens.expect(TOKEN_DOT, "."); ok {
@@ -969,7 +977,7 @@ func parseDirectAccess(tokens *TokenChannel) (indexExpressions []DirectAccess, e
 					return
 				}
 
-				indexExpressions = append(indexExpressions, DirectAccess{false, nil, name, row, col})
+				indexExpressions = append(indexExpressions, DirectAccess{false, nil, name, 0, row, col})
 			} else {
 				break
 			}
@@ -2026,7 +2034,7 @@ func parseStruct(tokens *TokenChannel) (st StructDef, err error) {
 	st.name = name
 	st.members = make([]StructMem, len(variables), len(variables))
 	for i, v := range variables {
-		st.members[i] = StructMem{v.vName, v.vType}
+		st.members[i] = StructMem{v.vName, 0, v.vType}
 	}
 	st.line = startRow
 	st.column = startCol

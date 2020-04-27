@@ -166,6 +166,10 @@ func getRegister(t Type) (string, string) {
 	return "", ""
 }
 
+func getMoreIntRegister() (string, string) {
+	return "r9", "r8"
+}
+
 func getMov(t Type) string {
 	switch t {
 	case TYPE_INT, TYPE_BOOL:
@@ -252,7 +256,7 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 // All we care about, is that the array pointer is in rax and the resulting value will also be in rax!
 func generateDirectAccessCode(directAccess []DirectAccess, asm *ASM, s *SymbolTable) {
 
-	for _, access := range directAccess {
+	for i, access := range directAccess {
 		if access.indexed {
 			address, elementSize := getRegister(TYPE_INT)
 			// address = rax
@@ -264,7 +268,19 @@ func generateDirectAccessCode(directAccess []DirectAccess, asm *ASM, s *SymbolTa
 			asm.addLine("pop", address)
 			asm.addLine("mov", fmt.Sprintf("%v, [%v+16]", elementSize, address))
 			asm.addLine("imul", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_INT), elementSize))
-			asm.addLine("mov", fmt.Sprintf("%v, [%v+%v*8+24]", getReturnRegister(TYPE_INT), address, getReturnRegister(TYPE_INT)))
+			asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+24]", getReturnRegister(TYPE_INT), address, getReturnRegister(TYPE_INT)))
+		} else {
+
+			// The offset will automatically be inverted, once we enter heap memory! This happens in the semanticAnalyzer!
+			// So we will move positively in heap memory and in the negative direction for stack memory!
+			asm.addLine("lea", fmt.Sprintf("%v, [-%v+%v]", getReturnRegister(TYPE_INT), access.structOffset*8, getReturnRegister(TYPE_INT)))
+		}
+
+		// If the next access is indexed, we need to dereference once because we have a double pointer right now because of the lea.
+		// We also don't want to end up with the pointer, but the actual value!
+		// So on the last one, we also dereference!
+		if i == len(directAccess)-1 || directAccess[i+1].indexed {
+			asm.addLine("mov", fmt.Sprintf("%v, [%v]", getReturnRegister(TYPE_INT), getReturnRegister(TYPE_INT)))
 		}
 	}
 }
@@ -285,7 +301,24 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 		asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), register))
 	case TYPE_STRUCT:
 
-		memCount := v.vType.getMemCount(s)
+		// First only load the struct start address
+		// Then calculate the direct access by adding the offset value directly to the pointer
+		// Then, in the end - If the result is still a struct, - then push all the values to the stack!
+		asm.addLine("lea", fmt.Sprintf("%v, [%v+rbp]", getReturnRegister(TYPE_INT), symbol.offset))
+	}
+
+	if len(v.directAccess) > 0 {
+		generateDirectAccessCode(v.directAccess, asm, s)
+
+		if v.getExpressionTypes(s)[0].t == TYPE_FLOAT {
+			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
+		}
+	}
+
+	types := v.getExpressionTypes(s)
+	if len(types) >= 1 && types[0].t == TYPE_STRUCT {
+
+		memCount := types[0].getMemCount(s)
 		// Same as int
 		// TODO: Do we need to distinguish between int/... and float types here? Do we need movq somewhere?
 		if memCount == 1 {
@@ -300,16 +333,7 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 		}
 	}
 
-	if len(v.directAccess) > 0 {
-		generateDirectAccessCode(v.directAccess, asm, s)
-
-		if v.getExpressionTypes(s)[0].t == TYPE_FLOAT {
-			asm.addLine("movq", fmt.Sprintf("%v, %v", getReturnRegister(TYPE_FLOAT), getReturnRegister(TYPE_INT)))
-		}
-	}
-
 	return
-
 }
 
 func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
@@ -516,7 +540,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLine("mov", fmt.Sprintf("[%v+8], %v", pointer, register))
 
 	// Element size into the third position
-	asm.addLine("mov", fmt.Sprintf("%v, %v", register, a.aType.getMemCount(s)))
+	asm.addLine("mov", fmt.Sprintf("%v, %v", register, a.aType.subType.getMemCount(s)))
 	asm.addLine("mov", fmt.Sprintf("[%v+16], %v", pointer, register))
 
 	asm.addLine("mov", "rax, "+pointer)
@@ -736,7 +760,6 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 	// Just to get it from the stack into the variable.
 	valueRegister, _ := getRegister(TYPE_INT)
 	for _, v := range a.variables {
-		//asm.addLine("pop", valueRegister)
 
 		// This can not/should not fail!
 		entry, _ := s.getVar(v.vName)
@@ -752,7 +775,13 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 					asm.addLine("push", address)
 					access.indexExpression.generateCode(asm, s)
 					asm.addLine("mov", fmt.Sprintf("%v, %v", index, getReturnRegister(TYPE_INT)))
+
 					asm.addLine("pop", address)
+
+					// The the element size!
+					size, _ := getMoreIntRegister()
+					asm.addLine("mov", fmt.Sprintf("%v, [%v+16]", size, address))
+					asm.addLine("imul", fmt.Sprintf("%v, %v", index, size))
 
 					// Go one level down.
 					asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+24]", address, address, index))
@@ -762,6 +791,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 			for i := 0; i < v.vType.getMemCount(s); i++ {
 				asm.addLine("pop", valueRegister)
 				asm.addLine("mov", fmt.Sprintf("[%v+%v], %v", address, i*8, valueRegister))
+
 			}
 
 		} else {
@@ -770,7 +800,9 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 			// The corresponding values are expected on the stack!
 			for i := 0; i < v.vType.getMemCount(s); i++ {
 				asm.addLine("pop", valueRegister)
+
 				asm.addLine("mov", fmt.Sprintf("[%v+rbp-%v], %v", entry.offset, i*8, valueRegister))
+
 			}
 
 		}

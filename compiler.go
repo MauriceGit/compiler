@@ -146,21 +146,28 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		struct Blubb {
+		struct Blubb2 {
 			i int
 			j int
 		}
-		fun abc(i Blubb) Blubb {
-			return Blubb(4,5)
+		struct Blubb {
+			i int
+			j Blubb2
 		}
 
-		a = Blubb(1, 2)
+		a = Blubb(1, Blubb2(3, 4))
+		b = [](Blubb, 5)
 
-		b = abc(a)
+		b[0] = Blubb(6, Blubb2(7, 8))
 
-		println(3)
+		b[2] = Blubb(9, Blubb2(9, 9))
+		b[1] = a
 
-		println(a.j)
+		println(b[1].i)
+		println(b[1].j.j)
+
+		println(a.i)
+		println(a.j.j)
 
 
 

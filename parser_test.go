@@ -287,13 +287,13 @@ func addIndexAccess(e, indexExpression Expression) Expression {
 	row, col := indexExpression.startPos()
 	switch ne := e.(type) {
 	case Variable:
-		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, "", row, col})
+		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, "", 0, row, col})
 		return ne
 	case Array:
-		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, "", row, col})
+		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, "", 0, row, col})
 		return ne
 	case FunCall:
-		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, "", row, col})
+		ne.directAccess = append(ne.directAccess, DirectAccess{true, indexExpression, "", 0, row, col})
 		return ne
 	default:
 		fmt.Println("This expression can not have indexed access")
