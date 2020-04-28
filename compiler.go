@@ -146,26 +146,15 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		switch 4 {
-		case 1:
-			println(1)
-		case 2, 3, 6:
-			println(4)
-		case 5:
-			println(5)
-		case:
-			println(999)
+		for i, e : [1,2,3,4,5,6,7,8,9,10] {
+			if e == 3 {
+				continue
+			}
+			if i >= 6 {
+				break
+			}
+			println(e)
 		}
-
-		switch {
-		case 2 > 3:
-			println(1)
-		case 2 == 3:
-			println(4)
-		default:
-			println(888)
-		}
-
 
 
 

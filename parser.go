@@ -127,6 +127,8 @@ type SymbolTypeEntry struct {
 }
 
 type SymbolTable struct {
+	whereAreWe string
+
 	varTable  map[string]SymbolVarEntry
 	funTable  map[string][]SymbolFunEntry
 	typeTable map[string]SymbolTypeEntry
@@ -135,12 +137,26 @@ type SymbolTable struct {
 	activeFunctionName   string
 	activeFunctionParams []ComplexType
 	activeFunctionReturn []ComplexType
-	parent               *SymbolTable
+
+	activeLoop              bool
+	activeLoopBreakLabel    string
+	activeLoopContinueLabel string
+
+	children []*SymbolTable
+	parent   *SymbolTable
+}
+
+func (s *SymbolTable) pp(indent int) {
+
+}
+
+func (s *SymbolTable) pprint() {
+	s.pp(0)
 }
 
 type AST struct {
 	block             Block
-	globalSymbolTable SymbolTable
+	globalSymbolTable *SymbolTable
 }
 
 type ComplexType struct {
@@ -405,7 +421,7 @@ type StructDef struct {
 
 type Block struct {
 	statements   []Statement
-	symbolTable  SymbolTable
+	symbolTable  *SymbolTable
 	line, column int
 }
 
@@ -464,6 +480,13 @@ type Return struct {
 	line, column int
 }
 
+type Break struct {
+	line, column int
+}
+type Continue struct {
+	line, column int
+}
+
 func (_ StructDef) statement()  {}
 func (_ Block) statement()      {}
 func (_ Assignment) statement() {}
@@ -474,6 +497,8 @@ func (_ Function) statement()   {}
 func (_ Return) statement()     {}
 func (_ FunCall) statement()    {}
 func (_ RangedLoop) statement() {}
+func (_ Break) statement()      {}
+func (_ Continue) statement()   {}
 
 func (s StructDef) startPos() (int, int) {
 	return s.line, s.column
@@ -500,6 +525,12 @@ func (s Return) startPos() (int, int) {
 	return s.line, s.column
 }
 func (s RangedLoop) startPos() (int, int) {
+	return s.line, s.column
+}
+func (s Break) startPos() (int, int) {
+	return s.line, s.column
+}
+func (s Continue) startPos() (int, int) {
 	return s.line, s.column
 }
 
@@ -785,6 +816,13 @@ func (l RangedLoop) String() (s string) {
 
 func (s Return) String() string {
 	return fmt.Sprintf("return %v", s.expressions)
+}
+
+func (s Break) String() string {
+	return "break"
+}
+func (s Continue) String() string {
+	return "continue"
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2064,6 +2102,31 @@ func parseReturn(tokens *TokenChannel) (ret Return, err error) {
 	return
 }
 
+func parseBreak(tokens *TokenChannel) (br Break, err error) {
+
+	startRow, startCol, ok := 0, 0, false
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "break"); !ok {
+		err = fmt.Errorf("%wExpected 'break' keyword", ErrNormal)
+		return
+	}
+
+	br.line = startRow
+	br.column = startCol
+	return
+}
+
+func parseContinue(tokens *TokenChannel) (cont Continue, err error) {
+	startRow, startCol, ok := 0, 0, false
+	if startRow, startCol, ok = tokens.expect(TOKEN_KEYWORD, "continue"); !ok {
+		err = fmt.Errorf("%wExpected 'break' keyword", ErrNormal)
+		return
+	}
+
+	cont.line = startRow
+	cont.column = startCol
+	return
+}
+
 func parseStruct(tokens *TokenChannel) (st StructDef, err error) {
 
 	startRow, startCol, ok := 0, 0, false
@@ -2194,6 +2257,24 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 		switch ret, parseErr := parseReturn(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, ret)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
+
+		switch br, parseErr := parseBreak(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, br)
+			continue
+		case errors.Is(parseErr, ErrCritical):
+			err = parseErr
+			return
+		}
+
+		switch cont, parseErr := parseContinue(tokens); {
+		case parseErr == nil:
+			block.statements = append(block.statements, cont)
 			continue
 		case errors.Is(parseErr, ErrCritical):
 			err = parseErr

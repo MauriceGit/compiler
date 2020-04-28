@@ -847,6 +847,14 @@ func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLabel(endLabel)
 }
 
+func (br Break) generateCode(asm *ASM, s *SymbolTable) {
+	asm.addLine("jmp", s.getLoopBreakLabel())
+}
+
+func (cont Continue) generateCode(asm *ASM, s *SymbolTable) {
+	asm.addLine("jmp", s.getLoopContinueLabel())
+}
+
 func (sc Switch) generateCode(asm *ASM, s *SymbolTable) {
 
 	switchEnd := asm.nextLabelName()
@@ -895,25 +903,30 @@ func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
 
 	register, _ := getRegister(TYPE_BOOL)
 	startLabel := asm.nextLabelName()
+	incLabel := asm.nextLabelName()
 	evalLabel := asm.nextLabelName()
 	endLabel := asm.nextLabelName()
 
+	s.setLoopJumpLabels(endLabel, incLabel)
+
 	// The initial assignment is logically moved inside the for-block
-	l.assignment.generateCode(asm, &l.block.symbolTable)
+	l.assignment.generateCode(asm, l.block.symbolTable)
 
 	asm.addLine("jmp", evalLabel)
 	asm.addLabel(startLabel)
 
 	l.block.generateCode(asm, s)
 
+	asm.addLabel(incLabel)
+
 	// The increment assignment is logically moved inside the for-block
-	l.incrAssignment.generateCode(asm, &l.block.symbolTable)
+	l.incrAssignment.generateCode(asm, l.block.symbolTable)
 
 	asm.addLabel(evalLabel)
 
 	// If any of the expressions result in False (0), we jump to the end!
 	for _, e := range l.expressions {
-		e.generateCode(asm, &l.block.symbolTable)
+		e.generateCode(asm, l.block.symbolTable)
 
 		switch e.getExpressionTypes(s)[0].t {
 		case TYPE_INT, TYPE_BOOL:
@@ -952,8 +965,11 @@ func (l RangedLoop) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	startLabel := asm.nextLabelName()
+	incLabel := asm.nextLabelName()
 	evalLabel := asm.nextLabelName()
 	endLabel := asm.nextLabelName()
+
+	l.block.symbolTable.setLoopJumpLabels(endLabel, incLabel)
 
 	// initialize counter and assign to variable/stack
 	asm.addLine("mov", "r10, 0")
@@ -963,9 +979,7 @@ func (l RangedLoop) generateCode(asm *ASM, s *SymbolTable) {
 	asm.addLabel(startLabel)
 
 	// result will be in rax
-	asm.addLine("; ->", "")
-	l.rangeExpression.generateCode(asm, &l.block.symbolTable)
-	asm.addLine("; <-", "")
+	l.rangeExpression.generateCode(asm, l.block.symbolTable)
 
 	// load i
 	asm.addLine("mov", fmt.Sprintf("r10, [rbp%v%v]", signI, entryI.offset))
@@ -977,16 +991,15 @@ func (l RangedLoop) generateCode(asm *ASM, s *SymbolTable) {
 
 	l.block.generateCode(asm, s)
 
+	asm.addLabel(incLabel)
+
 	// i++
 	asm.addLine("mov", "r10, 1")
 	asm.addLine("add", fmt.Sprintf("[rbp%v%v], r10", signI, entryI.offset))
 
 	asm.addLabel(evalLabel)
 
-	// len(a)
-	//asm.addLine("mov", fmt.Sprintf("r10, [rbp%v%v]", signE, entryE.offset))
-
-	l.rangeExpression.generateCode(asm, &l.block.symbolTable)
+	l.rangeExpression.generateCode(asm, l.block.symbolTable)
 	asm.addLine("mov", "r10, [rax+8]")
 
 	asm.addLine("mov", fmt.Sprintf("r11, [rbp%v%v]", signI, entryI.offset))
@@ -1000,11 +1013,9 @@ func (l RangedLoop) generateCode(asm *ASM, s *SymbolTable) {
 }
 
 func (b Block) generateCode(asm *ASM, s *SymbolTable) {
-
 	for _, statement := range b.statements {
-		statement.generateCode(asm, &b.symbolTable)
+		statement.generateCode(asm, b.symbolTable)
 	}
-
 }
 
 // extractAllFunctionVariables will go through all blocks in the function and extract
@@ -1022,7 +1033,7 @@ func (b Block) extractAllFunctionVariables(isRoot bool) (vars []FunctionVar) {
 
 	tmpVars := b.symbolTable.getLocalVars()
 	for _, v := range tmpVars {
-		vars = append(vars, FunctionVar{v, &b.symbolTable, isRoot})
+		vars = append(vars, FunctionVar{v, b.symbolTable, isRoot})
 	}
 
 	for _, s := range b.statements {
@@ -1044,6 +1055,8 @@ func (b Block) extractAllFunctionVariables(isRoot bool) (vars []FunctionVar) {
 		case Assignment:
 		case Function:
 		case Return:
+		case Break:
+		case Continue:
 		case StructDef:
 		default:
 			panic(fmt.Sprintf("Unknown statement '%v' for function variable extraction, ", st))
@@ -1207,7 +1220,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	// Create local variables for all function parameters
-	// Function parameters go up in the stack, so offsets are positiv
+	// Function parameters go up in the stack, so offsets are positive
 	// We jump over our saved rbp, so our offset starts with +16
 	// This is because they were put on the stack before the function was called. So they are referenced
 	// upwards.
@@ -1246,7 +1259,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	// Generate block code
-	f.block.generateCode(asm, s)
+	f.block.generateCode(asm, f.block.symbolTable)
 
 	// Epilogue.
 	asm.addLabel(epilogueLabel)
@@ -1318,7 +1331,6 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 }
 
 func (st StructDef) generateCode(asm *ASM, s *SymbolTable) {
-
 }
 
 func (ast AST) addPrintCharFunction(asm *ASM) {
@@ -2173,7 +2185,7 @@ func (ast AST) generateCode() ASM {
 
 	addFunctionPrologue(&asm, stackOffset)
 
-	ast.block.generateCode(&asm, &ast.globalSymbolTable)
+	ast.block.generateCode(&asm, ast.block.symbolTable)
 
 	addFunctionEpilogue(&asm)
 

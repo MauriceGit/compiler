@@ -108,7 +108,7 @@ func tokenize(program []byte, tokens chan Token, err chan error) {
 	whitespace := regexp.MustCompile(`^[\t\f\r ]`)
 	newline := regexp.MustCompile(`^\n`)
 	comment := regexp.MustCompile(`^//.*\n`)
-	keyword := regexp.MustCompile(`^(int|string|float|bool|if|else|for|shadow|fun|return|switch|case|default|struct)\W`)
+	keyword := regexp.MustCompile(`^(int|string|float|bool|if|else|for|shadow|fun|return|switch|case|default|struct|break|continue)\W`)
 	operator := regexp.MustCompile(`^(\+|\-|\*|/|%|==|!=|<=|>=|<|>|\|\||&&|!)`)
 	assignment := regexp.MustCompile(`^=`)
 	constant := regexp.MustCompile(`^(((\d+(\.\d+)?)|(".*"))|(true|false))`)

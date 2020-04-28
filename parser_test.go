@@ -271,10 +271,10 @@ func newFunCall(name string, exprs []Expression) FunCall {
 	return FunCall{name, false, exprs, []ComplexType{}, nil, 0, 0}
 }
 func newBlock(statements []Statement) Block {
-	return Block{statements, SymbolTable{}, 0, 0}
+	return Block{statements, &SymbolTable{}, 0, 0}
 }
 func newAST(statements []Statement) AST {
-	return AST{newBlock(statements), SymbolTable{}}
+	return AST{newBlock(statements), &SymbolTable{}}
 }
 func newSimpleTypeList(ts []Type) (tcs []ComplexType) {
 	for _, t := range ts {

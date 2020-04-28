@@ -125,6 +125,25 @@ func (s *SymbolTable) setVarAsmOffset(v string, offset int) {
 	s.parent.setVarAsmOffset(v, offset)
 }
 
+func (s *SymbolTable) setLoopJumpLabels(br, cont string) {
+	s.activeLoopBreakLabel = br
+	s.activeLoopContinueLabel = cont
+}
+
+func (s *SymbolTable) getLoopBreakLabel() string {
+	if s.activeLoopBreakLabel != "" {
+		return s.activeLoopBreakLabel
+	}
+	return s.parent.getLoopBreakLabel()
+}
+
+func (s *SymbolTable) getLoopContinueLabel() string {
+	if s.activeLoopContinueLabel != "" {
+		return s.activeLoopContinueLabel
+	}
+	return s.parent.getLoopContinueLabel()
+}
+
 func (s *SymbolTable) setFunAsmName(v string, asmName string, paramTypes []ComplexType, strict bool) {
 	if s == nil {
 		panic("Could not set asm function name in symbol table!")
@@ -835,6 +854,9 @@ func analyzeCondition(condition Condition, symbolTable *SymbolTable) (Condition,
 	}
 	condition.elseBlock = elseBlock
 
+	condition.block.symbolTable.whereAreWe = "if"
+	condition.elseBlock.symbolTable.whereAreWe = "else"
+
 	return condition, nil
 }
 
@@ -902,14 +924,20 @@ func analyzeSwitch(sc Switch, symbolTable *SymbolTable) (Switch, error) {
 func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 
 	nextSymbolTable := SymbolTable{
+		"loop",
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
 		symbolTable.activeFunctionName,
 		symbolTable.activeFunctionParams,
 		symbolTable.activeFunctionReturn,
+		true,
+		"",
+		"",
+		[]*SymbolTable{},
 		symbolTable,
 	}
+	symbolTable.children = append(symbolTable.children, &nextSymbolTable)
 
 	assignment, err := analyzeAssignment(loop.assignment, &nextSymbolTable)
 	if err != nil {
@@ -947,7 +975,7 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 		return loop, err
 	}
 	loop.block = statements
-	loop.block.symbolTable = nextSymbolTable
+	loop.block.symbolTable = &nextSymbolTable
 
 	return loop, nil
 }
@@ -955,14 +983,20 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, error) {
 
 	nextSymbolTable := SymbolTable{
+		"rangedLoop",
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
 		symbolTable.activeFunctionName,
 		symbolTable.activeFunctionParams,
 		symbolTable.activeFunctionReturn,
+		true,
+		"",
+		"",
+		[]*SymbolTable{},
 		symbolTable,
 	}
+	symbolTable.children = append(symbolTable.children, &nextSymbolTable)
 
 	rangeExpression, err := analyzeExpression(loop.rangeExpression, &nextSymbolTable)
 	if err != nil {
@@ -983,8 +1017,6 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 	nextSymbolTable.setVar(loop.elem.vName, loop.elem.vType, false)
 	nextSymbolTable.setVar(loop.counter.vName, loop.counter.vType, false)
 
-	// TODO: Handle shadowing? Or is it just OK like that?
-
 	statements, err := analyzeBlock(loop.block, symbolTable, &nextSymbolTable)
 	if err != nil {
 		return loop, err
@@ -992,7 +1024,7 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 
 	loop.rangeExpression = rangeExpression
 	loop.block = statements
-	loop.block.symbolTable = nextSymbolTable
+	loop.block.symbolTable = &nextSymbolTable
 
 	return loop, nil
 }
@@ -1000,14 +1032,20 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 
 	functionSymbolTable := SymbolTable{
+		fun.fName,
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
 		fun.fName,
 		variablesToTypes(fun.parameters),
 		fun.returnTypes,
+		false,
+		"",
+		"",
+		[]*SymbolTable{},
 		symbolTable,
 	}
+	symbolTable.children = append(symbolTable.children, &functionSymbolTable)
 
 	for _, v := range fun.parameters {
 		if v.vType.t == TYPE_UNKNOWN {
@@ -1048,6 +1086,12 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 
 func analyzeReturn(ret Return, symbolTable *SymbolTable) (Return, error) {
 
+	if symbolTable.activeFunctionName == "" {
+		return ret, fmt.Errorf("%w[%v:%v] - Return called outside of a function",
+			ErrCritical, ret.line, ret.column,
+		)
+	}
+
 	typeIndex := 0
 	for i, e := range ret.expressions {
 
@@ -1066,13 +1110,28 @@ func analyzeReturn(ret Return, symbolTable *SymbolTable) (Return, error) {
 
 			if !equalType(t, symbolTable.activeFunctionReturn[typeIndex], true) {
 				return ret, fmt.Errorf("%w[%v:%v] - Function return type does not match definition. Expected %v, got %v",
-					ErrCritical, row, col, symbolTable.activeFunctionReturn[typeIndex], t)
+					ErrCritical, row, col, symbolTable.activeFunctionReturn[typeIndex], t,
+				)
 			}
 			typeIndex++
 		}
 		ret.expressions[i] = newE
 	}
 	return ret, nil
+}
+
+func analyzeBreak(br Break, symbolTable *SymbolTable) (Break, error) {
+	if !symbolTable.activeLoop {
+		return br, fmt.Errorf("%w[%v:%v] - Break statement outside of loop block", ErrCritical, br.line, br.column)
+	}
+	return br, nil
+}
+
+func analyzeContinue(cont Continue, symbolTable *SymbolTable) (Continue, error) {
+	if !symbolTable.activeLoop {
+		return cont, fmt.Errorf("%w[%v:%v] - Continue statement outside of loop block", ErrCritical, cont.line, cont.column)
+	}
+	return cont, nil
 }
 
 // analyzeType recursively goes through the type hierarchy and checks, if all types are well defined.
@@ -1146,6 +1205,10 @@ func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement,
 		return analyzeReturn(st, symbolTable)
 	case FunCall:
 		return analyzeFunCall(st, symbolTable)
+	case Break:
+		return analyzeBreak(st, symbolTable)
+	case Continue:
+		return analyzeContinue(st, symbolTable)
 	}
 	row, col := statement.startPos()
 	return statement, fmt.Errorf("%w[%v:%v] - Unexpected statement: %v", ErrCritical, row, col, statement)
@@ -1158,21 +1221,27 @@ func analyzeStatement(statement Statement, symbolTable *SymbolTable) (Statement,
 func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (Block, error) {
 
 	if newBlockSymbolTable != nil {
-		block.symbolTable = *newBlockSymbolTable
+		block.symbolTable = newBlockSymbolTable
 	} else {
-		block.symbolTable = SymbolTable{
+		block.symbolTable = &SymbolTable{
+			"block",
 			make(map[string]SymbolVarEntry, 0),
 			make(map[string][]SymbolFunEntry, 0),
 			make(map[string]SymbolTypeEntry, 0),
 			symbolTable.activeFunctionName,
 			symbolTable.activeFunctionParams,
 			symbolTable.activeFunctionReturn,
+			symbolTable.activeLoop,
+			symbolTable.activeLoopBreakLabel,
+			symbolTable.activeLoopContinueLabel,
+			[]*SymbolTable{},
 			symbolTable,
 		}
+		symbolTable.children = append(symbolTable.children, block.symbolTable)
 	}
 
 	for i, s := range block.statements {
-		statement, err := analyzeStatement(s, &block.symbolTable)
+		statement, err := analyzeStatement(s, block.symbolTable)
 		if err != nil {
 			return block, err
 		}
@@ -1222,12 +1291,17 @@ func setSystemFunctionUsage(s *SymbolTable) {
 // returns an error if we have a type missmatch anywhere!
 func semanticAnalysis(ast AST) (AST, error) {
 
-	ast.globalSymbolTable = SymbolTable{
+	ast.globalSymbolTable = &SymbolTable{
+		"root",
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
 		"",
 		nil,
+		nil,
+		false,
+		"",
+		"",
 		nil,
 		nil,
 	}
@@ -1287,14 +1361,14 @@ func semanticAnalysis(ast AST) (AST, error) {
 		false,
 	)
 
-	block, err := analyzeBlock(ast.block, &ast.globalSymbolTable, nil)
+	block, err := analyzeBlock(ast.block, nil, ast.globalSymbolTable)
 	if err != nil {
-		ast.globalSymbolTable = SymbolTable{}
+		ast.globalSymbolTable = &SymbolTable{}
 		return ast, err
 	}
 	ast.block = block
 
-	setSystemFunctionUsage(&ast.globalSymbolTable)
+	setSystemFunctionUsage(ast.globalSymbolTable)
 
 	return ast, nil
 }

@@ -330,6 +330,30 @@ func ExampleRangedFor() {
 	// 5
 }
 
+// ExampleBreakContinue checks, that break and continue statements work as expected.
+func ExampleBreakContinue() {
+	var program []byte = []byte(`
+		for i, e : [1,2,3,4,5,6,7,8,9,10] {
+			if e == 3 {
+				continue
+			}
+			if i >= 6 {
+				break
+			}
+			println(e)
+		}
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 1
+	// 2
+	// 4
+	// 5
+	// 6
+}
+
 // ExampleMultiAssignment checks, that multi-value assignments and automatic unpacking works correctly
 func ExampleMultiAssignment() {
 	var program []byte = []byte(`
