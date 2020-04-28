@@ -854,9 +854,6 @@ func analyzeCondition(condition Condition, symbolTable *SymbolTable) (Condition,
 	}
 	condition.elseBlock = elseBlock
 
-	condition.block.symbolTable.whereAreWe = "if"
-	condition.elseBlock.symbolTable.whereAreWe = "else"
-
 	return condition, nil
 }
 
@@ -923,8 +920,7 @@ func analyzeSwitch(sc Switch, symbolTable *SymbolTable) (Switch, error) {
 
 func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 
-	nextSymbolTable := SymbolTable{
-		"loop",
+	nextSymbolTable := &SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
@@ -934,19 +930,17 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 		true,
 		"",
 		"",
-		[]*SymbolTable{},
 		symbolTable,
 	}
-	symbolTable.children = append(symbolTable.children, &nextSymbolTable)
 
-	assignment, err := analyzeAssignment(loop.assignment, &nextSymbolTable)
+	assignment, err := analyzeAssignment(loop.assignment, nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
 	loop.assignment = assignment
 
 	for i, e := range loop.expressions {
-		expression, err := analyzeExpression(e, &nextSymbolTable)
+		expression, err := analyzeExpression(e, nextSymbolTable)
 		if err != nil {
 			return loop, err
 		}
@@ -964,26 +958,25 @@ func analyzeLoop(loop Loop, symbolTable *SymbolTable) (Loop, error) {
 		loop.expressions[i] = expression
 	}
 
-	incrAssignment, err := analyzeAssignment(loop.incrAssignment, &nextSymbolTable)
+	incrAssignment, err := analyzeAssignment(loop.incrAssignment, nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
 	loop.incrAssignment = incrAssignment
 
-	statements, err := analyzeBlock(loop.block, symbolTable, &nextSymbolTable)
+	statements, err := analyzeBlock(loop.block, symbolTable, nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
 	loop.block = statements
-	loop.block.symbolTable = &nextSymbolTable
+	loop.block.symbolTable = nextSymbolTable
 
 	return loop, nil
 }
 
 func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, error) {
 
-	nextSymbolTable := SymbolTable{
-		"rangedLoop",
+	nextSymbolTable := &SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
@@ -993,12 +986,10 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 		true,
 		"",
 		"",
-		[]*SymbolTable{},
 		symbolTable,
 	}
-	symbolTable.children = append(symbolTable.children, &nextSymbolTable)
 
-	rangeExpression, err := analyzeExpression(loop.rangeExpression, &nextSymbolTable)
+	rangeExpression, err := analyzeExpression(loop.rangeExpression, nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
@@ -1017,22 +1008,21 @@ func analyzeRangedLoop(loop RangedLoop, symbolTable *SymbolTable) (RangedLoop, e
 	nextSymbolTable.setVar(loop.elem.vName, loop.elem.vType, false)
 	nextSymbolTable.setVar(loop.counter.vName, loop.counter.vType, false)
 
-	statements, err := analyzeBlock(loop.block, symbolTable, &nextSymbolTable)
+	statements, err := analyzeBlock(loop.block, symbolTable, nextSymbolTable)
 	if err != nil {
 		return loop, err
 	}
 
 	loop.rangeExpression = rangeExpression
 	loop.block = statements
-	loop.block.symbolTable = &nextSymbolTable
+	loop.block.symbolTable = nextSymbolTable
 
 	return loop, nil
 }
 
 func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 
-	functionSymbolTable := SymbolTable{
-		fun.fName,
+	functionSymbolTable := &SymbolTable{
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
@@ -1042,10 +1032,8 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 		false,
 		"",
 		"",
-		[]*SymbolTable{},
 		symbolTable,
 	}
-	symbolTable.children = append(symbolTable.children, &functionSymbolTable)
 
 	for _, v := range fun.parameters {
 		if v.vType.t == TYPE_UNKNOWN {
@@ -1067,7 +1055,7 @@ func analyzeFunction(fun Function, symbolTable *SymbolTable) (Function, error) {
 
 	symbolTable.setFun(fun.fName, variablesToTypes(fun.parameters), fun.returnTypes, false)
 
-	newBlock, err := analyzeBlock(fun.block, symbolTable, &functionSymbolTable)
+	newBlock, err := analyzeBlock(fun.block, symbolTable, functionSymbolTable)
 	if err != nil {
 		return fun, err
 	}
@@ -1224,7 +1212,6 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 		block.symbolTable = newBlockSymbolTable
 	} else {
 		block.symbolTable = &SymbolTable{
-			"block",
 			make(map[string]SymbolVarEntry, 0),
 			make(map[string][]SymbolFunEntry, 0),
 			make(map[string]SymbolTypeEntry, 0),
@@ -1234,10 +1221,8 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 			symbolTable.activeLoop,
 			symbolTable.activeLoopBreakLabel,
 			symbolTable.activeLoopContinueLabel,
-			[]*SymbolTable{},
 			symbolTable,
 		}
-		symbolTable.children = append(symbolTable.children, block.symbolTable)
 	}
 
 	for i, s := range block.statements {
@@ -1292,7 +1277,6 @@ func setSystemFunctionUsage(s *SymbolTable) {
 func semanticAnalysis(ast AST) (AST, error) {
 
 	ast.globalSymbolTable = &SymbolTable{
-		"root",
 		make(map[string]SymbolVarEntry, 0),
 		make(map[string][]SymbolFunEntry, 0),
 		make(map[string]SymbolTypeEntry, 0),
@@ -1302,7 +1286,6 @@ func semanticAnalysis(ast AST) (AST, error) {
 		false,
 		"",
 		"",
-		nil,
 		nil,
 	}
 

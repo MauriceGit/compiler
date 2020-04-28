@@ -127,8 +127,6 @@ type SymbolTypeEntry struct {
 }
 
 type SymbolTable struct {
-	whereAreWe string
-
 	varTable  map[string]SymbolVarEntry
 	funTable  map[string][]SymbolFunEntry
 	typeTable map[string]SymbolTypeEntry
@@ -142,16 +140,7 @@ type SymbolTable struct {
 	activeLoopBreakLabel    string
 	activeLoopContinueLabel string
 
-	children []*SymbolTable
-	parent   *SymbolTable
-}
-
-func (s *SymbolTable) pp(indent int) {
-
-}
-
-func (s *SymbolTable) pprint() {
-	s.pp(0)
+	parent *SymbolTable
 }
 
 type AST struct {
