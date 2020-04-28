@@ -146,22 +146,25 @@ func compile(program []byte, sourceFile, binFile string) bool {
 func main() {
 	var program []byte = []byte(`
 
-		struct Blubb2 {
-			i int
-			j int
+		switch 4 {
+		case 1:
+			println(1)
+		case 2, 3, 6:
+			println(4)
+		case 5:
+			println(5)
+		case:
+			println(999)
 		}
-		struct Blubb {
-			i int
-			j []Blubb2
+
+		switch {
+		case 2 > 3:
+			println(1)
+		case 2 == 3:
+			println(4)
+		default:
+			println(888)
 		}
-
-        b = Blubb2(1,2)
-		array = [b, Blubb2(5,6), b]
-
-		array[1].j = 234
-
-		println(array[1].i)
-		println(array[1].j)
 
 
 

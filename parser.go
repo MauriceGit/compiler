@@ -620,6 +620,31 @@ func (v Type) String() string {
 	return "?"
 }
 
+func stringToType(s string) Type {
+	switch s {
+	case "int":
+		return TYPE_INT
+	case "float":
+		return TYPE_FLOAT
+	case "bool":
+		return TYPE_BOOL
+	case "string":
+		return TYPE_STRING
+	case "array":
+		return TYPE_ARRAY
+	}
+	return TYPE_UNKNOWN
+}
+
+func isTypeString(s string) bool {
+	t := stringToType(s)
+	return t == TYPE_INT ||
+		t == TYPE_FLOAT ||
+		t == TYPE_BOOL ||
+		t == TYPE_ARRAY ||
+		t == TYPE_STRING
+}
+
 func (s SymbolFunEntry) String() string {
 
 	st := "SymbolFunEntry: ("
@@ -782,7 +807,7 @@ func (tc *TokenChannel) next() Token {
 
 	v, ok := <-tc.c
 	if !ok {
-		fmt.Println("Error: Channel closed unexpectedly.")
+		panic("Error: Channel closed unexpectedly.")
 	}
 	return v
 }
@@ -926,6 +951,7 @@ func getOperatorType(o string) Operator {
 // with corresponding line and column numbers
 func (tokens *TokenChannel) expectType(ttype TokenType) (string, int, int, bool) {
 	t := tokens.next()
+	//fmt.Println("  ", t)
 	if t.tokenType != ttype {
 		tokens.pushBack(t)
 		return t.value, t.line, t.column, false
@@ -937,6 +963,7 @@ func (tokens *TokenChannel) expectType(ttype TokenType) (string, int, int, bool)
 // check was valid.
 func (tokens *TokenChannel) expect(ttype TokenType, value string) (int, int, bool) {
 	t := tokens.next()
+	//fmt.Println("  ", t)
 	if t.tokenType != ttype || t.value != value {
 		tokens.pushBack(t)
 		return t.line, t.column, false
@@ -1088,6 +1115,15 @@ func parseFunCall(tokens *TokenChannel) (funCall FunCall, err error) {
 			err = fmt.Errorf("%w - Invalid function call statement", ErrNormal)
 			return
 		}
+
+		// We only consider type castings here!
+		// In this case, this is just not a function call.
+		if !isTypeString(sv) {
+			err = fmt.Errorf("%w[%v:%v] - Function unknown", ErrNormal, row, col)
+			tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, sv, row, col))
+			return
+		}
+
 		readKeyword = true
 		v = sv
 		startRow = row
@@ -1577,28 +1613,60 @@ func parseCondition(tokens *TokenChannel) (condition Condition, err error) {
 	return
 }
 
-func parseCases(tokens *TokenChannel) (cases []Case, err error) {
+func parseCases(tokens *TokenChannel, valueSwitch bool) (cases []Case, err error) {
+
+	var parseErr error
 
 	for {
+
+		var expressions []Expression
+		var block Block
+
+		// When comparing values, a nil expressions list means: 'default'
+		// In a general switch, default is just 'true'
+
 		if _, _, ok := tokens.expect(TOKEN_KEYWORD, "case"); !ok {
-			err = fmt.Errorf("%wExpected case keyword", ErrNormal)
-			return
-		}
-		expressions, parseErr := parseExpressionList(tokens)
-		if errors.Is(parseErr, ErrCritical) {
-			err = parseErr
-			return
-		}
 
-		if row, col, ok := tokens.expect(TOKEN_COLON, ":"); !ok {
-			err = fmt.Errorf("%w[%v:%v] - Expected ':' after case expressions", ErrCritical, row, col)
-			return
-		}
+			if row, col, ok := tokens.expect(TOKEN_KEYWORD, "default"); ok {
 
-		block, parseErr := parseBlock(tokens)
-		if errors.Is(parseErr, ErrCritical) {
-			err = parseErr
-			return
+				if row, col, ok := tokens.expect(TOKEN_COLON, ":"); !ok {
+					err = fmt.Errorf("%w[%v:%v] - Expected ':' after default case", ErrCritical, row, col)
+					return
+				}
+
+				if valueSwitch {
+					expressions = nil
+				} else {
+					expressions = []Expression{Constant{TYPE_BOOL, "true", row, col}}
+				}
+
+				block, parseErr = parseBlock(tokens)
+				if errors.Is(parseErr, ErrCritical) {
+					err = parseErr
+					return
+				}
+			} else {
+				err = ErrNormal
+				return
+			}
+
+		} else {
+
+			expressions, parseErr = parseExpressionList(tokens)
+			if errors.Is(parseErr, ErrCritical) {
+				err = parseErr
+				return
+			}
+
+			if row, col, ok := tokens.expect(TOKEN_COLON, ":"); !ok {
+				err = fmt.Errorf("%w[%v:%v] - Expected ':' after case expressions", ErrCritical, row, col)
+				return
+			}
+			block, parseErr = parseBlock(tokens)
+			if errors.Is(parseErr, ErrCritical) {
+				err = parseErr
+				return
+			}
 		}
 
 		cases = append(cases, Case{expressions, block})
@@ -1630,7 +1698,7 @@ func parseSwitch(tokens *TokenChannel) (switchCase Switch, err error) {
 	}
 
 	// Parse cases
-	cases, parseErr := parseCases(tokens)
+	cases, parseErr := parseCases(tokens, e != nil)
 	if errors.Is(parseErr, ErrCritical) {
 		err = parseErr
 		return
@@ -1826,19 +1894,15 @@ func parseType(tokens *TokenChannel) (t ComplexType, err error) {
 
 		return
 	}
-	switch name {
-	case "int":
-		t.t = TYPE_INT
-	case "float":
-		t.t = TYPE_FLOAT
-	case "bool":
-		t.t = TYPE_BOOL
-	case "string":
-		t.t = TYPE_STRING
-	default:
+
+	tmpT := stringToType(name)
+	if tmpT == TYPE_UNKNOWN {
 		t.t = TYPE_STRUCT
 		t.tName = name
+	} else {
+		t.t = tmpT
 	}
+
 	t.subType = nil
 	return
 }
@@ -2054,6 +2118,8 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 
 	for {
 
+		// fmt.Println("1")
+
 		switch structStatement, parseErr := parseStruct(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, structStatement)
@@ -2063,6 +2129,8 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			return
 		}
 
+		// fmt.Println("2")
+
 		switch ifStatement, parseErr := parseCondition(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, ifStatement)
@@ -2071,6 +2139,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("3")
 
 		switch switchStatement, parseErr := parseSwitch(tokens); {
 		case parseErr == nil:
@@ -2080,6 +2149,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("4")
 
 		switch loopStatement, parseErr := parseRangedLoop(tokens); {
 		case parseErr == nil:
@@ -2089,6 +2159,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("5")
 
 		switch loopStatement, parseErr := parseLoop(tokens); {
 		case parseErr == nil:
@@ -2098,6 +2169,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("6")
 
 		switch assignment, parseErr := parseAssignment(tokens); {
 		case parseErr == nil:
@@ -2107,6 +2179,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("7")
 
 		switch function, parseErr := parseFunction(tokens); {
 		case parseErr == nil:
@@ -2116,6 +2189,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("8")
 
 		switch ret, parseErr := parseReturn(tokens); {
 		case parseErr == nil:
@@ -2125,6 +2199,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("9")
 
 		switch funCall, parseErr := parseFunCall(tokens); {
 		case parseErr == nil:
@@ -2134,6 +2209,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
+		// fmt.Println("10")
 		if _, _, ok := tokens.expect(TOKEN_EOF, ""); ok {
 			return
 		}
@@ -2141,13 +2217,19 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 		// A block can only be closed with }. If we don't find that, we have an error on hand.
 		row, col, ok := tokens.expect(TOKEN_CURLY_CLOSE, "}")
 		if !ok {
-			row, col, ok := tokens.expect(TOKEN_KEYWORD, "case")
-			if !ok {
-				err = fmt.Errorf("%w[%v:%v] - Unexpected symbol. Can not be parsed.", ErrCritical, row, col)
-				return
+
+			if row, col, ok := tokens.expect(TOKEN_KEYWORD, "case"); ok {
+				tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, "case", row, col))
+				break
 			}
-			tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, "case", row, col))
-			break
+			if row, col, ok := tokens.expect(TOKEN_KEYWORD, "default"); ok {
+				tokens.pushBack(tokens.createToken(TOKEN_KEYWORD, "default", row, col))
+				break
+			}
+
+			err = fmt.Errorf("%w[%v:%v] - Unexpected symbol. Can not be parsed.", ErrCritical, row, col)
+			return
+
 		}
 		tokens.pushBack(tokens.createToken(TOKEN_CURLY_CLOSE, "}", row, col))
 

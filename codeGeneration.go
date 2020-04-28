@@ -861,6 +861,12 @@ func (sc Switch) generateCode(asm *ASM, s *SymbolTable) {
 	caseLabels := make([]string, len(sc.cases))
 	for i, c := range sc.cases {
 		caseLabels[i] = asm.nextLabelName()
+
+		// Default case for compare-switches
+		if len(c.expressions) == 0 {
+			asm.addLine("jmp", caseLabels[i])
+		}
+
 		for _, ce := range c.expressions {
 			if sc.expression != nil {
 				asm.addLine("push", vReg)

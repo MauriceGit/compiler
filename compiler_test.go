@@ -502,6 +502,37 @@ func ExampleSwitch() {
 	// 35
 }
 
+// ExampleSwitch2 checks the default cases for both switches
+func ExampleSwitch2() {
+	var program []byte = []byte(`
+	   	switch 4 {
+		case 1:
+			println(1)
+		case 2, 3, 6:
+			println(4)
+		case 5:
+			println(5)
+		case:
+			println(999)
+		}
+
+		switch {
+		case 2 > 3:
+			println(1)
+		case 2 == 3:
+			println(4)
+		default:
+			println(888)
+		}
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 999
+	// 888
+}
+
 // ExampleStruct1 checks, that structs work in general, within other structs, and within arrays.
 func ExampleStruct1() {
 	var program []byte = []byte(`

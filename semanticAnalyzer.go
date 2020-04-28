@@ -850,9 +850,11 @@ func analyzeSwitch(sc Switch, symbolTable *SymbolTable) (Switch, error) {
 	}
 
 	for i, c := range sc.cases {
-		if len(c.expressions) == 0 {
+		// Empty case is permitted (behaves just like a default) as the last case only!
+		// And only, if we have a value-switch! Otherwise the default will be 'true'
+		if len(c.expressions) == 0 && i != len(sc.cases)-1 && sc.expression != nil {
 			row, col := sc.startPos()
-			return sc, fmt.Errorf("%w[%v:%v] - case must have at least one expression to match against",
+			return sc, fmt.Errorf("%w[%v:%v] - empty/default case must be the last case or have an expression to match",
 				ErrCritical, row, col,
 			)
 		}
