@@ -463,7 +463,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 
 func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 
-	elementSize := a.aType.getMemCount(s)
+	elementSize := a.aType.subType.getMemCount(s)
 
 	asm.addLine("mov", "rax, sys_mmap")
 	// Null pointer

@@ -501,3 +501,68 @@ func ExampleSwitch() {
 	// 4
 	// 35
 }
+
+// ExampleStruct1 checks, that structs work in general, within other structs, and within arrays.
+func ExampleStruct1() {
+	var program []byte = []byte(`
+	   	struct Blubb2 {
+			i int
+			j int
+		}
+		struct Blubb {
+			i int
+			j Blubb2
+		}
+
+		a = Blubb(1, Blubb2(3, 4))
+		b = [](Blubb, 5)
+
+		b[0] = Blubb(6, Blubb2(7, 8))
+		b[1] = a
+		b[2] = Blubb(9, Blubb2(10, 11))
+
+		a.j.j = 100
+
+		println(b[1].i)
+		println(b[1].j.j)
+
+		println(a.i)
+		println(a.j.j)
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 1
+	// 4
+	// 1
+	// 100
+}
+
+// ExampleStruct1 checks, that also work with arrays inside
+func ExampleStruct2() {
+	var program []byte = []byte(`
+	   	struct Blubb2 {
+			i int
+			j int
+		}
+		struct Blubb {
+			i int
+			j []Blubb2
+		}
+
+        b = Blubb2(1,2)
+		array = [b, Blubb2(5,6), b]
+
+		array[1].j = 234
+
+		println(array[1].i)
+		println(array[1].j)
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 5
+	// 234
+}

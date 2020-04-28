@@ -152,23 +152,16 @@ func main() {
 		}
 		struct Blubb {
 			i int
-			j Blubb2
+			j []Blubb2
 		}
 
-		a = Blubb(1, Blubb2(3, 4))
-		b = [](Blubb, 5)
-		b[0] = Blubb(6, Blubb2(7, 8))
+        b = Blubb2(1,2)
+		array = [b, Blubb2(5,6), b]
 
-		b[2] = Blubb(9, Blubb2(10, 11))
-		b[1] = a
+		array[1].j = 234
 
-		a.j.j = 100
-
-		println(b[0].i)
-		println(b[0].j.j)
-
-		println(a.i)
-		println(a.j.j)
+		println(array[1].i)
+		println(array[1].j)
 
 
 
