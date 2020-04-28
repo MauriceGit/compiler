@@ -157,14 +157,15 @@ func main() {
 
 		a = Blubb(1, Blubb2(3, 4))
 		b = [](Blubb, 5)
-
 		b[0] = Blubb(6, Blubb2(7, 8))
 
-		b[2] = Blubb(9, Blubb2(9, 9))
+		b[2] = Blubb(9, Blubb2(10, 11))
 		b[1] = a
 
-		println(b[1].i)
-		println(b[1].j.j)
+		a.j.j = 100
+
+		println(b[0].i)
+		println(b[0].j.j)
 
 		println(a.i)
 		println(a.j.j)

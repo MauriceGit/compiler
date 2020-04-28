@@ -273,7 +273,7 @@ func generateDirectAccessCode(directAccess []DirectAccess, asm *ASM, s *SymbolTa
 
 			// The offset will automatically be inverted, once we enter heap memory! This happens in the semanticAnalyzer!
 			// So we will move positively in heap memory and in the negative direction for stack memory!
-			asm.addLine("lea", fmt.Sprintf("%v, [-%v+%v]", getReturnRegister(TYPE_INT), access.structOffset*8, getReturnRegister(TYPE_INT)))
+			asm.addLine("lea", fmt.Sprintf("%v, [%v+%v]", getReturnRegister(TYPE_INT), access.structOffset*8, getReturnRegister(TYPE_INT)))
 		}
 
 		// If the next access is indexed, we need to dereference once because we have a double pointer right now because of the lea.
@@ -767,7 +767,13 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		if len(v.directAccess) > 0 {
 			index, address := getRegister(TYPE_INT)
 
-			asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", address, entry.offset))
+			// If we are working with an array, this is already an address! So mov is good.
+			// For a struct, we need lea to achieve the same!
+			if entry.sType.t == TYPE_ARRAY {
+				asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", address, entry.offset))
+			} else {
+				asm.addLine("lea", fmt.Sprintf("%v, [%v+rbp]", address, entry.offset))
+			}
 
 			// We go through the indexing to determine the last index and address to write to!
 			for _, access := range v.directAccess {
@@ -785,6 +791,8 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 
 					// Go one level down.
 					asm.addLine("lea", fmt.Sprintf("%v, [%v+%v*8+24]", address, address, index))
+				} else {
+					asm.addLine("lea", fmt.Sprintf("%v, [%v+%v]", address, access.structOffset*8, address))
 				}
 			}
 

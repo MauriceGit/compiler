@@ -386,7 +386,7 @@ func analyzeDirectAccess(t ComplexType, directAccess []DirectAccess, symbolTable
 
 	for i, access := range directAccess {
 
-		if !isHeapMemory && t.t == TYPE_ARRAY {
+		if t.t == TYPE_ARRAY {
 			isHeapMemory = true
 		}
 
@@ -447,7 +447,8 @@ func analyzeDirectAccess(t ComplexType, directAccess []DirectAccess, symbolTable
 			for j, m := range entry.members {
 				if m.memName == access.accessName {
 					memberIndex = j
-					memberOffset = m.offset
+					// For stack memory, the offset is negative!
+					memberOffset = -m.offset
 					break
 				}
 			}
@@ -758,25 +759,15 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 
 		// Only, if the variable already exists and we're not trying to shadow it!
 		if vTable, ok := symbolTable.getVar(v.vName); ok {
+
 			if !v.vShadow {
 
-				var variableType ComplexType = vTable.sType
-				for _, da := range v.directAccess {
-					if da.indexed {
-						if variableType.t != TYPE_ARRAY {
-							return assignment, fmt.Errorf(
-								"%w[%v:%v] - Variable %v is not an array and can not be indexed",
-								ErrCritical, v.line, v.column, v.vName,
-							)
-						}
-						variableType = *variableType.subType
-					}
-				}
+				variableType := getAccessedType(vTable.sType, v.directAccess, symbolTable)
 
 				if !equalType(variableType, expressionType, true) {
 					return assignment, fmt.Errorf(
 						"%w[%v:%v] - Assignment type missmatch between variable %v and expression %v",
-						ErrCritical, v.line, v.column, v, expressionType,
+						ErrCritical, v.line, v.column, v.vType, expressionType,
 					)
 				}
 			} else {
@@ -793,6 +784,17 @@ func analyzeAssignment(assignment Assignment, symbolTable *SymbolTable) (Assignm
 		}
 
 		assignment.variables[i].vType = expressionType
+
+		if v.isDirectlyAccessed() {
+
+			entry, _ := symbolTable.getVar(v.vName)
+			newDirectAccess, err := analyzeDirectAccess(entry.sType, v.directAccess, symbolTable)
+			if err != nil {
+				return assignment, err
+			}
+			assignment.variables[i].directAccess = newDirectAccess
+		}
+
 	}
 	return assignment, nil
 }
