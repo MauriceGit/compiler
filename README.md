@@ -158,7 +158,7 @@ struct A {
     j B
 }
 
-// Structs are created by calling a virtual function with the same name and an exact match of parameters 
+// Structs are created by calling a function with the same name and an exact match of parameters 
 // that match the expected types of the struct.
 // Internally, this is just syntax, not a function. So there is no overhead!
 a = A(1, B(3, 4))
