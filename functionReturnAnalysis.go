@@ -50,17 +50,17 @@ func (b Block) functionReturnAnalysis() error {
 			}
 			foundReturns++
 		case Switch:
-
 			for _, m := range st.cases {
 				if err := m.block.functionReturnAnalysis(); err != nil {
 					return err
 				}
 				foundReturns++
 			}
-
 		case StructDef:
 		case FunCall:
 		case Assignment:
+		case Break:
+		case Continue:
 		default:
 			panic(fmt.Sprintf("Unknown statement '%v' for return analysis", st))
 		}
