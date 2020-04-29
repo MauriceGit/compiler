@@ -14,6 +14,12 @@ in their own language. So that is something I'd like to achieve :)
 
 So no, no real reason other than - I like to work on challenging problems and found compilers intriguing.
 
+## How to run
+
+- `go build`
+- `./compiler <source_file>`
+- `./executable`
+
 ## Dependencies
 
 Everything is written from scratch, there are no code dependencies.
