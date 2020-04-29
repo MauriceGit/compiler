@@ -34,7 +34,6 @@ The resulting Assembly also has no external dependencies (No C std lib, printing
 
 ## Language influences
 
-There's really nothing new or special, must mostly influenced by: 
 - Go
 - C
 - Python
