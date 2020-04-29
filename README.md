@@ -92,22 +92,22 @@ free(list)
 
 // And some convenience functions to clear/reset the list without deallocating the memory:
 // reset only resets the length, while clear overwrites the memory with 0s
+
 reset(list)
 clear(list)
 
 // Build-in append/extend function, similar to the one in Go
-list = append(list, 6)
-// Careful ! extend works on the first argument. Depending on the available capacity, it will
+// Careful ! append/extend works on the first argument. Depending on the available capacity, it will
 // extend list or free list and create a completely new memory block, copy list and list2 over and return
 // the new pointer!
+
+list = append(list, 6)
 list = extend(list, list2)
 
 // Lists in functions/structs
 fun abc(a []int) {
     // ...
 }
-
-
 ```
 
 ### Loops
