@@ -56,7 +56,7 @@ There's really nothing new or special, must mostly influenced by:
 See the `compiler_test.go` file for a lot more working examples :)
 
 ### Print
-```
+```Lua
 // There are overloaded functions: print, println that work on floats and integers
 println(5)
 println(6.543)
