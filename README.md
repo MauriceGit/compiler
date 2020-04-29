@@ -56,7 +56,7 @@ There's really nothing new or special, must mostly influenced by:
 See the `compiler_test.go` file for a lot more working examples :)
 
 ### Print
-```Lua
+```Go
 // There are overloaded functions: print, println that work on floats and integers
 println(5)
 println(6.543)
@@ -84,7 +84,7 @@ a, b, c = abc(5, 6.5)
 ```
 
 ### Lists
-```C
+```Go
 // List of integers. Type derived from the expressions
 list = [1, 2, 3, 4, 5]
 // Empty list of integers with length 10. Type explicitely set
