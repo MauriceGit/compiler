@@ -9,7 +9,7 @@ It then uses `yasm` and `ld` to assemble and link into a Linux an X86-64 executa
 I've always wanted to write a compiler myself! But just never got around to do it. So the current Coronavirus quarantine 
 situation finally gives me enough time to tackle it myself.
 
-And I was really impressed by people, that wrote solutions for last years [adventofcode.com/](https://adventofcode.com/) 
+And I was really impressed by people, that wrote solutions for last years [adventofcode.com](https://adventofcode.com) 
 in their own language. So that is something I'd like to achieve :)
 
 So no, no real reason other than - I like to work on challenging problems and found compilers intriguing.
