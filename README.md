@@ -53,6 +53,8 @@ There's really nothing new or special, must mostly influenced by:
 
 ## Examples
 
+See the `compiler_test.go` file for a lot more working examples :)
+
 ### Print
 ```
 // There are overloaded functions: print, println that work on floats and integers
@@ -61,7 +63,7 @@ println(6.543)
 ```
 
 ### Assignment
-```
+```C
 // Types are derived from the expressions!
 a = 4
 b = 5.6
