@@ -84,7 +84,7 @@ a, b, c = abc(5, 6.5)
 ```
 
 ### Lists
-```Go
+```cpp
 // List of integers. Type derived from the expressions
 list = [1, 2, 3, 4, 5]
 // Empty list of integers with length 10. Type explicitely set
