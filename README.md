@@ -71,7 +71,7 @@ c = true
 ```
 
 ### Functions
-```
+```C
 fun abc(i int, j float) int, float, int {
     return i, j, 100
 }
@@ -84,7 +84,7 @@ a, b, c = abc(5, 6.5)
 ```
 
 ### Lists
-```
+```C
 // List of integers. Type derived from the expressions
 list = [1, 2, 3, 4, 5]
 // Empty list of integers with length 10. Type explicitely set
@@ -119,7 +119,7 @@ fun abc(a []int) {
 ```
 
 ### Loops
-```
+```C
 list = [1,2,3,4,5]
 
 for i = 0; i < len(list); i++ {
@@ -133,7 +133,7 @@ for i,e : list {
 ```
 
 ### Switch
-```
+```C
 switch 4 {
 case 1:
     println(1)
@@ -156,7 +156,7 @@ default:
 ```
 
 ### Structs
-```
+```C
 struct B {
     i int
     j int
@@ -176,7 +176,7 @@ println(a.j.j)
 ```
 
 ### Type conversions
-```
+```C
 // Build-in (inline) functions: int(), float()
 println(int(5.5))
 println(float(5))
