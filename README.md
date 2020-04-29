@@ -24,8 +24,8 @@ So no, no real reason other than - I like to work on challenging problems and fo
 
 Everything is written from scratch, there are no code dependencies.
 But to assemble and link the program into an executable, you need:
-- yasm
-- ld
+- `yasm`
+- `ld`
 
 The resulting Assembly also has no external dependencies (No C std lib, printing is implemented in Assembly directly).
 
@@ -56,7 +56,7 @@ There's really nothing new or special, must mostly influenced by:
 See the `compiler_test.go` file for a lot more working examples :)
 
 ### Print
-```Go
+```C
 // There are overloaded functions: print, println that work on floats and integers
 println(5)
 println(6.543)
@@ -84,7 +84,7 @@ a, b, c = abc(5, 6.5)
 ```
 
 ### Lists
-```cpp
+```C
 // List of integers. Type derived from the expressions
 list = [1, 2, 3, 4, 5]
 // Empty list of integers with length 10. Type explicitely set
