@@ -1,75 +1,175 @@
 
 # Compiler
 
-Still incomplete compiler for a small little language into X86-64 Assembly.
+This project is a small compiler, that compiles my own little language into X86-64 Assembly.
+It then uses `yasm` and `ld` to assemble and link into a Linux an X86-64 executable.
 
-Assembling and linking is currently done with yasm and ld.
+## But why?
 
-## Current (incomplete) language grammar:
+I've always wanted to write a compiler myself! But just never got around to do it. So the current Coronavirus quarantine 
+situation finally gives me enough time to tackle it myself.
 
+And I was really impressed by people, that wrote solutions for last years [adventofcode.com/](https://adventofcode.com/) 
+in their own language. So that is something I'd like to achieve :)
+
+So no, no real reason other than - I like to work on challenging problems and found compilers intriguing.
+
+## Dependencies
+
+Everything is written from scratch, there are no code dependencies.
+But to assemble and link the program into an executable, you need:
+- yasm
+- ld
+
+The resulting Assembly also has no external dependencies (No C std lib, printing is implemented in Assembly directly).
+
+## Language influences
+
+There's really nothing new or special, must mostly influenced by: 
+- Go
+- C
+- Python
+- Lua
+
+## Features
+
+- Strong and static type system
+- Multiple return values from functions
+- Automatic packing/unpacking of multiple arguments and/or function returns
+- Function overloading
+- Function inlining (only for system functions right now)
+- Dynamic Arrays with an internal capacity, so not every `append` needs a new memory allocation
+- Int and Float types are always 64bit
+- Very Python-like array creation
+- Switch expressions match either values or general boolean expressions
+- Range-based Loops with index and element
+- Structs
+
+## Examples
+
+### Print
 ```
-stat        ::= assign | if | for | funDecl | ret | funCall
-statlist    ::= stat [statlist]
-
-if          ::= 'if' exp '{' [statlist] '}' [else '{' [statlist] '}']
-for         ::= 'for' [assign] ';' [explist] ';' [assign] '{' [statlist] '}'
-
-type        ::= 'int' | 'float' | 'bool'
-typelist    ::= type [',' typelist]
-paramlist   ::= var type [',' paramlist]
-funDecl     ::= 'fun' Name '(' [paramlist] ')' [typelist] '{' [statlist] '}'
-
-ret         ::= 'return' [explist]
-
-assign      ::= varlist ‘=’ explist | postIncr | postDecr
-postIncr    ::= varDecl '++'
-postDecr    ::= varDecl '--'
-varlist     ::= varDecl [‘,’ varlist]
-explist     ::= exp [‘,’ explist]
-exp         ::= Numeral | String | var | '(' exp ')' | exp binop exp | unop exp | funCall
-funCall     ::= Name '(' [explist] ')'
-varDecl     ::= [shadow] var
-var         ::= Name
-binop       ::= '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<=' | '>=' | '<' | '>' | '&&' | '||'
-unop        ::= '-' | '!'
-
-
-Operator priority (Descending priority!):
-
-0:  '-', '!'
-1:  '*', '/', '%'
-2:  '+', '-'
-3:  '==', '!=', '<=', '>=', '<', '>'
-4:  '&&', '||'
+// There are overloaded functions: print, println that work on floats and integers
+println(5)
+println(6.543)
 ```
 
-## Currently working example code:
-
-
+### Assignment
 ```
-fun sum(i int) int {
-    if i == 0 {
-        return 0
-    }
-    return i+sum(i-1)
-}
+// Types are derived from the expressions!
+a = 4
+b = 5.6
+c = true
+```
 
-fun abc(list []int) int {
-    return list[2]
+### Functions
+```
+fun abc(i int, j float) int, float, int {
+    return i, j, 100
 }
-
-fun sumArray(list []int) int {
-    s = 0
-    for i = 0; i < 5; i++ {
-        s += list[i]
-    }
-    return s
+// Can be overloaded
+fun abc(i int, j int) int, float, int {
+    return i, 5.5, j
 }
+// ...
+a, b, c = abc(5, 6.5)
+```
 
+### Lists
+```
+// List of integers. Type derived from the expressions
 list = [1, 2, 3, 4, 5]
-//list = [](int, 5)
+// Empty list of integers with length 10. Type explicitely set
+list2 = [](int, 10)
+// Lists can naturally contain other lists
+list3 = [list, list2]
+// There are build-in functions, to get the length and capacity
+println(len(list3))
+println(cap(list3))
 
-printInt(sum(10))
-printInt(abc(list))
-printInt(sumArray(list))
+// You have to free them yourself
+free(list)
+
+// And some convenience functions to clear/reset the list without deallocating the memory:
+// reset only resets the length, while clear overwrites the memory with 0s
+reset(list)
+clear(list)
+
+// Build-in append/extend function, similar to the one in Go
+list = append(list, 6)
+// Careful ! extend works on the first argument. Depending on the available capacity, it will
+// extend list or free list and create a completely new memory block, copy list and list2 over and return
+// the new pointer!
+list = extend(list, list2)
+
+// Lists in functions/structs
+fun abc(a []int) {
+    // ...
+}
+
+
+```
+
+### Loops
+```
+list = [1,2,3,4,5]
+
+for i = 0; i < len(list); i++ {
+    // ...
+}
+
+for i,e : list {
+    // i is the current index
+    // e is the actual element: list[i]
+}    
+```
+
+### Switch
+```
+switch 4 {
+case 1:
+    println(1)
+case 2, 3, 6:
+    println(4)
+case 5:
+    println(5)
+default:
+    println(999)
+}
+
+switch {
+case 2 > 3:
+    println(1)
+case 2 == 3:
+    println(4)
+default:
+    println(888)
+}
+```
+
+### Structs
+```
+struct B {
+    i int
+    j int
+}
+struct A {
+    i int
+    j B
+}
+
+// Structs are created by calling a virtual function with the same name and an exact match of parameters 
+// that match the expected types of the struct.
+// Internally, this is just syntax, not a function. So there is no overhead!
+a = A(1, B(3, 4))
+a.j.j = 100
+println(a.i)
+println(a.j.j)
+```
+
+### Type conversions
+```
+// Build-in (inline) functions: int(), float()
+println(int(5.5))
+println(float(5))
 ```
