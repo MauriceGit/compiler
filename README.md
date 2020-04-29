@@ -20,6 +20,9 @@ So no, no real reason other than - I like to work on challenging problems and fo
 - `./compiler <source_file>`
 - `./executable`
 
+The compiler will always create an executable called `executable`. Additionally, it will create a file `source.asm`
+that contains the generated (not optimized) assembly.
+
 ## Dependencies
 
 Everything is written from scratch, there are no code dependencies.
