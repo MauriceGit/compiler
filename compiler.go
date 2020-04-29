@@ -145,7 +145,6 @@ func compile(program []byte, sourceFile, binFile string) bool {
 
 func main() {
 	var program []byte = []byte(`
-
 		for i, e : [1,2,3,4,5,6,7,8,9,10] {
 			if e == 3 {
 				continue
@@ -155,10 +154,16 @@ func main() {
 			}
 			println(e)
 		}
-
-
-
 	`)
+
+	if len(os.Args) > 1 {
+		var err error
+		program, err = ioutil.ReadFile(os.Args[1])
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	}
 
 	if !compile(program, "source.asm", "executable") {
 		os.Exit(1)
