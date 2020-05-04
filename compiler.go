@@ -145,14 +145,16 @@ func compile(program []byte, sourceFile, binFile string) bool {
 
 func main() {
 	var program []byte = []byte(`
-		for i, e : [1,2,3,4,5,6,7,8,9,10] {
-			if e == 3 {
-				continue
-			}
-			if i >= 6 {
-				break
-			}
-			println(e)
+		fun test () int {
+		    for ;; {
+		        //break
+		        return 0
+		    }
+		}
+		fun test (x int) int {
+		    if x == 0 { return 0 } else { }
+
+		    if x == 0 { return 0 } else {  }
 		}
 	`)
 

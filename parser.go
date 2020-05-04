@@ -2160,17 +2160,7 @@ func parseStruct(tokens *TokenChannel) (st StructDef, err error) {
 
 func parseBlock(tokens *TokenChannel) (block Block, err error) {
 
-	//	type ParseStmtFunc func(*TokenChannel) (interface{}, error)
-	//	var blubb ParseStmtFunc = parseStruct
-
-	//	parseStatementMethods := []ParseStmtFunc{
-	//		parseStruct, parseCondition, parseSwitch, parseRangedLoop, parseLoop,
-	//		parseAssignment, parseFunction, parseReturn, parseFunCall,
-	//	}
-
 	for {
-
-		// fmt.Println("1")
 
 		switch structStatement, parseErr := parseStruct(tokens); {
 		case parseErr == nil:
@@ -2181,8 +2171,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			return
 		}
 
-		// fmt.Println("2")
-
 		switch ifStatement, parseErr := parseCondition(tokens); {
 		case parseErr == nil:
 			block.statements = append(block.statements, ifStatement)
@@ -2191,7 +2179,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("3")
 
 		switch switchStatement, parseErr := parseSwitch(tokens); {
 		case parseErr == nil:
@@ -2201,7 +2188,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("4")
 
 		switch loopStatement, parseErr := parseRangedLoop(tokens); {
 		case parseErr == nil:
@@ -2211,7 +2197,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("5")
 
 		switch loopStatement, parseErr := parseLoop(tokens); {
 		case parseErr == nil:
@@ -2221,7 +2206,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("6")
 
 		switch assignment, parseErr := parseAssignment(tokens); {
 		case parseErr == nil:
@@ -2231,7 +2215,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("7")
 
 		switch function, parseErr := parseFunction(tokens); {
 		case parseErr == nil:
@@ -2241,7 +2224,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("8")
 
 		switch ret, parseErr := parseReturn(tokens); {
 		case parseErr == nil:
@@ -2269,7 +2251,6 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("9")
 
 		switch funCall, parseErr := parseFunCall(tokens); {
 		case parseErr == nil:
@@ -2279,7 +2260,7 @@ func parseBlock(tokens *TokenChannel) (block Block, err error) {
 			err = parseErr
 			return
 		}
-		// fmt.Println("10")
+
 		if _, _, ok := tokens.expect(TOKEN_EOF, ""); ok {
 			return
 		}
