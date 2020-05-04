@@ -2,7 +2,7 @@
 # Compiler
 
 This project is a small compiler, that compiles my own little language into X86-64 Assembly.
-It then uses `yasm` and `ld` to assemble and link into a Linux an X86-64 executable.
+It then uses `yasm` and `ld` to assemble and link into a Linux X86-64 executable.
 
 ## But why?
 
