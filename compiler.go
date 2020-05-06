@@ -147,14 +147,20 @@ func main() {
 	var program []byte = []byte(`
 		fun test () int {
 		    for ;; {
-		        //break
+		        break
 		        return 0
 		    }
+			return 1
 		}
 		fun test (x int) int {
-		    if x == 0 { return 0 } else { }
-
-		    if x == 0 { return 0 } else {  }
+		    switch x {
+				case 1:
+					return 1
+				case 3:
+					return 32
+				default:
+					return 3
+			}
 		}
 	`)
 

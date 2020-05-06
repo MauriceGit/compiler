@@ -4,6 +4,30 @@ import (
 	"fmt"
 )
 
+func (s Switch) allPathsReturn() bool {
+
+	allPathsReturn := true
+	hasDefault := false
+
+	for _, c := range s.cases {
+
+		allPathsReturn = allPathsReturn && c.block.allPathsReturn()
+
+		if len(c.expressions) == 0 {
+			hasDefault = true
+		} else {
+			if len(c.expressions) == 1 {
+				if constant, ok := c.expressions[0].(Constant); ok {
+					if constant.cType == TYPE_BOOL && constant.cValue == "true" {
+						hasDefault = true
+					}
+				}
+			}
+		}
+	}
+	return allPathsReturn && hasDefault
+}
+
 func (b Block) allPathsReturn() bool {
 
 	for _, s := range b.statements {
@@ -17,14 +41,12 @@ func (b Block) allPathsReturn() bool {
 				return true
 			}
 		case Loop:
-			if st.block.allPathsReturn() {
-				return true
-			}
+			// We cannot guarantee, that the loop body is executed at all. So analysis on its block doesn't matter.
 		case RangedLoop:
-			if st.block.allPathsReturn() {
+		case Switch:
+			if st.allPathsReturn() {
 				return true
 			}
-		case Switch:
 		case StructDef:
 		case FunCall:
 		case Assignment:
