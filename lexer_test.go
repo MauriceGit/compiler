@@ -43,6 +43,12 @@ func tokenSquareClose() Token {
 func tokenSeparator() Token {
 	return Token{TOKEN_SEPARATOR, ",", 0, 0}
 }
+func tokenSingleQuote() Token {
+	return Token{TOKEN_SINGLE_QUOTE, "'", 0, 0}
+}
+func tokenDoubleQuote() Token {
+	return Token{TOKEN_DOUBLE_QUOTE, "\"", 0, 0}
+}
 func tokenEOF() Token {
 	return Token{TOKEN_EOF, "", 0, 0}
 }
@@ -160,6 +166,20 @@ func TestLexerAssignment(t *testing.T) {
 	testTokens(code, expect, t)
 }
 
+func TestLexerAssignmentChar(t *testing.T) {
+	var code []byte = []byte(`
+	a = 'a'
+	b = "abc"
+	`)
+
+	expect := []Token{
+		tokenIdentifier("a"), tokenAssignment(), tokenConstant("'a'"),
+		tokenIdentifier("b"), tokenAssignment(), tokenConstant("\"abc\""), tokenEOF(),
+	}
+
+	testTokens(code, expect, t)
+}
+
 func TestLexerFor1(t *testing.T) {
 
 	var code []byte = []byte(`
@@ -263,6 +283,21 @@ func TestLexerFunction3(t *testing.T) {
 		tokenSeparator(), tokenKeyword("float"), tokenSeparator(), tokenKeyword("bool"), tokenCurlyOpen(), tokenIdentifier("a"),
 		tokenAssignment(), tokenConstant("1"), tokenKeyword("return"), tokenIdentifier("a"), tokenSeparator(), tokenConstant("3.5"),
 		tokenSeparator(), tokenConstant("true"), tokenCurlyClose(), tokenEOF(),
+	}
+
+	testTokens(code, expect, t)
+}
+
+func TestLexerFunctionChar(t *testing.T) {
+
+	var code []byte = []byte(`
+	fun abc(c char) {
+		return
+	}
+	`)
+
+	expect := []Token{tokenKeyword("fun"), tokenIdentifier("abc"), tokenParenOpen(), tokenIdentifier("c"), tokenKeyword("char"),
+		tokenParenClose(), tokenCurlyOpen(), tokenKeyword("return"), tokenCurlyClose(), tokenEOF(),
 	}
 
 	testTokens(code, expect, t)
