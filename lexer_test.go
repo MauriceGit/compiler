@@ -273,7 +273,7 @@ func TestLexerFunction2(t *testing.T) {
 func TestLexerFunction3(t *testing.T) {
 
 	var code []byte = []byte(`
-	fun abc() int, float, bool{
+	fun abc() int, float, bool {
 		a = 1
 		return a, 3.5, true
 	}
