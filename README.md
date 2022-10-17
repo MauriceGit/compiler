@@ -6,10 +6,10 @@ It then uses `yasm` and `ld` to assemble and link into a Linux X86-64 executable
 
 ## But why?
 
-I've always wanted to write a compiler myself! But just never got around to do it. So the current Coronavirus quarantine 
+I've always wanted to write a compiler myself! But just never got around to do it. So the current Coronavirus quarantine
 situation finally gives me enough time to tackle it myself.
 
-And I was really impressed by people, that wrote solutions for last years [adventofcode.com](https://adventofcode.com) 
+And I was really impressed by people, that wrote solutions for last years [adventofcode.com](https://adventofcode.com)
 in their own language. So that is something I'd like to achieve :)
 
 So no, no real reason other than - I like to work on challenging problems and found compilers intriguing.
@@ -47,7 +47,7 @@ The resulting Assembly also has no external dependencies (No C std lib, printing
 - Function overloading
 - Function inlining (only for system functions right now)
 - Dynamic Arrays with an internal capacity, so not every `append` needs a new memory allocation
-- Int and Float types are always 64bit
+- Int, Char and Float types are always 64bit
 - Very Python-like array creation
 - Switch expressions match either values or general boolean expressions
 - Range-based Loops with index and element
@@ -59,9 +59,10 @@ See the `compiler_test.go` file for a lot more working examples :)
 
 ### Print
 ```C
-// There are overloaded functions: print, println that work on floats and integers
+// There are overloaded functions: print, println that work on floats, chars and integers
 println(5)
 println(6.543)
+println('b')
 ```
 
 ### Assignment
@@ -70,16 +71,17 @@ println(6.543)
 a = 4
 b = 5.6
 c = true
+d = 'f'
 ```
 
 ### Functions
 ```C
-fun abc(i int, j float) int, float, int {
-    return i, j, 100
+fun abc(i int, j float) int, float, char {
+    return i, j, 'b'
 }
 // Can be overloaded
-fun abc(i int, j int) int, float, int {
-    return i, 5.5, j
+fun abc(i int, j int) int, float, char {
+    return i, 5.5, 'a'
 }
 // ...
 a, b, c = abc(5, 6.5)
@@ -89,6 +91,9 @@ a, b, c = abc(5, 6.5)
 ```C
 // List of integers. Type derived from the expressions
 list = [1, 2, 3, 4, 5]
+// Strings are explicitly defined as lists of chars (for now at least)
+chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+
 // Empty list of integers with length 10. Type explicitely set
 list2 = [](int, 10)
 // Lists can naturally contain other lists
@@ -131,7 +136,13 @@ for i = 0; i < len(list); i++ {
 for i,e : list {
     // i is the current index
     // e is the actual element: list[i]
-}    
+}
+
+chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+for i, c : chars {
+    print(c)
+}
+// will result in: abcdefg
 ```
 
 ### Switch
@@ -168,7 +179,7 @@ struct A {
     j B
 }
 
-// Structs are created by calling a function with the same name and an exact match of parameters 
+// Structs are created by calling a function with the same name and an exact match of parameters
 // that match the expected types of the struct.
 // Internally, this is just syntax, not a function. So there is no overhead!
 a = A(1, B(3, 4))
