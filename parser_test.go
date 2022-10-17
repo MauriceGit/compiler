@@ -501,6 +501,21 @@ func TestParserAssignment2(t *testing.T) {
 	testAST(code, expected, t)
 }
 
+func TestParserAssignmentChar(t *testing.T) {
+
+	var code []byte = []byte(`
+	b = 'b'
+	`)
+
+	expected := newAST(
+		[]Statement{
+			newAssignment([]Variable{newVar("b", false)}, []Expression{newConst(TYPE_CHAR, "'b'")}),
+		},
+	)
+
+	testAST(code, expected, t)
+}
+
 func TestParserFor1(t *testing.T) {
 
 	var code []byte = []byte(`
@@ -626,7 +641,7 @@ func TestParserFunction1(t *testing.T) {
 func TestParserFunction2(t *testing.T) {
 
 	var code []byte = []byte(`
-	fun abc(a int, b float, c bool) {
+	fun abc(a int, b float, c bool, d char) {
 		a = 1
 		return
 	}
@@ -638,6 +653,7 @@ func TestParserFunction2(t *testing.T) {
 				newParam(ComplexType{TYPE_INT, "", nil}, "a"),
 				newParam(ComplexType{TYPE_FLOAT, "", nil}, "b"),
 				newParam(ComplexType{TYPE_BOOL, "", nil}, "c"),
+				newParam(ComplexType{TYPE_CHAR, "", nil}, "d"),
 			}, []ComplexType{}, newBlock(
 				[]Statement{newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")}), newReturn(nil)},
 			)),
@@ -650,18 +666,20 @@ func TestParserFunction2(t *testing.T) {
 func TestParserFunction3(t *testing.T) {
 
 	var code []byte = []byte(`
-	fun abc() int, float, bool{
+	fun abc() int, float, bool, char {
 		a = 1
-		return a, 3.5, true
+		b = 'b'
+		return a, 3.5, true, b
 	}
 	`)
 
 	expected := newAST(
 		[]Statement{
-			newFunction("abc", []Variable{}, newSimpleTypeList([]Type{TYPE_INT, TYPE_FLOAT, TYPE_BOOL}), newBlock(
+			newFunction("abc", []Variable{}, newSimpleTypeList([]Type{TYPE_INT, TYPE_FLOAT, TYPE_BOOL, TYPE_CHAR}), newBlock(
 				[]Statement{
 					newAssignment([]Variable{newVar("a", false)}, []Expression{newConst(TYPE_INT, "1")}),
-					newReturn([]Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true")}),
+					newAssignment([]Variable{newVar("b", false)}, []Expression{newConst(TYPE_CHAR, "'b'")}),
+					newReturn([]Expression{newVar("a", false), newConst(TYPE_FLOAT, "3.5"), newConst(TYPE_BOOL, "true"), newVar("b", false)}),
 				},
 			)),
 		},

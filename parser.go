@@ -54,6 +54,7 @@ const (
 	TYPE_UNKNOWN = iota
 	TYPE_INT
 	TYPE_STRING
+	TYPE_CHAR
 	TYPE_FLOAT
 	TYPE_BOOL
 	// TYPE_FUNCTION ?
@@ -233,7 +234,7 @@ type UnaryOp struct {
 }
 type FunCall struct {
 	funName string
-	// as struct creation and funCalls have the same syntax, we set this flag, weather we have a
+	// as struct creation and funCalls have the same syntax, we set this flag, whether we have a
 	// function call or a struct creation. Analysis and code generation may differ.
 	createStruct bool
 	args         []Expression
@@ -288,27 +289,10 @@ func (e Constant) getExpressionTypes(s *SymbolTable) []ComplexType {
 	return []ComplexType{ComplexType{e.cType, "", nil}}
 }
 func (e Array) getExpressionTypes(s *SymbolTable) []ComplexType {
-	//	t := e.aType
-	//	for _, da := range e.directAccess {
-	//		// TODO: Else case with struct access!
-	//		if da.indexed {
-	//			t = *t.subType
-	//		}
-	//	}
-	//	return []ComplexType{t}
-
 	return []ComplexType{getAccessedType(e.aType, e.directAccess, s)}
 }
 
 func (e Variable) getExpressionTypes(s *SymbolTable) []ComplexType {
-	//	t := e.vType
-	//	for _, da := range e.directAccess {
-	//		// TODO: Else case with struct access!
-	//		if da.indexed {
-	//			t = *t.subType
-	//		}
-	//	}
-
 	return []ComplexType{getAccessedType(e.vType, e.directAccess, s)}
 }
 func (e UnaryOp) getExpressionTypes(s *SymbolTable) []ComplexType {
@@ -318,22 +302,9 @@ func (e BinaryOp) getExpressionTypes(s *SymbolTable) []ComplexType {
 	return []ComplexType{e.opType}
 }
 func (e FunCall) getExpressionTypes(s *SymbolTable) []ComplexType {
-
 	if len(e.retTypes) != 1 {
 		return e.retTypes
 	}
-
-	// Only an expression with exactly 1 result can be indexed!
-	// So we return the simple result first and go down indexing types here.
-	//	t := e.retTypes[0]
-	//	for _, da := range e.directAccess {
-	//		// TODO: Else case with struct access!
-	//		if da.indexed {
-	//			t = *t.subType
-	//		}
-	//	}
-	//	return []ComplexType{t}
-
 	return []ComplexType{getAccessedType(e.retTypes[0], e.directAccess, s)}
 }
 
@@ -626,6 +597,8 @@ func (v Type) String() string {
 		return "int"
 	case TYPE_STRING:
 		return "string"
+	case TYPE_CHAR:
+		return "char"
 	case TYPE_FLOAT:
 		return "float"
 	case TYPE_BOOL:
@@ -648,6 +621,8 @@ func stringToType(s string) Type {
 		return TYPE_FLOAT
 	case "bool":
 		return TYPE_BOOL
+	case "char":
+		return TYPE_CHAR
 	case "string":
 		return TYPE_STRING
 	case "array":
@@ -662,6 +637,7 @@ func isTypeString(s string) bool {
 		t == TYPE_FLOAT ||
 		t == TYPE_BOOL ||
 		t == TYPE_ARRAY ||
+		t == TYPE_CHAR ||
 		t == TYPE_STRING
 }
 
@@ -1104,6 +1080,7 @@ func parseVarList(tokens *TokenChannel) (variables []Variable, err error) {
 func getConstType(c string) Type {
 	rFloat := regexp.MustCompile(`^(-?\d+\.\d*)`)
 	rInt := regexp.MustCompile(`^(-?\d+)`)
+	rChar := regexp.MustCompile(`^(\'.\')`)
 	rString := regexp.MustCompile(`^(".*")`)
 	rBool := regexp.MustCompile(`^(true|false)`)
 	cByte := []byte(c)
@@ -1113,6 +1090,9 @@ func getConstType(c string) Type {
 	}
 	if s := rInt.FindIndex(cByte); s != nil {
 		return TYPE_INT
+	}
+	if s := rChar.FindIndex(cByte); s != nil {
+		return TYPE_CHAR
 	}
 	if s := rString.FindIndex(cByte); s != nil {
 		return TYPE_STRING
@@ -1235,6 +1215,8 @@ func parseArrayExpression(tokens *TokenChannel) (array Array, err error) {
 		array.column = startCol
 		return
 	} else {
+		// TODO: This must be able to parse chars later on. Like: ['a', 'b', 'c']!
+		// Or does it already? Maybe because we can already handle Char constants?
 		// .. = [1,2,3,4,5]
 
 		expressions, parseErr := parseExpressionList(tokens)

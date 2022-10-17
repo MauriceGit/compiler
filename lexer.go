@@ -21,6 +21,8 @@ const (
 	TOKEN_SEMICOLON
 	TOKEN_COLON
 	TOKEN_DOT
+	TOKEN_DOUBLE_QUOTE
+	TOKEN_SINGLE_QUOTE
 	TOKEN_EOF
 	TOKEN_UNKNOWN
 )
@@ -66,6 +68,10 @@ func (t TokenType) String() string {
 		return "TOKEN_COLON"
 	case TOKEN_DOT:
 		return "TOKEN_DOT"
+	case TOKEN_SINGLE_QUOTE:
+		return "TOKEN_SINGLE_QUOTE"
+	case TOKEN_DOUBLE_QUOTE:
+		return "TOKEN_DOUBLE_QUOTE"
 	case TOKEN_EOF:
 		return "TOKEN_EOF"
 	}
@@ -76,31 +82,38 @@ func (t Token) String() string {
 	return fmt.Sprintf("(%v %v)", t.value, t.tokenType)
 }
 
-func parseByte(program []byte) (TokenType, bool) {
-
+func parseByte(program []byte) (t TokenType, ok bool) {
+	ok = true
 	switch program[0] {
 	case ',':
-		return TOKEN_SEPARATOR, true
+		t = TOKEN_SEPARATOR
 	case '.':
-		return TOKEN_DOT, true
+		t = TOKEN_DOT
 	case ';':
-		return TOKEN_SEMICOLON, true
+		t = TOKEN_SEMICOLON
 	case ':':
-		return TOKEN_COLON, true
+		t = TOKEN_COLON
 	case '(':
-		return TOKEN_PARENTHESIS_OPEN, true
+		t = TOKEN_PARENTHESIS_OPEN
 	case ')':
-		return TOKEN_PARENTHESIS_CLOSE, true
+		t = TOKEN_PARENTHESIS_CLOSE
 	case '{':
-		return TOKEN_CURLY_OPEN, true
+		t = TOKEN_CURLY_OPEN
 	case '}':
-		return TOKEN_CURLY_CLOSE, true
+		t = TOKEN_CURLY_CLOSE
 	case '[':
-		return TOKEN_SQUARE_OPEN, true
+		t = TOKEN_SQUARE_OPEN
 	case ']':
-		return TOKEN_SQUARE_CLOSE, true
+		t = TOKEN_SQUARE_CLOSE
+	case '\'':
+		t = TOKEN_SINGLE_QUOTE
+	case '"':
+		t = TOKEN_DOUBLE_QUOTE
+	default:
+		ok = false
+		t = TOKEN_UNKNOWN
 	}
-	return TOKEN_UNKNOWN, false
+	return
 }
 
 func tokenize(program []byte, tokens chan Token, err chan error) {
@@ -108,10 +121,10 @@ func tokenize(program []byte, tokens chan Token, err chan error) {
 	whitespace := regexp.MustCompile(`^[\t\f\r ]`)
 	newline := regexp.MustCompile(`^\n`)
 	comment := regexp.MustCompile(`^//.*\n`)
-	keyword := regexp.MustCompile(`^(int|string|float|bool|if|else|for|shadow|fun|return|switch|case|default|struct|break|continue)\W`)
+	keyword := regexp.MustCompile(`^(int|char|float|bool|if|else|for|shadow|fun|return|switch|case|default|struct|break|continue)\W`)
 	operator := regexp.MustCompile(`^(\+|\-|\*|/|%|==|!=|<=|>=|<|>|\|\||&&|!)`)
 	assignment := regexp.MustCompile(`^=`)
-	constant := regexp.MustCompile(`^(((\d+(\.\d+)?)|(".*"))|(true|false))`)
+	constant := regexp.MustCompile(`^((\d+(\.\d+)?)|(\".*\")|(\'.\')|(true|false))`)
 	identifier := regexp.MustCompile(`^[A-Za-z]\w*`)
 
 	lineCnt := 0

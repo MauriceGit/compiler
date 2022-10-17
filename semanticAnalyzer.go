@@ -341,7 +341,7 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		)
 	}
 
-	// We match all types explicitely to make sure that this still works or creates an error when we introduce new types
+	// We match all types explicitely to make sure that this still works or create an error when we introduce new types
 	// that are not considered yet!
 	switch binaryOp.operator {
 	case OP_AND, OP_OR:
@@ -1294,9 +1294,20 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_INT, "", nil}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}, []ComplexType{}, false)
+	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_CHAR, "", nil}}, []ComplexType{}, false)
+	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_CHAR, "", nil}}, []ComplexType{}, false)
+
+	ast.globalSymbolTable.setFun("char",
+		[]ComplexType{ComplexType{TYPE_INT, "", nil}},
+		[]ComplexType{ComplexType{TYPE_CHAR, "", nil}}, true,
+	)
 
 	ast.globalSymbolTable.setFun("int",
 		[]ComplexType{ComplexType{TYPE_FLOAT, "", nil}},
+		[]ComplexType{ComplexType{TYPE_INT, "", nil}}, true,
+	)
+	ast.globalSymbolTable.setFun("int",
+		[]ComplexType{ComplexType{TYPE_CHAR, "", nil}},
 		[]ComplexType{ComplexType{TYPE_INT, "", nil}}, true,
 	)
 	ast.globalSymbolTable.setFun("float",

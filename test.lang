@@ -1,7 +1,25 @@
-fun sum(i int) int {
-    if i == 0 {
-        return 0
-    }
-    return i+sum(i-1)
+
+
+fun getChar(c char) char {
+    return char(int(c)+1)
 }
-println(sum(10))
+
+b = getChar('a')
+
+println(int('f'))
+println(int(b))
+
+print('e')
+println(getChar('a'))
+
+println(char(102))
+println(char(int('g')))
+
+chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+for i, c : chars {
+    if i == len(chars)-1 {
+        println(c)
+    } else {
+        print(c)
+    }
+}
