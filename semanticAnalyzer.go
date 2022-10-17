@@ -341,7 +341,7 @@ func analyzeBinaryOp(binaryOp BinaryOp, symbolTable *SymbolTable) (Expression, e
 		)
 	}
 
-	// We match all types explicitely to make sure that this still works or creates an error when we introduce new types
+	// We match all types explicitely to make sure that this still works or create an error when we introduce new types
 	// that are not considered yet!
 	switch binaryOp.operator {
 	case OP_AND, OP_OR:

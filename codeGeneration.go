@@ -121,7 +121,7 @@ func getCommandFloat(op Operator) string {
 	case OP_DIV:
 		return "divsd"
 	default:
-		panic("Code generation error. Unknown operator for Float")
+		panic("Code generation error. Unknown operator for float")
 	}
 	return ""
 }
@@ -137,8 +137,13 @@ func getCommandInt(op Operator) string {
 	case OP_DIV, OP_MOD:
 		return "idiv"
 	default:
-		panic("Code generation error. Unknown operator for Integer")
+		panic("Code generation error. Unknown operator for int")
 	}
+	return ""
+}
+
+func getCommandChar(op Operator) string {
+	panic("Code generation error. Unknown operator for char")
 	return ""
 }
 
@@ -156,7 +161,7 @@ func getCommandBool(op Operator) string {
 
 func getRegister(t Type) (string, string) {
 	switch t {
-	case TYPE_INT, TYPE_BOOL:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 		return "r10", "r11"
 	case TYPE_FLOAT:
 		return "xmm0", "xmm1"
@@ -172,7 +177,7 @@ func getMoreIntRegister() (string, string) {
 
 func getMov(t Type) string {
 	switch t {
-	case TYPE_INT, TYPE_BOOL:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 		return "mov"
 	case TYPE_FLOAT:
 		return "movq"
@@ -184,7 +189,7 @@ func getMov(t Type) string {
 
 func getReturnRegister(t Type) string {
 	switch t {
-	case TYPE_INT, TYPE_BOOL:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 		return "rax"
 	case TYPE_FLOAT:
 		return "xmm0"
@@ -198,7 +203,7 @@ func getReturnRegister(t Type) string {
 // https://wiki.cdot.senecacollege.ca/wiki/X86_64_Register_and_Instruction_Quick_Start
 func getFunctionRegisters(t Type) []string {
 	switch t {
-	case TYPE_INT, TYPE_BOOL:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 		return []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
 	case TYPE_FLOAT:
 		return []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
@@ -217,6 +222,8 @@ func getCommand(t Type, op Operator) string {
 		return getCommandFloat(op)
 	case TYPE_INT:
 		return getCommandInt(op)
+	case TYPE_CHAR:
+		return getCommandChar(op)
 	case TYPE_STRING:
 		panic("Code generation error. String commands not yet implemented")
 	}
@@ -231,6 +238,8 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 		name = asm.addConstant(c.cValue)
 	case TYPE_STRING:
 		name = asm.addConstant(fmt.Sprintf("\"%v\", 0", c.cValue))
+	case TYPE_CHAR:
+		name = asm.addConstant(fmt.Sprintf("%v", int(c.cValue[0])))
 	case TYPE_BOOL:
 		v := "0"
 		if c.cValue == "true" {
@@ -242,7 +251,7 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	switch c.cType {
-	case TYPE_INT, TYPE_BOOL:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 		asm.addLine("mov", "rax, "+name)
 	case TYPE_FLOAT:
 		register, _ := getRegister(TYPE_INT)
@@ -293,7 +302,7 @@ func (v Variable) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	switch v.vType.t {
-	case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 		asm.addLine("mov", fmt.Sprintf("%v, [%v+rbp]", getReturnRegister(TYPE_INT), symbol.offset))
 	case TYPE_FLOAT:
 		register, _ := getRegister(TYPE_INT)
@@ -367,8 +376,10 @@ func (u UnaryOp) generateCode(asm *ASM, s *SymbolTable) {
 		} else {
 			panic(fmt.Sprintf("Code generation error. Unexpected unary type: %v for %v", u.operator, u.opType))
 		}
+	case TYPE_CHAR:
+		panic("Code generation error. No unary expression for type char")
 	case TYPE_STRING:
-		panic("Code generation error. No unary expression for Type String")
+		panic("Code generation error. No unary expression for type String")
 		return
 	}
 }
@@ -429,7 +440,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	//asm.addLine(getMov(t), fmt.Sprintf("%v, %v", rRight, getReturnRegister(t)))
 
 	switch t.t {
-	case TYPE_INT, TYPE_BOOL:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 		asm.addLine("push", getReturnRegister(t.t))
 	case TYPE_FLOAT:
 		tmpR, _ := getRegister(TYPE_INT)
@@ -443,7 +454,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	_, rRight := getRegister(t.t)
 
 	switch t.t {
-	case TYPE_INT, TYPE_BOOL:
+	case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 		asm.addLine("pop", rRight)
 	case TYPE_FLOAT:
 		tmpR, _ := getRegister(TYPE_INT)
@@ -452,7 +463,7 @@ func (b BinaryOp) generateCode(asm *ASM, s *SymbolTable) {
 	}
 
 	switch t.t {
-	case TYPE_INT, TYPE_FLOAT, TYPE_BOOL:
+	case TYPE_INT, TYPE_FLOAT, TYPE_BOOL, TYPE_CHAR:
 		binaryOperationNumber(b.operator, b.opType.t, rLeft, rRight, asm)
 	case TYPE_STRING:
 		panic("Code generation error: Strings not supported yet.")
@@ -504,7 +515,7 @@ func (a Array) generateCode(asm *ASM, s *SymbolTable) {
 			if e.getResultCount() == 1 && e.getExpressionTypes(s)[0].getMemCount(s) == 1 {
 
 				switch e.getExpressionTypes(s)[0].getMemTypes(s)[0] {
-				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+				case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
 					tmpR, _ := getRegister(TYPE_INT)
@@ -573,7 +584,7 @@ func generateStructExprCode(asm *ASM, s *SymbolTable, f FunCall) {
 		// Multiple return values are already on the stack, single ones not!
 		if e.getResultCount() == 1 {
 			switch e.getExpressionTypes(s)[0].t {
-			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+			case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 				asm.addLine("push", getReturnRegister(TYPE_INT))
 			case TYPE_FLOAT:
 				tmpR, _ := getRegister(TYPE_INT)
@@ -624,7 +635,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 		// We already know, that we have exactly ONE value.
 
 		switch f.args[0].getExpressionTypes(s)[0].getMemTypes(s)[0] {
-		case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+		case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 			asm.addLine("mov", fmt.Sprintf("%v, %v", intRegisters[intRegIndex], getReturnRegister(TYPE_INT)))
 			intRegIndex++
 		case TYPE_FLOAT:
@@ -649,7 +660,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 				// If we have a struct on hand, we have to find out, what type the member is!
 				// We already know, that we have exactly ONE value.
 				switch e.getExpressionTypes(s)[0].getMemTypes(s)[0] {
-				case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+				case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 					asm.addLine("push", getReturnRegister(TYPE_INT))
 				case TYPE_FLOAT:
 					tmpR, _ := getRegister(TYPE_INT)
@@ -664,7 +675,7 @@ func (f FunCall) generateCode(asm *ASM, s *SymbolTable) {
 
 				for _, endType := range t.getMemTypes(s) {
 					switch endType {
-					case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+					case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 						// All further values stay on the stack and are not assigned to registers!
 						if intRegIndex < len(intRegisters) {
 							asm.addLine("pop", intRegisters[intRegIndex])
@@ -747,7 +758,7 @@ func (a Assignment) generateCode(asm *ASM, s *SymbolTable) {
 		// Multiple return values are already on the stack, single ones not!
 		if e.getResultCount() == 1 {
 			switch e.getExpressionTypes(s)[0].t {
-			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+			case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 				asm.addLine("push", getReturnRegister(TYPE_INT))
 			case TYPE_FLOAT:
 				tmpR, _ := getRegister(TYPE_INT)
@@ -828,7 +839,7 @@ func (c Condition) generateCode(asm *ASM, s *SymbolTable) {
 	endLabel := asm.nextLabelName()
 
 	switch c.expression.getExpressionTypes(s)[0].t {
-	case TYPE_BOOL, TYPE_INT:
+	case TYPE_BOOL, TYPE_INT, TYPE_CHAR:
 		register = getReturnRegister(TYPE_INT)
 	case TYPE_FLOAT:
 		asm.addLine("movq", fmt.Sprintf("%v, %v", register, getReturnRegister(TYPE_FLOAT)))
@@ -929,7 +940,7 @@ func (l Loop) generateCode(asm *ASM, s *SymbolTable) {
 		e.generateCode(asm, l.block.symbolTable)
 
 		switch e.getExpressionTypes(s)[0].t {
-		case TYPE_INT, TYPE_BOOL:
+		case TYPE_INT, TYPE_BOOL, TYPE_CHAR:
 			register = getReturnRegister(TYPE_INT)
 		case TYPE_FLOAT:
 			asm.addLine("movq", fmt.Sprintf("%v, %v", register, getReturnRegister(TYPE_FLOAT)))
@@ -1235,7 +1246,7 @@ func (f Function) generateCode(asm *ASM, s *SymbolTable) {
 		initialOffset := entry.offset
 		for i, mt := range v.vType.getMemTypes(s) {
 			switch mt {
-			case TYPE_INT, TYPE_BOOL, TYPE_ARRAY:
+			case TYPE_INT, TYPE_BOOL, TYPE_CHAR, TYPE_ARRAY:
 				if intRegIndex < len(intRegisters) {
 					asm.addLine("mov", fmt.Sprintf("[%v+rbp], %v", initialOffset-i*8, intRegisters[intRegIndex]))
 					intRegIndex++
