@@ -1,19 +1,25 @@
-fun sum(i int) int {
-    if i == 0 {
-        return 0
-    }
-    return i+sum(i-1)
+
+
+fun getChar(c char) char {
+    return char(int(c)+1)
 }
 
-fun blubb(c char) char {
-    return 'b'
-}
+b = getChar('a')
 
-println(sum(10))
-
-a = 4
-b = blubb('a')
-
-println(a)
 println(int('f'))
 println(int(b))
+
+print('e')
+println(getChar('a'))
+
+println(char(102))
+println(char(int('g')))
+
+chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+for i, c : chars {
+    if i == len(chars)-1 {
+        println(c)
+    } else {
+        print(c)
+    }
+}

@@ -1344,7 +1344,7 @@ func (r Return) generateCode(asm *ASM, s *SymbolTable) {
 func (st StructDef) generateCode(asm *ASM, s *SymbolTable) {
 }
 
-func (ast AST) addPrintCharFunction(asm *ASM) {
+func (ast AST) addInternalPrintCharFunction(asm *ASM) {
 
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_INT, "", nil}}
@@ -1377,6 +1377,93 @@ func (ast AST) addPrintCharFunction(asm *ASM) {
 
 	asm.addLine("pop", "rdi")
 	asm.addLine("pop", "rsi")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
+
+	for _, line := range asm.program {
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addPrintCharFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	paramsI := []ComplexType{ComplexType{TYPE_INT, "", nil}}
+	paramsC := []ComplexType{ComplexType{TYPE_CHAR, "", nil}}
+	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI, true)
+	if !ok {
+		panic("Code generation error. printChar can not be found")
+	}
+	printCharName := entry.jumpLabel
+
+	functionName := "print"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, paramsC, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, paramsC, true)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; printChar")
+	asm.addFun(asmName, isInline)
+
+	// Set only for itself!
+	asm.setFunIsUsed(asmName, ast.globalSymbolTable.funIsUsed(functionName, paramsC, true))
+
+	// rdi is the same for the two (print) functions, so nothing to do here.
+	// Save rax before calling
+	asm.addLine("push", "rax")
+	asm.addLine("call", printCharName)
+	asm.addLine("pop", "rax")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
+
+	for _, line := range asm.program {
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addPrintCharLnFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	paramsI := []ComplexType{ComplexType{TYPE_INT, "", nil}}
+	paramsC := []ComplexType{ComplexType{TYPE_CHAR, "", nil}}
+	entry, ok := ast.globalSymbolTable.getFun("printChar", paramsI, true)
+	if !ok {
+		panic("Code generation error. printChar can not be found")
+	}
+	printCharName := entry.jumpLabel
+
+	functionName := "println"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, paramsC, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, paramsC, true)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; printCharLn")
+	asm.addFun(asmName, isInline)
+
+	// Set only for itself!
+	asm.setFunIsUsed(asmName, ast.globalSymbolTable.funIsUsed(functionName, paramsC, true))
+
+	// rdi is the same for the two (print) functions, so nothing to do here.
+
+	asm.addLine("push", "rdi")
+
+	asm.addLine("call", printCharName)
+	// Print newline at the end
+	asm.addLine("mov", "rdi, 0xA")
+	asm.addLine("call", printCharName)
+
+	asm.addLine("pop", "rdi")
 
 	if !isInline {
 		asm.addLine("ret", "")
@@ -1739,6 +1826,33 @@ func (ast AST) addIntFromFloatFunction(asm *ASM) {
 	asm.addFun(asmName, isInline)
 
 	asm.addLine("cvttsd2si", "rax, xmm0")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
+
+	for _, line := range asm.program {
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addCharFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_INT, "", nil}}
+	functionName := "char"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
+
+	asm.addLine("mov", "rax, rdi")
 
 	if !isInline {
 		asm.addLine("ret", "")
@@ -2192,7 +2306,10 @@ func (ast AST) generateCode() ASM {
 	asm.addSysConstant("sys_brk", "12")
 	asm.addSysConstant("sys_exit", "60")
 
+	ast.addInternalPrintCharFunction(&asm)
+
 	ast.addPrintCharFunction(&asm)
+	ast.addPrintCharLnFunction(&asm)
 
 	ast.addPrintIntFunction(&asm)
 	ast.addPrintIntLnFunction(&asm)
@@ -2203,6 +2320,7 @@ func (ast AST) generateCode() ASM {
 	ast.addIntFromFloatFunction(&asm)
 	ast.addIntFromCharFunction(&asm)
 	ast.addFloatFunction(&asm)
+	ast.addCharFunction(&asm)
 
 	ast.addArrayCapFunction(&asm)
 	ast.addArrayLenFunction(&asm)

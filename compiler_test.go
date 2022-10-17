@@ -330,6 +330,45 @@ func ExampleRangedFor() {
 	// 5
 }
 
+// ExampleChar checks different functionality regarding a newly added char datatype.
+func ExampleChar() {
+	var program []byte = []byte(`
+		fun getChar(c char) char {
+		    return char(int(c)+1)
+		}
+
+		b = getChar('a')
+
+		println(int('f'))
+		println(int(b))
+
+		print('e')
+		println(getChar('a'))
+
+		println(char(102))
+		println(char(int('g')))
+
+		chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+		for i, c : chars {
+		    if i == len(chars)-1 {
+		        println(c)
+		    } else {
+		        print(c)
+		    }
+		}
+		`,
+	)
+	compileAndRun(program)
+
+	// Output:
+	// 102
+	// 98
+	// eb
+	// f
+	// g
+	// abcdefg
+}
+
 // ExampleBreakContinue checks, that break and continue statements work as expected.
 func ExampleBreakContinue() {
 	var program []byte = []byte(`
