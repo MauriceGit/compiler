@@ -1294,9 +1294,15 @@ func semanticAnalysis(ast AST) (AST, error) {
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_INT, "", nil}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}, []ComplexType{}, false)
 	ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}, []ComplexType{}, false)
+	//ast.globalSymbolTable.setFun("print", []ComplexType{ComplexType{TYPE_CHAR, "", nil}}, []ComplexType{}, false)
+	//ast.globalSymbolTable.setFun("println", []ComplexType{ComplexType{TYPE_CHAR, "", nil}}, []ComplexType{}, false)
 
 	ast.globalSymbolTable.setFun("int",
 		[]ComplexType{ComplexType{TYPE_FLOAT, "", nil}},
+		[]ComplexType{ComplexType{TYPE_INT, "", nil}}, true,
+	)
+	ast.globalSymbolTable.setFun("int",
+		[]ComplexType{ComplexType{TYPE_CHAR, "", nil}},
 		[]ComplexType{ComplexType{TYPE_INT, "", nil}}, true,
 	)
 	ast.globalSymbolTable.setFun("float",

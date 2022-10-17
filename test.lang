@@ -4,4 +4,16 @@ fun sum(i int) int {
     }
     return i+sum(i-1)
 }
+
+fun blubb(c char) char {
+    return 'b'
+}
+
 println(sum(10))
+
+a = 4
+b = blubb('a')
+
+println(a)
+println(int('f'))
+println(int(b))

@@ -239,7 +239,7 @@ func (c Constant) generateCode(asm *ASM, s *SymbolTable) {
 	case TYPE_STRING:
 		name = asm.addConstant(fmt.Sprintf("\"%v\", 0", c.cValue))
 	case TYPE_CHAR:
-		name = asm.addConstant(fmt.Sprintf("%v", int(c.cValue[0])))
+		name = asm.addConstant(fmt.Sprintf("%v", int(c.cValue[1])))
 	case TYPE_BOOL:
 		v := "0"
 		if c.cValue == "true" {
@@ -1725,7 +1725,7 @@ func (ast AST) addArrayCapFunction(asm *ASM) {
 	asm.program = savedProgram
 }
 
-func (ast AST) addIntFunction(asm *ASM) {
+func (ast AST) addIntFromFloatFunction(asm *ASM) {
 	asmName := asm.nextFunctionName()
 	params := []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}
 	functionName := "int"
@@ -1739,6 +1739,33 @@ func (ast AST) addIntFunction(asm *ASM) {
 	asm.addFun(asmName, isInline)
 
 	asm.addLine("cvttsd2si", "rax, xmm0")
+
+	if !isInline {
+		asm.addLine("ret", "")
+	}
+
+	for _, line := range asm.program {
+		tmp := asm.functions[asmName]
+		tmp.code = append(tmp.code, line)
+		asm.functions[asmName] = tmp
+	}
+	asm.program = savedProgram
+}
+
+func (ast AST) addIntFromCharFunction(asm *ASM) {
+	asmName := asm.nextFunctionName()
+	params := []ComplexType{ComplexType{TYPE_CHAR, "", nil}}
+	functionName := "int"
+	isInline := ast.globalSymbolTable.funIsInline(functionName, params, true)
+	ast.globalSymbolTable.setFunAsmName(functionName, asmName, params, true)
+
+	savedProgram := asm.program
+	asm.program = make([][3]string, 0)
+
+	asm.addLabel("; " + functionName)
+	asm.addFun(asmName, isInline)
+
+	asm.addLine("mov", "rax, rdi")
 
 	if !isInline {
 		asm.addLine("ret", "")
@@ -2173,7 +2200,8 @@ func (ast AST) generateCode() ASM {
 	ast.addPrintFloatFunction(&asm)
 	ast.addPrintFloatLnFunction(&asm)
 
-	ast.addIntFunction(&asm)
+	ast.addIntFromFloatFunction(&asm)
+	ast.addIntFromCharFunction(&asm)
 	ast.addFloatFunction(&asm)
 
 	ast.addArrayCapFunction(&asm)
