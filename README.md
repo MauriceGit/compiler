@@ -12,7 +12,7 @@ situation finally gives me enough time to tackle it myself.
 And I was really impressed by people, that wrote solutions for last years [adventofcode.com](https://adventofcode.com)
 in their own language. So that is something I'd like to achieve :)
 
-So no, no real reason other than - I like to work on challenging problems and found compilers intriguing.
+I like to work on challenging problems and found compilers intriguing.
 
 ## How to run
 

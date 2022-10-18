@@ -4,6 +4,10 @@ fun getChar(c char) char {
     return char(int(c)+1)
 }
 
+fun getString() string {
+    return "blubb"
+}
+
 b = getChar('a')
 
 println(int('f'))
@@ -15,11 +19,9 @@ println(getChar('a'))
 println(char(102))
 println(char(int('g')))
 
-chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+chars = ""
+chars = getString()
 for i, c : chars {
-    if i == len(chars)-1 {
-        println(c)
-    } else {
-        print(c)
-    }
+    print(c)
 }
+print(char(10))

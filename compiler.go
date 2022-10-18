@@ -2,10 +2,13 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 )
 
 func assemble(asm ASM, source, executable string) (err error) {
@@ -106,9 +109,28 @@ func assemble(asm ASM, source, executable string) (err error) {
 	return
 }
 
+func preprocess(program []byte) (out []byte) {
+
+	out = bytes.ReplaceAll(program, []byte("string"), []byte("[]char"))
+
+	re := regexp.MustCompile(`(\".*\")`)
+	out = re.ReplaceAllFunc(out, func(s []byte) []byte {
+		tmpS := string(s)
+		if tmpS == "\"\"" {
+			return []byte("[](char, 0)")
+		}
+		return []byte("['" + strings.Join(strings.Split(tmpS[1:][:len(tmpS)-2], ""), "','") + "']")
+	})
+
+	return
+}
+
 func compile(program []byte, sourceFile, binFile string) bool {
 	tokenChan := make(chan Token, 1)
 	lexerErr := make(chan error, 1)
+
+	program = preprocess(program)
+
 	go tokenize(program, tokenChan, lexerErr)
 
 	ast, parseErr := parse(tokenChan)
