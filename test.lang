@@ -8,6 +8,17 @@ fun getString() string {
     return "blubb"
 }
 
+fun print(s string) {
+    for i, c : s {
+        print(c)
+    }
+}
+
+fun println(s string) {
+    print(s)
+    print(char(10))
+}
+
 b = getChar('a')
 
 println(int('f'))
@@ -18,6 +29,10 @@ println(getChar('a'))
 
 println(char(102))
 println(char(int('g')))
+
+
+print("abc")
+println("abc")
 
 chars = ""
 chars = getString()
