@@ -47,7 +47,7 @@ The resulting Assembly also has no external dependencies (No C std lib, printing
 - Function overloading
 - Function inlining (only for system functions right now)
 - Dynamic Arrays with an internal capacity, so not every `append` needs a new memory allocation
-- Int, Char and Float types are always 64bit
+- Int, Char, String and Float types are always 64bit
 - Very Python-like array creation
 - Switch expressions match either values or general boolean expressions
 - Range-based Loops with index and element
@@ -72,27 +72,30 @@ a = 4
 b = 5.6
 c = true
 d = 'f'
+e = "abc"
 ```
 
 ### Functions
 ```C
-fun abc(i int, j float) int, float, char {
-    return i, j, 'b'
+fun abc(i int, j float) int, float, char, string {
+    return i, j, 'b', "abc"
 }
 // Can be overloaded
-fun abc(i int, j int) int, float, char {
-    return i, 5.5, 'a'
+fun abc(i int, j int) int, float, char, string {
+    return i, 5.5, 'a', "abc"
 }
 // ...
-a, b, c = abc(5, 6.5)
+a, b, c, d = abc(5, 6.5)
 ```
 
 ### Lists
 ```C
 // List of integers. Type derived from the expressions
 list = [1, 2, 3, 4, 5]
-// Strings are explicitly defined as lists of chars (for now at least)
+// Strings can be explicitely defined as a list of chars or implicitely by using string literals
+// Internally, they are handled the same way.
 chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+str = "abcdefg"
 
 // Empty list of integers with length 10. Type explicitely set
 list2 = [](int, 10)
@@ -138,11 +141,10 @@ for i,e : list {
     // e is the actual element: list[i]
 }
 
-chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
-for i, c : chars {
+for i, c : "abcdefg" {
     print(c)
 }
-// will result in: abcdefg
+// will print in: abcdefg
 ```
 
 ### Switch
@@ -193,4 +195,8 @@ println(a.j.j)
 // Build-in (inline) functions: int(), float()
 println(int(5.5))
 println(float(5))
+
+// Chars can be converted from and to int (ascii value) by using char() or int()
+println(int('a'))
+println(char(98))
 ```
