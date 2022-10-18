@@ -8,16 +8,7 @@ fun getString() string {
     return "blubb"
 }
 
-fun print(s string) {
-    for i, c : s {
-        print(c)
-    }
-}
 
-fun println(s string) {
-    print(s)
-    print(char(10))
-}
 
 b = getChar('a')
 

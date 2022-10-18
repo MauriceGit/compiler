@@ -109,9 +109,29 @@ func assemble(asm ASM, source, executable string) (err error) {
 	return
 }
 
+func getConvenienceFunctions() []byte {
+
+	// the print and println functions for strings can be written in code instead of assembly
+	return []byte(`
+		fun print(s string) {
+		    for i, c : s {
+		        print(c)
+		    }
+		}
+
+		fun println(s string) {
+		    print(s)
+		    print(char(10))
+		}
+
+	`)
+}
+
 func preprocess(program []byte) (out []byte) {
 
-	out = bytes.ReplaceAll(program, []byte("string"), []byte("[]char"))
+	out = append(getConvenienceFunctions(), program...)
+
+	out = bytes.ReplaceAll(out, []byte("string"), []byte("[]char"))
 
 	re := regexp.MustCompile(`(\".*\")`)
 	out = re.ReplaceAllFunc(out, func(s []byte) []byte {
