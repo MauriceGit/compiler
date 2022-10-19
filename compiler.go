@@ -141,7 +141,9 @@ func getConvenienceFunctions() []byte {
 
 func preprocess(program []byte) (out []byte) {
 
-	out = append(getConvenienceFunctions(), program...)
+	//out = append(getConvenienceFunctions(), program...)
+
+	out = program
 
 	out = bytes.ReplaceAll(out, []byte("string"), []byte("[]char"))
 

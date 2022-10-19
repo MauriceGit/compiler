@@ -1240,6 +1240,7 @@ func analyzeBlock(block Block, symbolTable, newBlockSymbolTable *SymbolTable) (B
 // worth it right now. Maybe at a later point.
 func setSystemFunctionUsage(s *SymbolTable) {
 
+	cArg := []ComplexType{ComplexType{TYPE_CHAR, "", nil}}
 	iArg := []ComplexType{ComplexType{TYPE_INT, "", nil}}
 	fArg := []ComplexType{ComplexType{TYPE_FLOAT, "", nil}}
 	aArg := []ComplexType{ComplexType{TYPE_ARRAY, "", &ComplexType{TYPE_WHATEVER, "", nil}}}
@@ -1258,11 +1259,15 @@ func setSystemFunctionUsage(s *SymbolTable) {
 	plnF := s.funIsUsed("println", fArg, true)
 	pF := s.funIsUsed("print", fArg, true)
 
+	plnC := s.funIsUsed("println", cArg, true)
+	pC := s.funIsUsed("print", cArg, true)
+
 	s.setFunIsUsed("print", fArg, pF || plnF)
 	s.setFunIsUsed("print", iArg, pI || plnI || s.funIsUsed("print", fArg, true))
+	s.setFunIsUsed("print", cArg, pC || plnC)
 
 	// We need to re-query them because we just possibly changed their state.
-	s.setFunIsUsed("printChar", iArg, s.funIsUsed("print", iArg, true) || s.funIsUsed("print", fArg, true))
+	s.setFunIsUsed("printChar", iArg, s.funIsUsed("print", iArg, true) || s.funIsUsed("print", fArg, true) || s.funIsUsed("print", cArg, true))
 
 	s.setFunIsUsed("free", aArg,
 		s.funIsUsed("free", aArg, false) ||

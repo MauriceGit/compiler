@@ -1355,7 +1355,7 @@ func (ast AST) addInternalPrintCharFunction(asm *ASM) {
 	savedProgram := asm.program
 	asm.program = make([][3]string, 0)
 
-	asm.addLabel("; " + functionName)
+	asm.addLabel("; " + functionName + " Internal")
 	asm.addFun(asmName, isInline)
 
 	// Set only for itself!
