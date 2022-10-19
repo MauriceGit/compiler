@@ -8,8 +8,6 @@ fun getString() string {
     return "blubb"
 }
 
-
-
 b = getChar('a')
 
 println(int('f'))
@@ -31,3 +29,6 @@ for i, c : chars {
     print(c)
 }
 print(char(10))
+
+println(true)
+println(false)

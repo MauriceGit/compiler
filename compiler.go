@@ -124,6 +124,18 @@ func getConvenienceFunctions() []byte {
 		    print(char(10))
 		}
 
+		fun print(b bool) {
+		    if b {
+		        print("true")
+		    } else {
+		        print("false")
+		    }
+		}
+
+		fun println(b bool) {
+		    print(b)
+		    print(char(10))
+		}
 	`)
 }
 

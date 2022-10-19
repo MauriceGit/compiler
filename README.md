@@ -59,10 +59,12 @@ See the `compiler_test.go` file for a lot more working examples :)
 
 ### Print
 ```C
-// There are overloaded functions: print, println that work on floats, chars and integers
+// There are overloaded functions: print, println that work on int, float, char, bool and string
 println(5)
 println(6.543)
 println('b')
+println("abc")
+println(true)
 ```
 
 ### Assignment
@@ -73,6 +75,7 @@ b = 5.6
 c = true
 d = 'f'
 e = "abc"
+f = a + 5 + int(b) // 14
 ```
 
 ### Functions
@@ -90,7 +93,7 @@ a, b, c, d = abc(5, 6.5)
 
 ### Lists
 ```C
-// List of integers. Type derived from the expressions
+// List of integers. Type derived from the expressions. Every values must have the exact same type.
 list = [1, 2, 3, 4, 5]
 // Strings can be explicitely defined as a list of chars or implicitely by using string literals
 // Internally, they are handled the same way.
@@ -110,7 +113,6 @@ free(list)
 
 // And some convenience functions to clear/reset the list without deallocating the memory:
 // reset only resets the length, while clear overwrites the memory with 0s
-
 reset(list)
 clear(list)
 
@@ -118,7 +120,6 @@ clear(list)
 // Careful ! append/extend works on the first argument. Depending on the available capacity, it will
 // extend list or free list and create a completely new memory block, copy list and list2 over and return
 // the new pointer!
-
 list = append(list, 6)
 list = extend(list, list2)
 
@@ -147,26 +148,38 @@ for i, c : "abcdefg" {
 // will print in: abcdefg
 ```
 
+### Conditions
+```C
+a = true
+b = 3 > 4
+if a && !b {
+    println("abc")
+}
+```
+
 ### Switch
 ```C
+// We have no fallthrough
 switch 4 {
 case 1:
-    println(1)
+    println("case 1")
 case 2, 3, 6:
-    println(4)
+    println("case 2")
 case 5:
-    println(5)
+    println("case 3")
 default:
-    println(999)
+    println("default case")
 }
 
+// switches do not need a value to check against.
+// With no value provided, each case will be checked after each other for an expression that evaluates to true.
 switch {
 case 2 > 3:
-    println(1)
+    println("case 1")
 case 2 == 3:
-    println(4)
+    println("case 2")
 default:
-    println(888)
+    println("default case")
 }
 ```
 
